@@ -1,0 +1,49 @@
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Java / Maven
+backend/**/target/
+backend/**/*.class
+backend/**/*.jar
+backend/**/*.war
+backend/**/*.log
+backend/.mvn/wrapper/maven-wrapper.jar
+
+# Node / Frontend
+frontend/node_modules/
+frontend/.umi/
+frontend/.umi-production/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# Env & secrets
+config/env/.env
+config/env/.env.local
+backend/hrms-app/src/main/resources/application-dev-local.yml
+backend/hrms-app/src/main/resources/application-dev-server.yml
+*.pem
+*.key
+
+# Logs & temp
+logs/
+*.log
+tmp/
+temp/
+
+# Docker volumes (local)
+config/docker/data/
