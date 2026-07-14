@@ -1,12 +1,13 @@
 # HRMS 前端系统分析文档
 
-> **文档版本**：v1.8（对齐后端 v1.7 附录 H/K 补全）  
+> **文档版本**：v1.8.3（统一契约锚点 v1.0.0；Part I/II 与契约 §5~§11 零偏差）  
 > **PRD 来源**：[人资管理系统-PRD.md](人资管理系统-PRD.md)（2026-07-07）  
 > **目标读者**：前端开发、测试、架构评审、PD  
 > **技术栈**：React 18 + TypeScript + Umi Max + Ant Design 5 + AntV + Zustand  
 > **代码骨架**：`frontend/`（见 [frontend/README.md](frontend/README.md)）  
 > **开发计划**：[HRMini-Development-Plan.md](HRMini-Development-Plan.md)  
-> **后端契约**：[HRMS-Backend-System-Design.md](HRMS-Backend-System-Design.md) v1.7（API 以附录 H 为准）
+> **后端详设**：[HRMS-Backend-System-Design(2).md](HRMS-Backend-System-Design(2).md) v1.7.3（表结构/状态机）  
+> **契约锚点**：[HRMS-API-Contract.md](HRMS-API-Contract.md) v1.0.0（**API/枚举/错误码唯一权威**）
 
 **文档结构**：
 
@@ -15,7 +16,7 @@
 | **Part I** | §1–§5 + 附录 A~E | 公司《前端系分模版》格式：页面字段、API、菜单、工作量 |
 | **Part II** | §A.1 起 | 技术实现详设：架构、组件、状态、E2E |
 
-**合并说明（v1.8）**：前后端契约以《HRMS-Backend-System-Design》v1.7 **附录 H/K** 为权威；页面 `/admin/*`、`/portal/*`；API `/profile/*` 映射见 §2.2.13；补全记录见附录 E。
+**合并说明（v1.8.3）**：**API/枚举/错误码以《HRMS-API-Contract.md》v1.0.0 为唯一权威**；本文 Part I §2.2 与 Part II 须与契约 §5~§11 零偏差。实现细节（组件/表结构）见本系分及后端系分。**API JSON 枚举用小写 snake_case**；**processType 用大写**；页面 `/admin/*`、`/portal/*`；员工自助 `/profile/*`（映射见 §2.2.13、契约 §8.2）。
 
 ---
 
@@ -43,13 +44,14 @@
 | 文档 | 链接 | 必填 |
 | --- | --- | --- |
 | PRD | [人资管理系统-PRD.md](人资管理系统-PRD.md) | ✅ |
+| **API 契约（锚点）** | [HRMS-API-Contract.md](HRMS-API-Contract.md) v1.0.0 | ✅ |
 | UED | PRD 内嵌原型图（§1.4、§3–§9 各章） | 选填 |
-| 后端系分 | [HRMS-Backend-System-Design.md](HRMS-Backend-System-Design.md) v1.7 | ✅ |
+| 后端系分 | [HRMS-Backend-System-Design(2).md](HRMS-Backend-System-Design(2).md) v1.7.3 | ✅ |
 | 前端公共组件系分 | 本文 §2.2.13、Part II §A.3 | 选填 |
 | 开发计划 | [HRMini-Development-Plan.md](HRMini-Development-Plan.md) | ✅ |
 | 迭代地址（Gitee） | https://gitee.com/swing-king/hrmini | ✅ |
-| 开发环境地址 | 本地：前端 `http://localhost:8000` · 后端 `http://localhost:8080/api/v1` | ✅ |
-| 测试环境地址 | 联调服务器：前端 `http://39.101.67.167` · 后端 `http://39.101.67.167:8080/api/v1`（MySQL/Redis 同机 Docker） | ✅ |
+| 开发环境地址 | 前端 `http://localhost:8000` · 后端 `http://localhost:8080` | ✅ |
+| 测试环境地址 | 微项目首期与开发环境共用 | 选填 |
 
 
 ---
@@ -123,8 +125,8 @@ frontend/src/
 
 ## 2.2 迭代具体描述
 
-> 接口 Base URL：`/api/v1`；鉴权：`Authorization: Bearer ${token}`；响应：`{ code, message, data, traceId, timestamp }`  
-> **页面路由**：管理端 `/admin/*`；员工门户 `/portal/*`。**API 路径**与页面分离，员工自助统一 `/profile/*`（映射见 §2.2.13）。
+> 接口 Base URL：`/api/v1`；鉴权：`Authorization: Bearer ${token}`；响应：`{ code, message, data, traceId, timestamp }`（见 [HRMS-API-Contract.md §2](HRMS-API-Contract.md#2-全局约定)）  
+> **页面路由**：管理端 `/admin/*`；员工门户 `/portal/*`。**API 路径**与页面分离，员工自助统一 `/profile/*`（映射见 §2.2.13、契约 §8）。
 
 ### 2.2.1 登录页
 
@@ -145,9 +147,11 @@ frontend/src/
 | --- | --- | --- |
 | 登录 | POST | `/auth/login` |
 | 用户信息 | GET | `/auth/profile` |
-| 修改密码 | PUT | `/auth/password` |
+| 修改密码 | PUT | `/auth/password`（登录页/首次改密；门户规范路径 `PUT /profile/security/password`，契约 §5.12.1） |
 | 登出 | POST | `/auth/logout` |
 | 刷新 Token | POST | `/auth/refresh` |
+| 工资条二次验证（别名） | POST | `/auth/verify`（规范路径 `POST /profile/payslips/verify`，附录 E-5） |
+| 绑定/解绑手机（别名） | PUT/DELETE | `/auth/mobile`（规范路径见 §2.2.12 及契约 §5.12.1） |
 
 ---
 
@@ -191,7 +195,7 @@ WorkbenchPage
 | 字段名称 | 说明 | 输入方式 | 是否必填 | 最大长度 | 输入限制 | 字段类型 | 提示文案 | 数据源 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 部门名称 | dept_name | Input | Y | 100 | — | string | 请输入部门名称 | — |
-| 部门编码 | dept_code，参与工号生成 | Input | Y | 10 | 唯一 | string | 如 01 | — |
+| 部门编码 | deptCode，参与工号生成 | Input | Y | 10 | 唯一 | string | 如 01 | — |
 | 上级部门 | parent_id | TreeSelect | N | — | 层级≤5 | number | 空=根部门 | GET /departments/tree |
 | 部门负责人 | head_employee_id | EmployeeSelect | N | — | — | number | 请选择 | 员工接口 |
 | 排序序号 | sort_order | InputNumber | Y | — | ≥0 | number | 越小越靠前 | — |
@@ -215,6 +219,7 @@ WorkbenchPage
 | 部门 CRUD | CRUD | `/departments` |
 | 在职人数 | GET | `/departments/{id}/headcount` |
 | 删除预检 | GET | `/departments/{id}/can-delete` |
+| 部门合并 | POST | `/departments/{id}/merge`（请求体 `{ targetDepartmentId }`，批量转移员工后删除源部门） |
 
 ---
 
@@ -236,6 +241,7 @@ WorkbenchPage
 | 所属部门 | TreeSelect | N | 空=全公司通用 | 部门树 |
 | 职级范围 | Select multiple | Y | 随序列变化 | SEQUENCE_RANK_MAP |
 | 默认试用期(月) | InputNumber | Y | 1–6 | — |
+| 是否标准职位 | Switch | Y | false→入职触发二审 | — |
 | 职位描述 | TextArea | N | max 500 | — |
 
 序列变更时重置职级范围选项（见 Part II §A.3.2.2）。
@@ -264,7 +270,7 @@ WorkbenchPage
 | 关键词 | 姓名/工号/手机号模糊 | Input | N | string | — |
 | 部门 | 多选 | TreeSelect | N | number[] | 部门树 |
 | 职位 | 多选 | Select | N | number[] | 职位列表 |
-| 在职状态 | 多选 | Select | N | number[] | 10试用/20正式/30待离职/40已离职 |
+| 在职状态 | 多选 | Select | N | string[] | probation/regular/pending_resign/resigned（API 小写 snake_case） |
 | 职级 | 多选 | Select | N | string[] | M/P/S 职级 |
 | 入职日期 | 范围 | DatePicker.Range | N | date range | — |
 
@@ -273,12 +279,12 @@ WorkbenchPage
 | 字段名称 | 说明 | 默认值 |
 | --- | --- | --- |
 | 姓名 | name | — |
-| 工号 | emp_no（展示用） | — |
+| 工号 | empNo（展示用） | — |
 | 部门 | departmentName | — |
 | 职位 | positionName | — |
 | 职级 | gradeCode | — |
-| 在职状态 | employment_status → StatusTag | — |
-| 入职日期 | hire_date | — |
+| 在职状态 | employmentStatus → StatusTag | — |
+| 入职日期 | hireDate | — |
 
 ###### 操作按钮
 
@@ -323,9 +329,10 @@ WorkbenchPage
 | 接口 | 方法 | 路径 |
 | --- | --- | --- |
 | 员工详情 | GET | `/employees/{id}` |
-| 编辑档案 | PUT | `/employees/{id}` |
+| 编辑档案 | PUT | `/employees/{id}`（白名单：name/gender/email/birthday/address/emergencyContact/emergencyPhone） |
 | 薪资档案 | GET/PUT | `/employees/{id}/salary` |
 | 敏感字段 | GET | `/employees/{id}/sensitive/{field}`（二次验证后，记审计） |
+| 调岗历史 | GET | `/employees/{id}/transfer-history` |
 
 ---
 
@@ -345,7 +352,7 @@ WorkbenchPage
 | 字段名称 | 说明 | 输入方式 | 是否必填 | 字段类型 | 数据源 |
 | --- | --- | --- | --- | --- | --- |
 | 姓名 | — | Input | Y | string | — |
-| 性别 | — | Select | Y | number | 1男/2女 |
+| 性别 | — | Select | Y | string | male / female |
 | 手机号 | 登录账号 | Input | Y | string | 11位 |
 | 邮箱 | — | Input | Y | string | 邮箱格式 |
 | 身份证号 | — | Input | Y | string | 18位 |
@@ -355,6 +362,7 @@ WorkbenchPage
 | 录用类型 | — | Select | Y | string | fulltime/parttime/intern |
 | 试用期(月) | 默认取职位配置 | InputNumber | Y | number | — |
 | 试用薪资比例 | 0.80~1.00 | InputNumber | Y | number | — |
+| 约定薪资 | PRD §5.1.4 二审条件 | InputNumber | Y | number | 超职级触发 HR 二审 |
 | 直接汇报人 | 默认部门负责人 | EmployeeSelect | N | number | — |
 
 ###### 操作按钮
@@ -372,8 +380,10 @@ WorkbenchPage
 
 | 接口 | 方法 | 路径 |
 | --- | --- | --- |
-| 列表+统计 | GET | `/onboarding/applications` |
-| 新建/编辑 | POST/PUT | `/onboarding/applications` |
+| 列表 | GET | `/onboarding/applications` |
+| 统计卡片 | GET | `/onboarding/applications/stats`（draft/pending/approved_pending/onboarded 四色） |
+| 新建草稿 | POST | `/onboarding/applications` |
+| 编辑草稿 | PUT | `/onboarding/applications/{id}` |
 | 提交/撤回/确认/放弃 | POST | `.../submit` `.../withdraw` `.../confirm` `.../abandon` |
 | 删除草稿 | DELETE | `/onboarding/applications/{id}` |
 
@@ -392,7 +402,7 @@ WorkbenchPage
 | --- | --- |
 | 转正 | 待转正列表；表现评价必填；结果：通过/延长试用/不通过 |
 | 调岗 | 部门必选；ApprovalTimeline 三节点 |
-| 离职(HR) | last_work_day≥今天；原因分类+类型+交接人；统计卡片 |
+| 离职(HR) | lastWorkDay≥今天；原因分类+类型+交接人；统计卡片 |
 | 离职(员工) | 填写意向 → 审批通过后 HR 发起正式流程 |
 
 ##### 所需 API
@@ -400,11 +410,15 @@ WorkbenchPage
 | 接口 | 方法 | 路径 |
 | --- | --- | --- |
 | 待转正 | GET | `/regularization/applications/pending` |
-| 转正/调岗/离职 | POST | `/regularization/applications` `/transfers` `/resignations` |
+| 转正列表/发起 | GET/POST | `/regularization/applications` |
+| 调岗申请 | POST/GET | `/transfers`（约束：所属部门必须变更，否则 30004） |
+| 调岗详情 | GET | `/transfers/{id}` |
+| 离职申请（HR） | POST/GET | `/resignations` |
+| 离职详情 | GET | `/resignations/{id}` |
 | 离职统计 | GET | `/resignations/stats` |
+| 员工离职申请（HR 管理列表） | GET | `/resignation-requests` |
 | 员工离职申请（门户） | POST/GET | `/profile/resignation-requests` |
-| 员工离职申请（HR 列表） | GET | `/resignation-requests` |
-| 撤销员工离职申请 | POST | `/profile/resignation-requests/{id}/cancel` |
+| 撤销员工离职申请（门户） | POST | `/profile/resignation-requests/{id}/cancel` |
 
 ---
 
@@ -428,11 +442,16 @@ WorkbenchPage
 | 接口 | 方法 | 路径 |
 | --- | --- | --- |
 | 打卡 | POST | `/attendance/punch` |
-| 记录/补卡 | GET/POST | `/attendance/records` `/attendance/punch-fix` |
+| 今日打卡状态 | GET | `/attendance/punch/today` |
+| 打卡记录 | GET | `/attendance/punch/records` |
+| 补卡申请 | POST | `/attendance/punch-fix`（≤2次/月，否则 40002） |
 | 补卡配额 | GET | `/attendance/punch-fix/quota` |
-| 月汇总 | GET | `/attendance/monthly-summary` |
-| 考勤组/节假日 | CRUD | `/attendance/groups` `/attendance/holidays` |
-| 统计 | GET | `/attendance/statistics/personal` `/attendance/statistics/department` |
+| 月汇总/锁定 | GET/PUT | `/attendance/monthly-summary` |
+| 考勤组 CRUD | CRUD | `/attendance/groups` |
+| 节假日 CRUD | CRUD | `/attendance/holidays` |
+| 工作日设置 | GET/PUT | `/attendance/workdays` |
+| 个人统计 | GET | `/attendance/statistics/personal` |
+| 部门统计 | GET | `/attendance/statistics/department` |
 
 ---
 
@@ -445,18 +464,20 @@ WorkbenchPage
 
 ##### 前端逻辑
 
-**请假：** 0.5天步进；病假>1天/婚假/产假附件必填；审批中可取消；调休提示过期规则
+**请假：** 0.5天步进；病假>1天/婚假/产假附件必填；审批中可取消；调休当月及次月有效，过期清零（余额页面提示过期规则）
 
-**加班：** daily_total_hours≥4 黄色 Alert「将触发 HR 二审」
+**加班：** dailyTotalHours≥4 黄色 Alert「将触发 HR 二审」
 
 ##### 所需 API
 
 | 接口 | 方法 | 路径 |
 | --- | --- | --- |
-| 请假余额/申请 | GET/POST | `/leaves/balances` `/leaves/applications` |
+| 假期余额 | GET | `/leaves/balances` |
+| 请假申请/记录 | GET/POST | `/leaves/applications` |
 | 预览请假天数 | GET | `/leaves/calc-days` |
-| 撤销请假 | PUT | `/leaves/applications/{id}/cancel` |
-| 加班申请/记录 | POST/GET | `/overtime/applications` |
+| 撤销请假（管理端） | PUT | `/leaves/applications/{id}/cancel` |
+| 撤销请假（员工门户） | POST | `/profile/leave/applications/{id}/cancel`（见 §2.2.13） |
+| 加班申请/记录 | GET/POST | `/overtime/applications` |
 
 > HR 视角 `/admin/leave/list` 与管理端列表共用 `GET /leaves/applications`，数据范围由后端 `@DataScope` 过滤。
 
@@ -472,7 +493,7 @@ WorkbenchPage
 ##### 前端逻辑
 
 **核算详情：**
-- PayrollStepBar（草稿→计算中→待确认→审批中→已通过→已发放→归档）
+- PayrollStepBar（草稿→计算中→待确认→审批中→已通过→已发放；已驳回为分支终点）
 - 异常行：黄（请假>15天、加班>50h）、红（环比>30%、无档案）
 - 图表区（PRD 7.3.4）：成本趋势、部门分布、构成占比、社保对比、变动分布
 
@@ -492,10 +513,17 @@ WorkbenchPage
 | 接口 | 方法 | 路径 |
 | --- | --- | --- |
 | 账套 CRUD | CRUD | `/payroll/schemes` |
-| 批次 | POST/GET | `/payroll/batches` |
-| 计算/明细/图表 | POST/GET | `.../calculate` `.../details` `.../chart-data` |
+| 批次创建/列表 | POST/GET | `/payroll/batches` |
+| 批次详情/轮询 | GET | `/payroll/batches/{id}` |
+| 触发异步计算 | POST | `/payroll/batches/{id}/calculate` |
+| 核算明细（含异常标记） | GET | `/payroll/batches/{id}/details` |
+| 图表数据 | GET | `/payroll/batches/{id}/chart-data` |
+| 手工调整 | PUT | `/payroll/batches/{id}/details/{detailId}` |
+| 提交财务审批 | POST | `/payroll/batches/{id}/submit` |
+| 发放确认 | POST | `/payroll/batches/{id}/distribute` |
 | 成本报表 | GET | `/payroll/cost-report` |
-| 工资条 | GET | `/payslips` `/payslips/{month}` |
+| 工资条列表（HR/财务） | GET | `/payroll/payslips` |
+| 工资条详情（HR/财务） | GET | `/payroll/payslips/{month}` |
 
 ---
 
@@ -517,9 +545,11 @@ WorkbenchPage
 
 | 接口 | 方法 | 路径 |
 | --- | --- | --- |
-| 待办统计 | GET | `/approvals/tasks/stats` |
-| 待办/详情 | GET | `/approvals/tasks` `/approvals/tasks/{id}` |
-| 审批操作 | POST | `/approvals/tasks/{id}/action` |
+| 待办统计（含 `overdueCount`） | GET | `/approvals/tasks/stats` |
+| 待办列表（含 `dueAt` 截止时间） | GET | `/approvals/tasks` |
+| 审批详情 | GET | `/approvals/tasks/{id}` |
+| 审批操作 | POST | `/approvals/tasks/{id}/action`（`{ action: APPROVE/REJECT/FORWARD, comment?, targetUserId? }`；`comment` 在 REJECT 时为必填） |
+| 催办 | POST | `/approvals/tasks/{id}/remind` |
 | 撤回实例 | POST | `/approvals/instances/{id}/withdraw` |
 | 委托 CRUD | CRUD | `/approvals/delegations` |
 
@@ -532,13 +562,14 @@ WorkbenchPage
 | 数据迁移 | `/admin/import` | 5步向导：选类型→下模板→上传→预览→确认 | `/imports/templates/{type}` `/imports/batches` `.../commit` |
 | 用户/角色 | `/admin/system/users` `roles` | SYS_ADMIN | `GET/POST/PUT /system/users` `GET/PUT /system/roles/*` |
 | 操作日志 | `/admin/system/operation-logs` | SYS_ADMIN | `GET /system/operation-logs` |
+| 登录日志（全量） | `/admin/system/login-logs` | SYS_ADMIN | `GET /system/login-logs` |
 | 数据备份 | `/admin/system/backup` | SYS_ADMIN 触发 | `POST /system/backup` |
 | 我的档案 | `/portal/profile` | 可编辑邮箱/地址/紧急联系人 | `GET/PUT /profile/me` |
 | 我的考勤 | `/portal/attendance` | 日历、打卡、补卡入口 | `/profile/attendance/*` |
 | 我的请假 | `/portal/leave` | 余额、申请、撤销 | `/profile/leave/*` |
 | 我的薪资 | `/portal/salary` | 工资条列表、趋势、二次验证 | `/profile/payslips/*` |
 | 离职申请 | `/portal/resignation/apply` | 员工发起离职意向 | `/profile/resignation-requests` |
-| 账号安全 | `/portal/security` | 改密、手机绑定、登录日志 | `PUT /auth/password` `PUT/DELETE /auth/mobile` `GET /system/login-logs` |
+| 账号安全 | `/portal/security` | 改密、手机绑定、登录日志 | `PUT /profile/security/password` `POST/DELETE /profile/security/mobile/*` `GET /profile/security/login-logs` |
 | 手机号变更申请 | `/portal/profile`（入口） | 档案页「申请变更」 | `POST/GET /profile/mobile-change-applications` |
 
 ---
@@ -561,15 +592,15 @@ WorkbenchPage
 frontend/src/
 ├── access.ts / app.tsx / global.less
 ├── constants/          # 枚举、状态色
-├── services/           # Umi request API
+├── services/           # Umi request API（17 个模块：auth/department/position/employee/.../workbench）
 ├── hooks/              # TanStack Query
 ├── stores/             # Zustand
-├── components/         # 业务组件 + charts/
+├── components/         # 业务组件（business/ + charts/）
 ├── layouts/            # AdminLayout、PortalLayout
 ├── pages/
 │   ├── login/
-│   ├── admin/          # 管理后台
-│   └── portal/         # 员工端
+│   ├── admin/          # 管理后台：Dashboard/Organization/Employee/Workflow/Attendance/Leave/Overtime/Payroll/Approval/Import/System
+│   └── portal/         # 员工端：Profile/Attendance/Leave/Overtime/Salary/ResignationApply/Security
 └── typings/
 ```
 
@@ -577,13 +608,13 @@ frontend/src/
 
 | 门户页面（`/portal/*`） | 对应 API（`/api/v1`） |
 | --- | --- |
-| `/portal/profile` | `GET/PUT /profile/me`；手机号变更 `POST /profile/mobile-change-applications` |
+| `/portal/profile` | `GET/PUT /profile/me`；手机号变更 `POST/GET /profile/mobile-change-applications`、撤销 `POST /profile/mobile-change-applications/{id}/cancel` |
 | `/portal/attendance` | `GET /profile/attendance/calendar`；打卡 `POST /profile/attendance/punch`；补卡 `POST /profile/attendance/punch-fix` |
-| `/portal/leave` | `GET /profile/leave/balances` `GET/POST /profile/leave/applications`；撤销 `POST .../cancel` |
-| `/portal/overtime` | `POST/GET /overtime/applications`（管理端同路径，数据范围 SELF） |
-| `/portal/salary` | `GET /profile/payslips` `/profile/payslips/trend`；验证 `POST /profile/payslips/verify` |
-| `/portal/resignation/apply` | `POST/GET /profile/resignation-requests` |
-| `/portal/security` | `PUT /auth/password` `PUT/DELETE /auth/mobile` `GET /system/login-logs` |
+| `/portal/leave` | `GET /profile/leave/balances` `GET/POST /profile/leave/applications` `GET /profile/leave/applications/{id}`（含审批进度 Timeline）；撤销 `POST /profile/leave/applications/{id}/cancel`（**注意：管理端撤销为 `PUT /leaves/applications/{id}/cancel`**） |
+| `/portal/overtime` | `GET/POST /profile/overtime/applications`（门户规范路径，强制 SELF 数据范围） |
+| `/portal/salary` | `GET /profile/payslips` `GET /profile/payslips/trend` `GET /profile/payslips/{period}`（须先验证）`GET /profile/payslips/{period}/pdf`；验证 `POST /profile/payslips/verify` |
+| `/portal/resignation/apply` | `POST/GET /profile/resignation-requests`；撤销 `POST /profile/resignation-requests/{id}/cancel` |
+| `/portal/security` | `PUT /profile/security/password`；绑定 `POST /profile/security/mobile/bind`、解绑 `DELETE /profile/security/mobile`；日志 `GET /profile/security/login-logs`（登录页首次改密可用 `PUT /auth/password`，契约 §5.12.1） |
 
 > `GET /auth/profile` 返回的 `dataScope` 取值：`ALL` / `DEPT_TREE` / `SELF` / `PAYROLL` / `NONE_PAYROLL`（与后端 §2.2.1 一致）。
 
@@ -613,7 +644,7 @@ frontend/src/
 
 #### 通用组件
 
-StatusTag、ApprovalTimeline、SensitiveField、FieldGuard、PayrollStepBar、ImportWizard、DepartmentTree、EmployeeSelect、charts/*
+StatusTag、ApprovalTimeline、SensitiveField、FieldGuard、PayrollStepBar、ImportWizard、DepartmentTree、EmployeeSearchSelect、ApprovalActions、ProcessTypeTag、ApprovalDetailRenderer、PunchButton、AttendanceStatusTag、LeaveBalanceGauge、PayrollAnomalyTag、PayslipModal、PayslipVerifyModal、charts/*
 
 ##### 国际化
 
@@ -639,7 +670,7 @@ V1.0 仅中文，无 i18n 要求。后续扩展预留 `locales/zh-CN.ts`。
 | 薪资管理 | 账套/核算/工资条/成本报表 | `/admin/payroll/*` | HR_STAFF, FINANCE（**SYS_ADMIN 不可见**） |
 | 审批中心 | 待办/委托 | `/admin/approval/*` | 有审批权限角色 |
 | 数据迁移 | — | `/admin/import` | HR_STAFF |
-| 系统设置 | 用户/角色/日志/备份 | `/admin/system/*` | SYS_ADMIN |
+| 系统设置 | 用户/角色/操作日志/登录日志/备份 | `/admin/system/*` | SYS_ADMIN |
 
 ### 2.3.2 员工门户菜单（PortalLayout）
 
@@ -748,6 +779,9 @@ V1.0 暂无前端埋点要求。建议预留：
 | 1.6 | 2026-07-10 | 合并系分1.1 + 前端系统分析设计 |
 | 1.7 | 2026-07-10 | 对齐后端附录 H/K；统一 `/portal/*` 页面路由；新增附录 E |
 | 1.8 | 2026-07-10 | 同步后端 v1.7 补全项；附录 E 收口 |
+| 1.8.1 | 2026-07-10 | 契约对齐 PRD：门户安全 API、请假撤销分路径 |
+| 1.8.2 | 2026-07-11 | 统一契约锚点：Part I/II 全量对齐 HRMS-API-Contract v1.0.0 |
+| 1.8.3 | 2026-07-11 | 修正契约章节引用（§5 API / §6 错误码 / §7 枚举 / §8 路由）；Part II 枚举注释同步 |
 
 ## 5.4 项目总结 / 复盘
 
@@ -757,18 +791,23 @@ V1.0 暂无前端埋点要求。建议预留：
 
 ## 附录 A：完整 API 清单
 
-完整列表参考《系分(1)/HRMS-Backend-System-Design.md》Part I 附录 H 及 OpenAPI YAML。
+完整列表以 **[HRMS-API-Contract.md §5](HRMS-API-Contract.md#5-api-总表)** 为准；后端系分附录 H 为同步副本；机器可读见 `hrms-server/openapi.yaml`。
 
 ## 附录 B：枚举清单
 
-| 枚举 | 值 |
-| --- | --- |
-| employment_status | 10试用 / 20正式 / 30待离职 / 40已离职 |
-| 入职状态 | draft / pending / approved_pending / rejected / onboarded / abandoned（API；DB 映射见后端附录 I） |
-| 录用类型 | fulltime / parttime / intern |
-| 请假类型 | annual / sick / personal / marriage / maternity / bereavement / compensatory |
-| 薪资批次 | 10草稿 ~ 80驳回 |
-| 打卡状态 | normal / late / early_leave / absent / missing_in / missing_out |
+> **权威来源**：[HRMS-API-Contract.md §7](HRMS-API-Contract.md#7-业务枚举)。下表为前端开发速查；**请求/响应 JSON 必须使用 API 列**。
+
+| 枚举 | API 值（JSON） | DB/内部（后端映射） |
+| --- | --- | --- |
+| 在职状态 | `probation` / `regular` / `pending_resign` / `resigned` | 10 / 20 / 30 / 40 |
+| 入职状态 | `draft` / `pending` / `approved_pending` / `rejected` / `onboarded` / `abandoned` | DRAFT / APPROVING / APPROVED / … |
+| 录用类型 | `fulltime` / `parttime` / `intern` | — |
+| 请假类型 | `annual` / `sick` / `personal` / `marriage` / `maternity` / `bereavement` / `compensatory` | ANNUAL / SICK / … |
+| 薪资批次 | `draft` / `calculating` / `pending_confirm` / `approving` / `approved` / `distributed` / `rejected` | 10~80 编码 |
+| 审批状态 | `pending` / `approved` / `rejected` / `cancelled` | — |
+| processType | `ONBOARDING` / `REGULARIZATION` / `TRANSFER` / `RESIGNATION` / `RESIGNATION_REQUEST` / `MOBILE_CHANGE` / `LEAVE` / `MAKEUP` / `OVERTIME` / `PAYROLL_BATCH`（全大写） | 契约 §7.8 |
+| 班制类型 | `fixed` / `flexible` / `schedule` | FIXED / … |
+| 打卡状态 | `normal` / `late` / `early_leave` / `absent` / `missing_in` / `missing_out` | — |
 
 ## 附录 C：状态颜色（PRD 12.1）
 
@@ -793,18 +832,20 @@ V1.0 暂无前端埋点要求。建议预留：
 
 ## 附录 E：契约补全记录
 
-> 后端 v1.7 已补全下列缺口（**不含增强项**）。未列入 V1.0 的能力见 §A.9.7。
+> 契约 v1.0.0 已覆盖下列项（**不含增强项**）。未列入 V1.0 的能力见 §A.9.7。
 
-### 已补全（前后端已对齐）
+### 已对齐（契约 §5~§11）
 
-| 编号 | 项 | 后端位置 | 前端落点 |
+| 编号 | 项 | 契约章节 | 前端落点 |
 | --- | --- | --- | --- |
-| E-1 | 用户/角色 REST | 附录 H `/system/users` `/system/roles/*`；§2.2.10 | §2.2.12 |
-| E-3 | GPS 越界 | 附录 K `40004` | §A.5.3 |
-| E-4 | 工资条状态 | 附录 K `50005` | §A.5.3 |
-| E-5 | 二次验证路径 | 附录 K.5 | 门户 `POST /profile/payslips/verify` |
-| E-7 | 入职状态映射 | 附录 I API↔DB | 附录 B + Part I §2.2.6 |
-| E-9 | HR 手机号变更 | 附录 H `GET /employees/mobile-change-applications` | §A.5.2 |
+| E-1 | 用户/角色 REST | §5.11 | §2.2.12 |
+| E-3 | GPS 越界 `40004` | §6 | §A.5.3 |
+| E-4 | 工资条状态 `50005` | §6 | §A.5.3 |
+| E-5 | 二次验证路径 | §5.12.1 | `POST /profile/payslips/verify` |
+| E-7 | 入职状态 API 枚举 | §7.2 | 附录 B、§2.2.6、§A.3.4.1 |
+| E-9 | HR 手机号变更 | §5.3 | §A.5.2 |
+| E-10 | 账号安全路径 | §5.12.1 | §2.2.13 `/portal/security` |
+| E-11 | 请假撤销分路径 | §5.12.2 | 管理端 PUT；门户 POST |
 
 ### 不增强 / V1.0 不做（前端已降级）
 
@@ -824,14 +865,16 @@ V1.0 暂无前端埋点要求。建议预留：
 | §2.2.2 工作台 | §A.3.7 Dashboard |
 | §2.2.3~2.2.5 组织/员工 | §A.3.2、§A.3.3 |
 | §2.2.3a 职位 | §A.3.2.2 |
-| §2.2.6~2.2.7 入转调离 | §A.3.4 |
-| §2.2.8~2.2.9 考勤请假 | §A.3.5 |
-| §2.2.10 薪资 | §A.3.6 |
+| §2.2.6 入职 | §A.3.4.1 |
+| §2.2.7 入转调离 | §A.3.4.2~4 |
+| §2.2.8 考勤 | §A.3.5.1~2、§A.3.5.4 |
+| §2.2.9 请假/加班 | §A.3.5.3、§A.3.10~11 |
+| §2.2.10 薪资 | §A.3.6、§A.3.12 |
 | §2.2.11 审批 | §A.3.8 |
-| §2.2.12 门户/系统 | §A.3.9 |
+| §2.2.12 门户/系统/迁移 | §A.3.9、§A.3.10 |
 | §2.2.13 通用技术 | §A.1~§A.5 |
-| 附录 A API | 后端 [附录 H](HRMS-Backend-System-Design.md#附录-h最终-api-总表) |
-| 附录 E 待补契约 | 需后端补充项清单 |
+| 附录 A API | [HRMS-API-Contract.md §5](HRMS-API-Contract.md#5-api-总表) |
+| 附录 E 契约索引 | [HRMS-API-Contract.md](HRMS-API-Contract.md) |
 
 # Part II · 技术实现详设
 
@@ -847,7 +890,8 @@ V1.0 暂无前端埋点要求。建议预留：
 |----|------|
 | PRD 文件 | [`人资管理系统-PRD.md`](../人资管理系统-PRD.md) |
 | PRD 版本 | 1.0（2026-07-07） |
-| 配套后端系分 | [`HRMS-Backend-System-Design.md`](../HRMS-Backend-System-Design.md) |
+| 配套后端系分 | [`HRMS-Backend-System-Design(2).md`](HRMS-Backend-System-Design(2).md) v1.7.3 |
+| API 契约锚点 | [`HRMS-API-Contract.md`](HRMS-API-Contract.md) v1.0.0 |
 | 工程目录 | `frontend/`（Umi Max）、`backend/`（Spring Boot） |
 
 ### PRD 章节 → 系分章节索引
@@ -902,7 +946,7 @@ V1.0 暂无前端埋点要求。建议预留：
 | §12.2 文档说明 | 本文档即 PRD 所指的系统分析交付物（前端部分） | ✅ 完整 |
 
 
-> **API 路径权威来源**：Part I §2.2 各页「所需 API」+ 后端 [附录 H](HRMS-Backend-System-Design.md#附录-h最终-api-总表)。下表为 Part II 开发参考摘要；与 Part I / 后端不一致时以后端附录 H 为准。统一前缀：`/api/v1`。
+> **API 路径权威来源**：[HRMS-API-Contract.md §5](HRMS-API-Contract.md#5-api-总表)。下表为 Part II 开发摘要；与 Part I / 契约不一致时**以契约为准**。统一前缀：`/api/v1`。
 
 ---
 
@@ -1050,78 +1094,169 @@ src/
 │   ├── useUserStore.ts
 │   ├── usePermissionStore.ts
 │   └── useOrgTreeStore.ts
-├── services/                 # API 层
-│   ├── auth.ts
-│   ├── department.ts
-│   ├── position.ts
-│   ├── employee.ts
-│   ├── onboarding.ts         # §5.1
-│   ├── regularization.ts   # §5.2
-│   ├── transfer.ts           # §5.3
-│   ├── resignation.ts        # §5.4
-│   ├── workflow.ts           # 审批待办/操作
-│   ├── attendance.ts         # §6 考勤/请假/统计
-│   ├── payroll.ts            # §7 账套/核算/工资条
-│   ├── delegation.ts         # §8.3 委托审批
-│   └── profile.ts              # §9 个人中心
+├── services/                 # API 层（与后端接口模块一一对应）
+│   ├── workbench.ts          # §2.2.2 工作台（/workbench/summary）
+│   ├── auth.ts               # §2.2.1 认证（/auth/*）
+│   ├── department.ts         # §2.2.3 部门（/departments/*）
+│   ├── position.ts           # §2.2.3a 职位（/positions）
+│   ├── employee.ts           # §2.2.4~5 员工（/employees/*）
+│   ├── onboarding.ts         # §2.2.6 入职（/onboarding/applications/*）
+│   ├── regularization.ts     # §2.2.7 转正（/regularization/applications/*）
+│   ├── transfer.ts           # §2.2.7 调岗（/transfers/*）
+│   ├── resignation.ts        # §2.2.7 离职（/resignations/*、/resignation-requests）
+│   ├── attendance.ts         # §2.2.8 考勤（/attendance/*）
+│   ├── leave.ts              # §2.2.9 请假（/leaves/*、/profile/leave/*）
+│   ├── overtime.ts           # §2.2.9 加班（/overtime/applications）
+│   ├── payroll.ts            # §2.2.10 薪资（/payroll/*）
+│   ├── workflow.ts           # §2.2.11 审批待办/操作（/approvals/tasks/*、.../instances/*）
+│   ├── delegation.ts         # §2.2.11 委托审批（/approvals/delegations）
+│   ├── imports.ts            # §2.2.12 数据迁移（/imports/*）
+│   ├── system.ts             # §2.2.12 系统设置（/system/*）
+│   └── profile.ts            # §2.2.12 个人中心（/profile/*）
 ├── components/
-│   ├── FieldGuard/
-│   ├── DeptTreeSelect/
-│   ├── EmployeeStatusTag/
-│   ├── SensitiveField/
-│   ├── ApprovalActions/
-│   ├── ApprovalTimeline/
-│   ├── ProcessStatusTag/
-│   ├── EmployeeSearchSelect/
-│   ├── PunchButton/            # 打卡按钮+状态
-│   ├── AttendanceStatusTag/    # 打卡/日状态 Tag 配色
-│   ├── LeaveBalanceGauge/      # 假期余额环形图
-│   ├── PayslipModal/           # 工资条弹窗
-│   ├── PayrollAnomalyTag/      # 核算异常 Tag
-│   ├── ProcessTypeTag/         # 审批类型 Tag（§8.1）
-│   └── ApprovalDetailRenderer/ # 按 processType 渲染详情（§8.2）
+│   ├── business/               # 业务组件
+│   │   ├── DepartmentTree/         # 部门树组件（含节点人数）
+│   │   ├── DeptTreeSelect/         # 部门 TreeSelect（通用）
+│   │   ├── EmployeeSearchSelect/   # 员工搜索选择器
+│   │   ├── EmployeeStatusTag/      # 在职状态 Tag（probation/regular/pending_resign/resigned）
+│   │   ├── ProcessStatusTag/       # 流程状态 Tag（draft/pending/approved等）
+│   │   ├── ProcessTypeTag/         # 审批类型 Tag（ONBOARDING/REGULARIZATION/TRANSFER等）
+│   │   ├── FieldGuard/             # 字段级权限封装
+│   │   ├── SensitiveField/         # 敏感字段脱敏+二次验证
+│   │   ├── ApprovalActions/        # 审批操作按钮组（APPROVE/REJECT/FORWARD）
+│   │   ├── ApprovalTimeline/       # 审批进度时间线
+│   │   ├── ApprovalDetailRenderer/ # 按 processType 动态渲染审批详情
+│   │   ├── PunchButton/            # 打卡按钮（IN/OUT）
+│   │   ├── AttendanceStatusTag/    # 打卡状态 Tag（normal/late/early_leave等）
+│   │   ├── LeaveBalanceGauge/      # 假期余额环形图
+│   │   ├── PayrollStepBar/         # 批次状态 Steps 组件
+│   │   ├── PayrollAnomalyTag/      # 核算异常 Tag（黄/红）
+│   │   ├── PayslipVerifyModal/     # 工资条二次验证弹窗
+│   │   ├── PayslipModal/           # 工资条展示弹窗
+│   │   └── ImportWizard/           # 5 步导入向导组件
+│   └── charts/                 # AntV 图表封装
+│       ├── LineChart/
+│       ├── ColumnChart/
+│       ├── PieChart/
+│       └── CalendarHeatmap/     # 考勤日历热力图（ECharts备选）
 ├── pages/
-│   ├── Dashboard/
-│   ├── System/
-│   │   ├── Role/
-│   │   └── User/
-│   ├── Organization/
-│   │   ├── Department/
-│   │   └── Position/
-│   ├── Employee/
-│   │   ├── List/
-│   │   └── Detail/
-│   └── Workflow/               # §5 流程管理
-│       ├── Onboarding/         # §5.1 入职管理
-│       │   ├── List/
-│       │   └── components/CreateModal.tsx
-│       ├── Regularization/     # §5.2 转正管理
-│       ├── Transfer/           # §5.3 调岗管理
-│       ├── Resignation/        # §5.4 离职管理
-│       └── Approval/           # 已迁移至 pages/Approval/（§8）
-│   └── Attendance/               # §6 考勤管理
-│       ├── Punch/                # §6.2 打卡中心
-│       ├── Rules/                # §6.1 考勤规则配置
-│       ├── Leave/                # §6.3 请假管理
-│       └── Statistics/           # §6.4 考勤统计
-│   └── Payroll/                  # §7 薪资管理
-│       ├── Schemes/              # §7.1 薪资账套
-│       ├── EmployeeSalary/       # §7.2 员工薪资
-│       ├── Batches/              # §7.3 月度核算
-│       │   ├── List/
-│       │   └── Preview/          # 核算预览+图表
-│       └── Payslips/             # §7.4 工资条管理
-│   └── Approval/                 # §8 审批中心（独立一级菜单）
-│       ├── Workbench/            # §8.2 审批工作台
-│       │   ├── index.tsx         # 待办/已办列表
-│       │   └── Detail.tsx        # 审批详情
-│       └── Delegation/           # §8.3 委托审批设置
-│   └── Profile/                  # §9 个人中心（员工自助）
-│       ├── index.tsx             # §9.1 我的档案
-│       ├── Attendance/           # §9.2 我的考勤
-│       ├── Leave/                # §9.3 我的请假
-│       ├── Salary/               # §9.4 我的薪资
-│       └── Security/             # §9.5 账号安全
+│   ├── login/                   # §2.2.1 登录页（无 Layout）
+│   ├── admin/
+│   │   ├── Dashboard/           # §2.2.2 工作台
+│   │   │   ├── index.tsx
+│   │   │   ├── components/
+│   │   │   │   ├── StatCards.tsx
+│   │   │   │   ├── QuickLinks.tsx
+│   │   │   │   ├── VisitTrendChart.tsx
+│   │   │   │   └── RecentOperations.tsx
+│   │   ├── Organization/        # §2.2.3~3a 组织架构
+│   │   │   ├── Department/
+│   │   │   │   ├── index.tsx
+│   │   │   │   ├── DeptForm.tsx
+│   │   │   │   ├── DeptMergeModal.tsx
+│   │   │   │   └── DeptDeleteConfirm.tsx
+│   │   │   └── Position/
+│   │   │       ├── index.tsx
+│   │   │       └── PositionForm.tsx
+│   │   ├── Employee/            # §2.2.4~5 员工档案
+│   │   │   ├── List/
+│   │   │   │   ├── index.tsx
+│   │   │   │   └── columns.tsx
+│   │   │   └── Detail/
+│   │   │       ├── index.tsx
+│   │   │       ├── PersonalInfo.tsx
+│   │   │       ├── WorkInfo.tsx
+│   │   │       ├── SalaryTab.tsx
+│   │   │       └── EditPage.tsx
+│   │   ├── Workflow/            # §2.2.6~7 入转调离
+│   │   │   ├── Onboarding/
+│   │   │   │   ├── List/
+│   │   │   │   │   ├── index.tsx
+│   │   │   │   │   └── StatCards.tsx
+│   │   │   │   └── components/
+│   │   │   │       ├── CreateModal.tsx
+│   │   │   │       └── DetailDrawer.tsx
+│   │   │   ├── Regularization/
+│   │   │   │   ├── index.tsx
+│   │   │   │   └── components/
+│   │   │   ├── Transfer/
+│   │   │   │   ├── index.tsx
+│   │   │   │   └── components/
+│   │   │   └── Resignation/
+│   │   │       ├── index.tsx
+│   │   │       └── components/
+│   │   ├── Attendance/          # §2.2.8 考勤管理
+│   │   │   ├── Punch/
+│   │   │   │   ├── index.tsx
+│   │   │   │   └── PunchFixModal.tsx
+│   │   │   ├── Groups/
+│   │   │   │   └── index.tsx    # 考勤规则配置
+│   │   │   ├── Records/
+│   │   │   │   └── index.tsx    # 打卡记录
+│   │   │   ├── MonthlySummary/
+│   │   │   │   └── index.tsx    # 月汇总
+│   │   │   ├── Holidays/
+│   │   │   │   └── index.tsx    # 法定节假日
+│   │   │   └── Statistics/
+│   │   │       └── index.tsx    # 考勤统计（个人/部门维度）
+│   │   ├── Leave/               # §2.2.9 请假管理
+│   │   │   ├── List/
+│   │   │   │   └── index.tsx
+│   │   │   └── components/
+│   │   │       └── LeaveApplyDrawer.tsx
+│   │   ├── Overtime/            # §2.2.9 加班管理
+│   │   │   └── List/
+│   │   │       └── index.tsx
+│   │   ├── Payroll/             # §2.2.10 薪资管理
+│   │   │   ├── Schemes/
+│   │   │   │   └── index.tsx
+│   │   │   ├── EmployeeSalary/
+│   │   │   │   └── index.tsx
+│   │   │   ├── Batches/
+│   │   │   │   ├── List/
+│   │   │   │   │   └── index.tsx
+│   │   │   │   └── Preview/
+│   │   │   │       └── index.tsx
+│   │   │   ├── Payslips/
+│   │   │   │   └── index.tsx
+│   │   │   └── CostReport/
+│   │   │       └── index.tsx
+│   │   ├── Approval/            # §2.2.11 审批中心
+│   │   │   ├── Workbench/
+│   │   │   │   ├── index.tsx
+│   │   │   │   └── Detail.tsx
+│   │   │   └── Delegation/
+│   │   │       └── index.tsx
+│   │   ├── Import/              # §2.2.12 数据迁移
+│   │   │   └── index.tsx
+│   │   └── System/              # §2.2.12 系统设置
+│   │       ├── User/
+│   │       │   └── index.tsx
+│   │       ├── Role/
+│   │       │   └── index.tsx
+│   │       ├── OperationLog/
+│   │       │   └── index.tsx
+│   │       ├── LoginLog/
+│   │       │   └── index.tsx
+│   │       └── Backup/
+│   │           └── index.tsx
+│   └── portal/                  # §2.2.12 员工门户
+│       ├── Profile/
+│       │   ├── index.tsx
+│       │   └── MobileChangeModal.tsx
+│       ├── Attendance/
+│       │   └── index.tsx
+│       ├── Leave/
+│       │   └── index.tsx
+│       ├── Overtime/
+│       │   └── index.tsx
+│       ├── Salary/
+│       │   ├── index.tsx
+│       │   └── PayslipVerifyModal.tsx
+│       ├── ResignationApply/
+│       │   └── index.tsx
+│       └── Security/
+│           └── index.tsx
 └── constants/
     ├── enums.ts
     ├── fieldSchemas/
@@ -1272,7 +1407,7 @@ PRD §4.2.3 列表操作可见性：
 | 查看详情 | 有行级查看权限 |
 | 编辑 | `employee:edit` + 字段可编辑（§4.1 可编辑性） |
 | 调岗/离职 | 员工状态为试用期/正式 + `workflow:transfer` / `workflow:resign` |
-| 确认入职 | 状态 APPROVED + `onboarding:confirm` |
+| 确认入职 | API `status=approved_pending` + 权限 `onboarding:confirm` → `POST .../confirm` |
 
 #### A.3.1.4 权限缓存策略
 
@@ -1356,6 +1491,7 @@ export const SEQUENCE_RANK_MAP = {
 | 所属部门 | `DeptTreeSelect` | 可选，空=全公司通用 |
 | 职级范围 | `Select` mode="multiple" | 必填，选项随序列变化 |
 | 默认试用期 | `InputNumber` | 必填，1–6 月 |
+| 是否标准职位 | `Switch` | false→入职触发二审 |
 | 职位描述 | `TextArea` | 可选 |
 
 #### A.3.2.3 部门树性能优化
@@ -1455,17 +1591,17 @@ export const personalInfoSchema: FieldSchema[] = [
 <ProTable<EmployeeListItem>
   columns={columns}
   request={async (params) => {
-    const { current, pageSize, keyword, deptIds, positionIds, statuses, levels, onboardDateRange } = params;
+    const { current, pageSize, keyword, departmentIds, positionIds, employmentStatus, gradeLevels, hireDateRange } = params;
     return employeeService.list({
       page: current,
       size: pageSize,
       keyword,
-      deptIds: deptIds?.join(','),
+      departmentIds: departmentIds?.join(','),
       positionIds: positionIds?.join(','),
-      statuses: statuses?.join(','),
-      levels: levels?.join(','),
-      onboardStart: onboardDateRange?.[0],
-      onboardEnd: onboardDateRange?.[1],
+      employmentStatus: employmentStatus?.join(','),
+      gradeLevels: gradeLevels?.join(','),
+      hireDateFrom: hireDateRange?.[0],
+      hireDateTo: hireDateRange?.[1],
     });
   }}
   toolBarRender={() => [
@@ -1533,15 +1669,15 @@ interface ApprovalActionsProps {
 // 渲染：通过 / 拒绝(Modal填意见) / 转交(UserSelect) / 撤回(Confirm)
 ```
 
-**状态 Tag 配色**（`ProcessStatusTag`）：
+**状态 Tag 配色**（`ProcessStatusTag`，**按 API 状态值**映射，契约 §7.2）：
 
-| 状态 | 颜色 | 场景 |
+| API status | 颜色 | 场景 |
 |-----|------|------|
-| DRAFT | default | 草稿 |
-| APPROVING | processing | 审批中 |
-| APPROVED / PENDING_RESIGN | warning | 待入职/待离职 |
-| ONBOARDED / REGULAR / RESIGNED | success | 已完成 |
-| REJECTED | error | 已拒绝 |
+| draft | default | 草稿 |
+| pending | processing | 审批中 |
+| approved_pending / pending_resign | warning | 待入职/待离职 |
+| onboarded / regular / resigned | success | 已完成 |
+| rejected / abandoned | error | 已拒绝/已放弃 |
 
 #### A.3.4.1 入职管理（§5.1）
 
@@ -1557,7 +1693,7 @@ graph TB
     TABLE -->|"新建入职申请"| MODAL
 ```
 
-**统计卡片**：调用 `GET /api/v1/onboarding/applications/stats`，四色卡片对应 `draft / approving / approved / onboarded`。
+**统计卡片**：调用 `GET /api/v1/onboarding/applications/stats`，四色卡片对应 API 状态 `draft` / `pending` / `approved_pending` / `onboarded`（契约 §7.2）。
 
 **列表列**（PRD §4.2.1）：姓名、工号、部门、职位、职级、在职状态、入职日期、操作。
 
@@ -1565,16 +1701,16 @@ graph TB
 
 **列表列（入职）**：姓名（头像+手机号）、部门、职位、录用类型、预计入职日期、状态、操作。
 
-**操作列按状态**：
+**操作列按状态**（`status` 为 API 值）：
 
-| 状态 | 操作（HR） | 操作（审批人） |
+| status | 操作（HR） | 操作（审批人） |
 |-----|-----------|--------------|
-| DRAFT | 编辑、删除、提交 | — |
-| APPROVING | 撤回 | — |
-| APPROVING | — | —（详情页审批） |
-| APPROVED | 确认入职、修改日期、放弃 | 查看 |
-| REJECTED | 重新发起 | — |
-| ONBOARDED | 查看 | 查看 |
+| draft | 编辑、删除、提交 | — |
+| pending | 撤回 | — |
+| pending | — | —（详情页审批） |
+| approved_pending | 确认入职、修改日期、放弃 | 查看 |
+| rejected | 重新发起 | — |
+| onboarded | 查看 | 查看 |
 
 **新建申请 Modal**（§5.1.3 字段）：
 
@@ -1588,9 +1724,10 @@ graph TB
   <ProFormDatePicker name="expectedOnboardDate" label="预计入职日期" />
   <DeptTreeSelect name="departmentId" label="所属部门" />
   <ProFormSelect name="positionId" label="职位" dependencies={['departmentId']} />
-  <ProFormRadio.Group name="onboardType" label="录用类型" options={ONBOARD_TYPES} />
+  <ProFormSelect name="employmentType" label="录用类型" options={EMPLOYMENT_TYPES} /> {/* fulltime/parttime/intern */}
   <ProFormDigit name="probationMonths" label="试用期(月)" /* 选职位后自动填充 */ />
   <ProFormDigit name="probationSalaryRatio" label="试用期薪资比例" fieldProps={{ min: 0.8, max: 1, step: 0.05 }} />
+  <ProFormDigit name="baseSalary" label="约定薪资" rules={[{ required: true }]} />
   <ProFormSelect name="managerId" label="直接汇报人" /* 默认部门负责人 */ />
 </ModalForm>
 ```
@@ -1605,13 +1742,13 @@ graph TB
 
 **发起转正 Drawer**：
 
-| 字段 | 组件 | 说明 |
-|-----|------|------|
-| 员工信息 | `Descriptions` | 只读，系统带出 |
-| 试用期起止 | `DatePicker` | 只读 |
-| 试用期表现评价 | `TextArea` | 必填 |
-| 转正后薪资调整 | `InputNumber` | 可选，填写后提示需额外审批 |
-| 审批结果 | `Radio` | 通过 / 延长试用 / 不通过 |
+| 字段 | API 字段名 | 组件 | 说明 |
+|-----|-----------|------|------|
+| 员工信息 | `employeeId` | `Descriptions` | 只读，系统带出 |
+| 试用期起止 | — | `DatePicker` | 只读 |
+| 试用期表现评价 | `performanceEvaluation` | `TextArea` | 必填 |
+| 转正后薪资调整 | `salaryAdjustment` | `InputNumber` | 可选，填写后提示需额外审批 |
+| 审批结果 | `approvalResult` | `Radio` | PASS / EXTEND / FAIL |
 
 审批进度：`Steps` 两步 — 部门负责人 → HR 负责人。
 
@@ -1662,13 +1799,15 @@ graph TB
 
 **发起离职 Drawer**（§5.4.3，HR 正式离职）：
 
-| 字段 | 组件 | 校验 |
-|-----|------|------|
-| 关联申请 | `Select` | 必填，来自已批准的 `resignation-requests` |
-| 员工姓名 | `EmployeeSearchSelect` | 必填，选择申请后自动带出 |
-| 离职日期 | `DatePicker` | 必填，≥ 今天 |
-| 离职原因 | `Select` + `Select` + `TextArea` | 原因分类 + 类型 + 详细说明 |
-| 工作交接人 | `EmployeeSearchSelect` | 必填 |
+| 字段 | API 字段名 | 组件 | 校验 |
+|-----|-----------|------|------|
+| 关联申请 | `requestId` | `Select` | 必填，来自已批准的员工离职申请 |
+| 员工姓名 | `employeeId` | `EmployeeSearchSelect` | 必填，选择申请后自动带出 |
+| 离职日期 | `lastWorkDay` | `DatePicker` | 必填，≥ 今天 |
+| 离职原因分类 | `reasonCategory` | `Select` | VOLUNTARY / INVOLUNTARY / NEGOTIATED |
+| 离职类型 | `resignationType` | `Select` | resignation / dismissal / contract_expiry / other |
+| 详细说明 | `reasonDetail` | `TextArea` | 可选 |
+| 工作交接人 | `handoverEmployeeId` | `EmployeeSearchSelect` | 必填 |
 
 **列表列**：员工姓名、部门、职位、离职类型、离职日期、交接人、状态、操作（查看详情）。
 
@@ -1676,12 +1815,12 @@ graph TB
 
 **入口**：个人中心 `/portal/resignation/apply` 或档案页「申请离职」。
 
-| 字段 | 组件 | 说明 |
-|-----|------|------|
-| 期望离职日期 | `DatePicker` | ≥ 今天 |
-| 离职原因分类 | `Select` | 主动/被动/协商 |
-| 离职类型 | `Select` | 辞职/辞退/合同到期等 |
-| 详细说明 | `TextArea` | 可选 |
+| 字段 | API 字段名 | 组件 | 说明 |
+|-----|-----------|------|------|
+| 期望离职日期 | `expectedResignDate` | `DatePicker` | ≥ 今天 |
+| 离职原因分类 | `reasonCategory` | `Select` | VOLUNTARY / INVOLUNTARY / NEGOTIATED |
+| 离职类型 | `resignationType` | `Select` | resignation / dismissal / contract_expiry / other |
+| 详细说明 | `reasonDetail` | `TextArea` | 可选 |
 
 提交 `POST /api/v1/profile/resignation-requests`；审批进度在审批中心或个人中心查看。通过后 HR 在离职管理页发起正式离职。
 
@@ -1691,8 +1830,8 @@ graph TB
 
 #### A.3.4.6 表单草稿与状态同步
 
-- 入职草稿：后端 `DRAFT` 为主；Modal 关闭时可选 `localStorage` 缓存未保存字段（key: `onboarding_draft_{userId}`）
-- 列表 Tab 与 URL 同步：`?status=APPROVING`
+- 入职草稿：API `status=draft`；Modal 关闭时可选 `localStorage` 缓存（key: `onboarding_draft_{userId}`）
+- 列表 Tab 与 URL 同步：`?status=pending`（API 枚举，非 DB 大写）
 - 操作成功后 `mutate` 刷新 stats + table
 
 ---
@@ -1747,7 +1886,7 @@ graph TB
 | 班次类型 | `Select` | 固定班/弹性班/排班制 |
 | 上班/下班时间 | `TimePicker` | 必填 |
 | 中午休息 | `TimePicker.RangePicker` | 默认 12:00–13:00 |
-| 弹性范围 | `TimePicker` ×2 | 弹性班显示 |
+| 弹性范围 | `TimePicker` ×2 | 弹性班显示；字段 `flexibleRange: { earliest, latest }` |
 | 迟到/早退阈值 | `InputNumber` | 默认 15 分钟 |
 | IP 白名单 | `Select` mode="tags" | 可选 |
 | GPS 范围 | 地图选点（可选） | `{ lat, lng, radius }` |
@@ -1762,11 +1901,11 @@ graph TB
 
 ```tsx
 <PunchButton
-  type="IN"
+  type="in"
   disabled={todayStatus.hasClockIn}
-  onPunch={() => attendanceService.punch({ type: 'IN' })}
+  onPunch={() => attendanceService.punch({ type: 'in' })}
 />
-<PunchButton type="OUT" disabled={!todayStatus.hasClockIn || todayStatus.hasClockOut} />
+<PunchButton type="out" disabled={!todayStatus.hasClockIn || todayStatus.hasClockOut} />
 ```
 
 打卡成功后 Toast 展示判定结果（正常/迟到/早退等）。
@@ -1841,7 +1980,7 @@ graph TB
 
 ##### 请假记录
 
-Timeline 展示：类型 Tag、天数、日期范围、事由、审批人、状态（审批中/已通过/已拒绝）。审批中显示「撤销」→ `PUT /api/v1/leaves/applications/{id}/cancel`（管理端/员工端路径相同，数据范围由后端 `@DataScope` 控制）。
+Timeline 展示：类型 Tag、天数、日期范围、事由、审批人、状态（审批中/已通过/已拒绝）。审批中显示「撤销」→ 管理端 `PUT /api/v1/leaves/applications/{id}/cancel`；员工门户 `POST /api/v1/profile/leave/applications/{id}/cancel`（数据范围由后端 `@DataScope` 控制）。
 
 #### A.3.5.4 考勤统计（§6.4）
 
@@ -1868,7 +2007,7 @@ Timeline 展示：类型 Tag、天数、日期范围、事由、审批人、状�
 | 迟到早退排行 | `Column` | 同上 |
 | 考勤日历 | `Calendar` + 自定义 Cell | `/api/v1/attendance/statistics/personal` |
 
-**考勤日历 Cell**：按 `day_status` 着色（绿/黄/橙/红/紫/蓝），Tooltip 展示上下班时间与请假信息。
+**考勤日历 Cell**：按 `dayStatus` 着色（绿/黄/橙/红/紫/蓝），Tooltip 展示上下班时间与请假信息。
 
 ```tsx
 <Calendar
@@ -1975,16 +2114,17 @@ graph TB
     STEPS --> STATS --> TABLE --> CHARTS
 ```
 
-##### Steps 与批次状态映射
+##### Steps 与批次状态映射（API `status`，契约 §7.5）
 
-| Step | 批次状态 |
-|------|---------|
-| 草稿 | DRAFT |
-| 核算 | CALCULATING |
-| 待确认 | PENDING_CONFIRM |
-| 审批 | APPROVING / REJECTED |
-| 待发放 | APPROVED |
-| 已发放 | DISTRIBUTED |
+| Step | API status | 说明 |
+|------|-----------|------|
+| 草稿 | draft | 可删除、开始计算 |
+| 计算中 | calculating | 等待异步结果 |
+| 待确认 | pending_confirm | 预览、手工调整、提交审批 |
+| 审批中 | approving | 等待审批结果 |
+| 已通过（待发放） | approved | 发放确认 |
+| 已发放 | distributed | 终态，只读 |
+| 已驳回 | rejected | 分支终态，修改后可重提 |
 
 ##### 统计卡片
 
@@ -2005,14 +2145,14 @@ graph TB
 
 行内红色/黄色高亮，支持点击展开明细。
 
-##### 操作按钮（按状态）
+##### 操作按钮（按 API status）
 
-| 状态 | HR | 财务 |
+| status | HR | 财务 |
 |-----|-----|------|
-| DRAFT | 删除、开始计算 | — |
-| PENDING_CONFIRM | 调整、提交审批 | — |
-| APPROVING | 查看进度 | 审批通过/驳回 |
-| APPROVED | 发放确认 | 查看 |
+| draft | 删除、开始计算 | — |
+| pending_confirm | 调整、提交审批 | — |
+| approving | 查看进度 | 审批通过/驳回 |
+| approved | 发放确认 | 查看 |
 
 计算中展示 `Progress` + 轮询 `GET /api/v1/payroll/batches/{id}`，直至 `status` 离开 `calculating`（附录 E：不增强，无独立 progress 接口）。
 
@@ -2119,6 +2259,7 @@ export const useChartTheme = () => {
 | MOBILE_CHANGE | 手机号变更 | 员工 |
 | LEAVE | 请假审批 | 员工 |
 | MAKEUP | 补卡审批 | 员工 |
+| OVERTIME | 加班审批 | 员工 |
 | PAYROLL_BATCH | 薪资批次审批 | HR |
 
 列表/详情统一用 `ProcessTypeTag` 渲染。
@@ -2273,7 +2414,7 @@ graph TB
 | 考勤日历 | `Calendar` + `AttendanceStatusTag` | `GET /api/v1/profile/attendance/calendar` |
 | 快捷入口 | `Button` | 「申请请假」→ `/portal/leave` 并打开 Drawer；「申请补卡」→ Modal |
 
-日历 Cell 按 `day_status` 着色（正常/请假/迟到/缺卡），Tooltip 展示上下班时间。
+日历 Cell 按 `dayStatus` 着色（正常/请假/迟到/缺卡），Tooltip 展示上下班时间。
 
 #### A.3.9.3 我的请假（§9.3）
 
@@ -2323,13 +2464,13 @@ graph TB
 
 ##### 绑定/解绑手机（PRD §9.5）
 
-首次绑定：`mobile` + 短信验证码 → `POST /api/v1/auth/mobile`。
+首次绑定：`mobile` + 短信验证码 → `POST /api/v1/profile/security/mobile/bind`。
 
-解绑：短信验证 → `DELETE /api/v1/auth/mobile`。**变更手机号**不在此操作，走档案页「申请变更」（§A.3.9.1）。
+解绑：短信验证 → `DELETE /api/v1/profile/security/mobile`。**变更手机号**不在此操作，走档案页「申请变更」（§A.3.9.1）。
 
 ##### 登录日志
 
-`Table`：`loginTime`、`ip`、`device`、`location`、`success`（成功/失败 Tag）。`GET /api/v1/system/login-logs` 分页。
+`Table`：`loginTime`、`ip`、`device`、`location`、`success`（成功/失败 Tag）。`GET /api/v1/profile/security/login-logs` 分页（仅本人记录）。
 
 #### A.3.9.6 离职申请（PRD §5.4.1）
 
@@ -2423,7 +2564,7 @@ export const request: RequestConfig = {
 
 ```typescript
 interface ApiResponse<T> {
-  code: number;       // 0 = 成功；业务码见附录 K / §A.5.3
+  code: number;       // 0 = 成功；业务码见 HRMS-API-Contract §6 / §A.5.3
   message: string;
   data: T;
   fieldPermissions?: Record<string, FieldPermission>; // 员工详情接口
@@ -2434,13 +2575,14 @@ interface ApiResponse<T> {
 
 ### A.5.2 本期关键接口清单
 
-完整 API 见后端 [HRMS-Backend-System-Design.md 附录 H](HRMS-Backend-System-Design.md#附录-h最终-api-总表)。前端开发重点关注：
+完整 API 见 **[HRMS-API-Contract.md §5](HRMS-API-Contract.md#5-api-总表)**。前端开发重点关注：
 
 | 模块 | 方法 | 路径（相对 `/api/v1`） | 说明 |
 |-----|------|----------------------|------|
 | 认证 | POST | `/auth/login` `/auth/logout` `/auth/refresh` | 登录会话 |
-| 认证 | GET/PUT | `/auth/profile` `/auth/password` `/auth/mobile` | 用户+权限、改密、手机 |
-| 认证 | POST | `/profile/payslips/verify` | 工资条二次验证（规范路径，见后端附录 K.5） |
+| 认证 | GET | `/auth/profile` | 用户+权限 |
+| 认证 | PUT | `/auth/password` | 登录页/首次改密（门户改密见 `/profile/security/password`） |
+| 认证 | POST | `/profile/payslips/verify` | 工资条二次验证（规范路径，契约 §5.12.1） |
 | 系统 | GET/POST/PUT | `/system/users` `/system/roles/*` | 用户角色（SYS_ADMIN） |
 | 组织 | GET/CRUD | `/departments/*` `/positions` | 部门树、职位 |
 | 员工 | GET/PUT | `/employees` `/employees/{id}` | 花名册、档案 |
@@ -2457,14 +2599,14 @@ interface ApiResponse<T> {
 | 考勤 | * | `/attendance/*` | 打卡、补卡、组、统计 |
 | 请假 | * | `/leaves/balances` `/leaves/applications` `/leaves/calc-days` | 余额、申请、天数预览 |
 | 加班 | * | `/overtime/applications` | 加班申请 |
-| 薪资 | * | `/payroll/schemes` `/payroll/batches` `/payslips` `/payroll/cost-report` | 账套、核算、工资条 |
+| 薪资 | * | `/payroll/schemes` `/payroll/batches` `/payroll/payslips` `/payroll/cost-report` | 账套、核算、工资条 |
 | 工作台 | GET | `/workbench/summary` | 仪表盘 |
 | 迁移/系统 | * | `/imports/*` `/system/operation-logs` `/system/login-logs` `/system/backup` | 导入与审计 |
-| 个人中心 | * | `/profile/me` `/profile/attendance/*` `/profile/leave/*` `/profile/payslips/*` `/profile/mobile-change-applications` | 员工门户 API |
+| 个人中心 | * | `/profile/me` `/profile/attendance/*` `/profile/leave/*` `/profile/payslips/*` `/profile/security/*` `/profile/mobile-change-applications` `/profile/resignation-requests` | 契约 §5.12 |
 
 ### A.5.3 错误码处理
 
-> **权威来源**：后端 [附录 K](HRMS-Backend-System-Design.md#附录-k错误码mock-协议与数据归档原-sas-5253-61)。HTTP 401/403 对应 `20001`/`20002`。
+> **权威来源**：[HRMS-API-Contract.md §6](HRMS-API-Contract.md#6-业务错误码)。HTTP 401/403 对应 `20001`/`20002`。
 
 | code | 前端行为 |
 |------|---------|
@@ -2650,96 +2792,71 @@ lint (eslint + tsc) → test (jest) → build → upload dist → deploy
 | ProcessTypeTag | 审批类型 Tag |
 | ProfileLayout | 个人中心左侧菜单布局 |
 
-### A.9.2 枚举常量（与后端对齐）
+### A.9.2 枚举常量（与契约 §7 对齐）
+
+> **约定**：`services/` 与 `typings/` 中**请求/响应字段必须使用 API 列（小写 snake_case）**；UI 展示通过 `constants/statusMaps.ts` 映射中文。DB 大写仅供后端，前端禁止在 JSON 中使用。
 
 ```typescript
-export enum EmploymentStatus {
-  PROBATION = 'PROBATION',       // 试用期
-  REGULAR = 'REGULAR',           // 正式
-  PENDING_RESIGN = 'PENDING_RESIGN', // 待离职
-  RESIGNED = 'RESIGNED',         // 已离职
-}
+/** 在职状态 — 契约 §7.1 */
+export type EmploymentStatus =
+  | 'probation' | 'regular' | 'pending_resign' | 'resigned';
 
-export enum OnboardingStatus {
-  DRAFT = 'DRAFT',
-  APPROVING = 'APPROVING',
-  APPROVED = 'APPROVED',
-  REJECTED = 'REJECTED',
-  ONBOARDED = 'ONBOARDED',
-  ABANDONED = 'ABANDONED',
-}
+/** 入职状态 — 契约 §7.2 */
+export type OnboardingStatus =
+  | 'draft' | 'pending' | 'approved_pending' | 'rejected' | 'onboarded' | 'abandoned';
+
+/** 录用类型 — 契约 §7.4 */
+export type EmploymentType = 'fulltime' | 'parttime' | 'intern';
+
+/** 审批 processType — 契约 §7.8（大写） */
+export type ProcessType =
+  | 'ONBOARDING' | 'REGULARIZATION' | 'TRANSFER' | 'RESIGNATION'
+  | 'RESIGNATION_REQUEST' | 'MOBILE_CHANGE' | 'LEAVE' | 'MAKEUP'
+  | 'OVERTIME' | 'PAYROLL_BATCH';
+
+/** 审批任务 status — 契约 §7（pending/approved/rejected/cancelled） */
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+/** 请假类型 — 契约 §7.3 */
+export type LeaveType =
+  | 'annual' | 'sick' | 'personal' | 'marriage'
+  | 'maternity' | 'bereavement' | 'compensatory';
+
+/** 班制 — 契约 §7.7 */
+export type ShiftType = 'fixed' | 'flexible' | 'schedule';
+
+/** 薪资批次 — 契约 §7.5 */
+export type PayrollBatchStatus =
+  | 'draft' | 'calculating' | 'pending_confirm' | 'approving'
+  | 'approved' | 'distributed' | 'rejected';
+
+/** 工资项目类型 — 契约 §7.6 */
+export type SalaryItemType =
+  | 'fixed' | 'variable' | 'attendance_deduct' | 'social' | 'fund' | 'tax';
+
+/** 打卡/日历状态（API snake_case） */
+export type PunchStatus =
+  | 'normal' | 'late' | 'early_leave' | 'absent' | 'missing_in' | 'missing_out';
 
 export enum ResignationType {
-  RESIGN = 'RESIGN',
-  DISMISS = 'DISMISS',
-  CONTRACT_EXPIRE = 'CONTRACT_EXPIRE',
-  OTHER = 'OTHER',
+  RESIGNATION = 'resignation',
+  DISMISSAL = 'dismissal',
+  CONTRACT_EXPIRY = 'contract_expiry',
+  OTHER = 'other',
 }
 
-export enum ProcessType {
-  ONBOARDING = 'ONBOARDING',
-  REGULARIZATION = 'REGULARIZATION',
-  TRANSFER = 'TRANSFER',
-  RESIGNATION_REQUEST = 'RESIGNATION_REQUEST',
-  RESIGNATION = 'RESIGNATION',
-  MOBILE_CHANGE = 'MOBILE_CHANGE',
-  LEAVE = 'LEAVE',
-  MAKEUP = 'MAKEUP',
-  PAYROLL_BATCH = 'PAYROLL_BATCH',
-}
+/** 性别 — 契约 §7（API snake_case） */
+export const GENDER_OPTIONS = [
+  { label: '男', value: 'male' },
+  { label: '女', value: 'female' },
+] as const;
 
-export enum LeaveType {
-  ANNUAL = 'ANNUAL',
-  SICK = 'SICK',
-  PERSONAL = 'PERSONAL',
-  MARRIAGE = 'MARRIAGE',
-  MATERNITY = 'MATERNITY',
-  BEREAVEMENT = 'BEREAVEMENT',
-  COMP_OFF = 'COMP_OFF',
-}
-
-export enum PunchStatus {
-  NORMAL = 'NORMAL',
-  LATE = 'LATE',
-  EARLY_LEAVE = 'EARLY_LEAVE',
-  ABSENT_HALF = 'ABSENT_HALF',
-}
-
-export enum DayStatus {
-  NORMAL = 'NORMAL',
-  LATE = 'LATE',
-  EARLY_LEAVE = 'EARLY_LEAVE',
-  ABSENT_HALF = 'ABSENT_HALF',
-  ABSENT = 'ABSENT',
-  MISSING_IN = 'MISSING_IN',
-  MISSING_OUT = 'MISSING_OUT',
-  LEAVE = 'LEAVE',
-}
-
-export enum ShiftType {
-  FIXED = 'FIXED',
-  FLEXIBLE = 'FLEXIBLE',
-  SCHEDULE = 'SCHEDULE',
-}
-
-export enum SalaryItemType {
-  FIXED = 'FIXED',
-  VARIABLE = 'VARIABLE',
-  ATTENDANCE_DEDUCT = 'ATTENDANCE_DEDUCT',
-  SS_DEDUCT = 'SS_DEDUCT',
-  HF_DEDUCT = 'HF_DEDUCT',
-  TAX = 'TAX',
-}
-
-export enum PayrollBatchStatus {
-  DRAFT = 'DRAFT',
-  CALCULATING = 'CALCULATING',
-  PENDING_CONFIRM = 'PENDING_CONFIRM',
-  APPROVING = 'APPROVING',
-  APPROVED = 'APPROVED',
-  DISTRIBUTED = 'DISTRIBUTED',
-  REJECTED = 'REJECTED',
-}
+/** 录用类型选项 — 契约 §7.4 */
+export const EMPLOYMENT_TYPES = [
+  { label: '全职', value: 'fulltime' },
+  { label: '兼职', value: 'parttime' },
+  { label: '实习', value: 'intern' },
+] as const;
 
 export enum PayrollAnomaly {
   LEAVE_HIGH = 'LEAVE_HIGH',
@@ -2772,9 +2889,9 @@ export const STATUS_COLOR_MAP = {
 
 | 状态类型 | Token | 使用场景 |
 |---------|-------|---------|
-| 草稿/待处理 | `default` | DRAFT、待发起 |
-| 进行中/审批中 | `processing` / `warning` | APPROVING、CALCULATING |
-| 成功/已批准 | `success` | APPROVED、ONBOARDED、DISTRIBUTED |
+| 草稿/待处理 | `default` | draft、待发起 |
+| 进行中/审批中 | `processing` / `warning` | pending、calculating |
+| 成功/已批准 | `success` | approved、onboarded、distributed |
 | 警告/异常 | `warning` | 核算异常、即将到期 |
 | 拒绝/失败 | `error` | REJECTED、FAILED |
 | 结束/归档 | `default`+disabled | RESIGNED、ABANDONED |
@@ -2786,8 +2903,9 @@ export const STATUS_COLOR_MAP = {
 | 文档 | 路径 | 职责 |
 |-----|------|------|
 | **PRD** | [`人资管理系统-PRD.md`](../人资管理系统-PRD.md) | 业务规则、流程、原型截图 |
-| **本文档** | `HRMS-Frontend-System-Design.md` | 页面、组件、路由、交互 |
-| **后端系分** | `HRMS-Backend-System-Design.md` | API、表结构、状态机 |
+| **本文档** | `HRMS-Frontend-System-Design(1).md` | 页面、组件、路由、交互 |
+| **API 契约** | `HRMS-API-Contract.md` v1.0.0 | API、枚举、错误码（权威） |
+| **后端系分** | `HRMS-Backend-System-Design(2).md` v1.7.3 | 表结构、状态机 |
 
 PRD 为产品视角规格；本文档为技术系分，对应 PRD §12.2 交付物。UI 原型以 PRD 各章「原型图」为准。
 
@@ -2821,4 +2939,4 @@ PRD 为产品视角规格；本文档为技术系分，对应 PRD §12.2 交付�
 
 ---
 
-*文档结束 — v1.8 对齐后端 v1.7；契约补全见附录 E。*
+*文档结束 — v1.8.3 与 HRMS-API-Contract v1.0.0 及后端 v1.7.3 零偏差；契约索引见附录 E。*

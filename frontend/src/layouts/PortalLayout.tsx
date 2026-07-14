@@ -4,10 +4,7 @@ import React from 'react';
 
 const { Header, Sider, Content } = Layout;
 
-/** 管理后台布局骨架 — 菜单项 Sprint 1 起按系分 §2.3 补全 */
-const menuItems = [
-  { key: '/admin/workbench', label: '工作台' },
-];
+/** 员工门户布局骨架 — 菜单 Sprint 1 起按系分 §2.2.13 补全 */
 
 const PortalLayout: React.FC = () => {
   const location = useLocation();
