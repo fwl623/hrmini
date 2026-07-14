@@ -6,10 +6,10 @@
 
 | 同学 | 负责域 | Maven 模块 | 包路径 |
 |------|--------|------------|--------|
-| **你** | 权限 + 组织 + 公共 | `hrms-common` `hrms-auth` `hrms-org` | `common/*` `module/auth` `module/org` |
-| **同学 B** | 员工 + 个人中心 | `hrms-employee` | `module/employee` `module/portal` |
-| **同学 C** | 入转调离 + 审批 | `hrms-workflow` | `module/onboarding` `module/lifecycle` `module/approval` |
-| **同学 D** | 考勤 + 薪资 | `hrms-attendance` `hrms-payroll` | `module/attendance` `module/leave` `module/overtime` `module/payroll` |
+| **李俊毅** | 权限 + 组织 + 公共 | `hrms-common` `hrms-auth` `hrms-org` | `common/*` `module/auth` `module/org` |
+| **范文路** | 员工 + 个人中心 | `hrms-employee` | `module/employee` `module/portal` |
+| **郭策** | 入转调离 + 审批 | `hrms-workflow` | `module/onboarding` `module/lifecycle` `module/approval` |
+| **张浩杰** | 考勤 + 薪资 | `hrms-attendance` `hrms-payroll` | `module/attendance` `module/leave` `module/overtime` `module/payroll` |
 | 全员 | 启动聚合 | `hrms-app` | 仅启动类与 `application*.yml` |
 
 ## 结构
@@ -18,12 +18,12 @@
 backend/
 ├── openapi.yaml
 ├── hrms-common/
-├── hrms-auth/          ← 你
-├── hrms-org/           ← 你
-├── hrms-employee/      ← B
-├── hrms-workflow/      ← C
-├── hrms-attendance/    ← D
-├── hrms-payroll/       ← D
+├── hrms-auth/          ← 李俊毅
+├── hrms-org/           ← 李俊毅
+├── hrms-employee/      ← 范文路
+├── hrms-workflow/      ← 郭策
+├── hrms-attendance/    ← 张浩杰
+├── hrms-payroll/       ← 张浩杰
 └── hrms-app/           ← 启动（不要写业务代码）
 ```
 
