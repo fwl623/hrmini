@@ -11,7 +11,9 @@
     <artifactId>hrms-employee</artifactId>
     <name>hrms-employee</name>
     <description>员工档案 + 个人中心 — 同学 B</description>
+
     <dependencies>
+        <!-- 内部模块依赖：web/mybatis-plus/lombok/validation/redis 由 hrms-common provided 统一提供 -->
         <dependency>
             <groupId>com.company.hrms</groupId>
             <artifactId>hrms-common</artifactId>
