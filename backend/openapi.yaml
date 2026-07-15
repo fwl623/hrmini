@@ -1,0 +1,9 @@
+openapi: 3.0.3
+info:
+  title: HRMS API
+  version: 0.1.0
+  description: Sprint 0 契约占位，完整清单见系分附录 H。
+servers:
+  - url: http://localhost:8080/api/v1
+  - url: http://39.101.67.167:8080/api/v1
+paths: {}

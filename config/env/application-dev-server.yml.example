@@ -1,0 +1,21 @@
+# 联调服务器 Spring 配置示例（ECS 上后端与 MySQL/Redis 同机部署）
+# 复制到服务器 backend/hrms-app/src/main/resources/application-dev-server.yml
+# 启动：java -jar hrms-server.jar --spring.profiles.active=dev,dev-server
+
+spring:
+  config:
+    activate:
+      on-profile: dev-server
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+  rabbitmq:
+    host: 127.0.0.1
+    port: 5672
+    username: hrms
+    password: hrms123

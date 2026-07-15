@@ -1,37 +1,101 @@
-# HRMini
+# HRMini — 人力资源管理系统
 
-#### 介绍
-人事微项目
+基于 PRD 与前后端系分（v1.7 / v1.8）的 **Sprint 0 工程骨架**：Maven **多模块**分工、**单 JAR** 部署，不含业务实现代码。
 
-#### 软件架构
-软件架构说明
+## 四人分工
 
+| 同学 | 后端模块 | 前端页面（主要） |
+|------|----------|------------------|
+| **你** | `hrms-common` `hrms-auth` `hrms-org` | `/login`、`/admin/org/*`、权限菜单 |
+| **同学 B** | `hrms-employee`（含 portal API） | `/admin/employee/*`、`/portal/*` |
+| **同学 C** | `hrms-workflow` | 入转调离页、`/admin/approval/*` |
+| **同学 D** | `hrms-attendance` `hrms-payroll` | 考勤/请假/薪资页 |
 
-#### 安装教程
+详见 [backend/README.md](backend/README.md)。
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+## 环境地址
 
-#### 使用说明
+| 环境 | 前端 | 后端 API |
+|------|------|----------|
+| **本地开发** | http://localhost:8000 | http://localhost:8080/api/v1 |
+| **联调服务器** | http://39.101.67.167 | http://39.101.67.167:8080/api/v1 |
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+| 仓库 | https://gitee.com/swing-king/hrmini |
 
-#### 参与贡献
+## 目录结构
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+```
+HRMini/
+├── backend/                 # Maven 多模块，单 JAR 部署
+│   ├── hrms-common/         # 公共 — 你
+│   ├── hrms-auth/           # 认证 — 你
+│   ├── hrms-org/            # 组织 — 你
+│   ├── hrms-employee/       # 员工+门户 — B
+│   ├── hrms-workflow/       # 流程+审批 — C
+│   ├── hrms-attendance/     # 考勤 — D
+│   ├── hrms-payroll/        # 薪资 — D
+│   └── hrms-app/            # 启动模块
+├── frontend/                # Umi Max，/admin/* + /portal/*
+├── config/                  # Docker、Nginx、环境变量示例
+├── docs/                    # 文档与 DDL 占位
+├── scripts/                 # 开发脚本
+├── HRMS-Backend-System-Design.md   # v1.7
+└── HRMS-Frontend-System-Design.md  # v1.8
+```
 
+## 技术栈
 
-#### 特技
+| 层级 | 技术 |
+|------|------|
+| 后端 | Java 17、Spring Boot 3.2、MyBatis-Plus、MySQL 8、Redis 7、RabbitMQ、Flyway |
+| 前端 | React 18、TypeScript、Umi Max 4、Ant Design 5、Zustand |
+| 仓库 | Gitee |
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## 快速开始
+
+### 1. 基础设施
+
+```powershell
+docker compose -f config/docker/docker-compose.yml up -d
+```
+
+### 2. 后端（IDEA）
+
+1. **File → Open** → `backend/pom.xml`
+2. JDK 17，运行 `com.company.hrms.HrmsApplication`（模块 `hrms-app`）
+
+3. 本地 API：`http://localhost:8080/api/v1`（Sprint 1 起实现业务接口）
+
+### 3. 前端
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+访问 http://localhost:8000 ，路由：`/login`、`/admin/workbench`、`/portal/profile`（占位页）。
+
+### 4. 服务器联调配置
+
+- 后端：复制 `config/env/application-dev-server.yml.example` → `application-dev-server.yml`
+- 前端连远程 API：`API_PROXY_TARGET=http://39.101.67.167:8080 npm run dev`
+- Nginx 示例：`config/nginx/nginx.conf.example`
+
+### 5. Gitee
+
+```powershell
+.\scripts\gitee\setup-remote.ps1 -RemoteUrl "https://gitee.com/swing-king/hrmini.git"
+.\scripts\gitee\push.ps1
+```
+
+## 后端包结构
+
+各模块内包路径统一为 `com.company.hrms.module.*`，与系分一致。模块职责见 [backend/README.md](backend/README.md) 四人分工表。
+
+## 文档
+
+- [PRD](人资管理系统-PRD.md)
+- [后端系分 v1.7](HRMS-Backend-System-Design.md)
+- [前端系分 v1.8](HRMS-Frontend-System-Design.md)
+- [开发计划](HRMini-Development-Plan.md)
