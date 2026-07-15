@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.attendance.entity.AttendanceMonthlySummary">
+        <id column="id" property="id" />
+        <result column="employee_id" property="employeeId" />
+        <result column="period" property="period" />
+        <result column="should_attend_days" property="shouldAttendDays" />
+        <result column="actual_attend_days" property="actualAttendDays" />
+        <result column="late_count" property="lateCount" />
+        <result column="early_leave_count" property="earlyLeaveCount" />
+        <result column="absent_days" property="absentDays" />
+        <result column="leave_days" property="leaveDays" />
+        <result column="overtime_hours" property="overtimeHours" />
+        <result column="annual_balance" property="annualBalance" />
+        <result column="detail_json" property="detailJson" />
+        <result column="created_at" property="createdAt" />
+    </resultMap>
+
+</mapper>

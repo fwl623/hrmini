@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.payroll.mapper.PayTaxYtdRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.payroll.entity.PayTaxYtdRecord">
+        <id column="id" property="id" />
+        <result column="employee_id" property="employeeId" />
+        <result column="period" property="period" />
+        <result column="taxable_income" property="taxableIncome" />
+        <result column="tax_deducted" property="taxDeducted" />
+        <result column="cumulative_tax" property="cumulativeTax" />
+    </resultMap>
+
+</mapper>

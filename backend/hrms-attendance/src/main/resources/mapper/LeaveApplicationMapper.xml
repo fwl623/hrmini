@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.attendance.mapper.LeaveApplicationMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.attendance.entity.LeaveApplication">
+        <id column="id" property="id" />
+        <result column="employee_id" property="employeeId" />
+        <result column="leave_type" property="leaveType" />
+        <result column="start_time" property="startTime" />
+        <result column="end_time" property="endTime" />
+        <result column="leave_days" property="leaveDays" />
+        <result column="reason" property="reason" />
+        <result column="handover_employee_id" property="handoverEmployeeId" />
+        <result column="attachment_url" property="attachmentUrl" />
+        <result column="status" property="status" />
+        <result column="instance_id" property="instanceId" />
+        <result column="created_at" property="createdAt" />
+    </resultMap>
+
+</mapper>

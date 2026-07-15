@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.attendance.entity.AttendanceGroupMember">
+        <id column="group_id" property="groupId" />
+        <id column="employee_id" property="employeeId" />
+    </resultMap>
+
+    <select id="selectByGroupId" resultMap="BaseResultMap">
+        SELECT * FROM attendance_group_member WHERE group_id = #{groupId}
+    </select>
+
+    <delete id="deleteByGroupId">
+        DELETE FROM attendance_group_member WHERE group_id = #{groupId}
+    </delete>
+
+    <insert id="batchInsert">
+        INSERT INTO attendance_group_member (group_id, employee_id) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.groupId}, #{item.employeeId})
+        </foreach>
+    </insert>
+
+</mapper>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.payroll.mapper.PayrollDetailMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.payroll.entity.PayrollDetail">
+        <id column="id" property="id" />
+        <result column="batch_id" property="batchId" />
+        <result column="employee_id" property="employeeId" />
+        <result column="calc_status" property="calcStatus" />
+        <result column="gross_salary" property="grossSalary" />
+        <result column="net_salary" property="netSalary" />
+        <result column="detail_json" property="detailJson" />
+        <result column="anomaly_flags" property="anomalyFlags" />
+        <result column="prev_net_salary" property="prevNetSalary" />
+        <result column="manual_adjusted" property="manualAdjusted" />
+    </resultMap>
+
+    <insert id="batchInsert">
+        INSERT INTO payroll_detail (batch_id, employee_id, calc_status, gross_salary, net_salary, detail_json, anomaly_flags, prev_net_salary, manual_adjusted)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.batchId}, #{item.employeeId}, #{item.calcStatus}, #{item.grossSalary}, #{item.netSalary}, #{item.detailJson}, #{item.anomalyFlags}, #{item.prevNetSalary}, #{item.manualAdjusted})
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+        calc_status = VALUES(calc_status),
+        gross_salary = VALUES(gross_salary),
+        net_salary = VALUES(net_salary),
+        detail_json = VALUES(detail_json),
+        anomaly_flags = VALUES(anomaly_flags),
+        manual_adjusted = VALUES(manual_adjusted)
+    </insert>
+
+</mapper>

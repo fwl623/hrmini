@@ -16,7 +16,10 @@ const PortalLayout: React.FC = () => {
         <Menu
           mode="inline"
           selectedKeys={[location.pathname]}
-          items={[{ key: '/portal/profile', label: '我的档案' }]}
+          items={[
+            { key: '/portal/profile', label: '我的档案' },
+            { key: '/portal/attendance', label: '考勤打卡' },
+          ]}
           onClick={({ key }) => history.push(key)}
         />
       </Sider>

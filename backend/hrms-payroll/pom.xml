@@ -12,6 +12,7 @@
     <name>hrms-payroll</name>
     <description>薪资核算 — 同学 D</description>
     <dependencies>
+        <!-- 模块间依赖 -->
         <dependency>
             <groupId>com.company.hrms</groupId>
             <artifactId>hrms-common</artifactId>
@@ -27,6 +28,18 @@
         <dependency>
             <groupId>com.company.hrms</groupId>
             <artifactId>hrms-attendance</artifactId>
+        </dependency>
+
+        <!-- MyBatis-Plus (提供 BaseMapper、@TableName、@TableField 等) -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+
+        <!-- Spring Boot Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
     </dependencies>
 </project>
