@@ -1,10 +1,10 @@
 /**
  * 我的档案（员工门户）
  * 对接：GET/PUT /api/v1/profile/me
- * 白名单：email, residenceAddress, emergencyContact, emergencyPhone
+ * 基础信息只读 + 邮箱/地址/紧急联系人可编辑
  */
 import React, { useEffect, useState } from 'react';
-import { Card, Descriptions, Form, Input, Button, Spin, message, Space, Typography, Divider } from 'antd';
+import { Card, Descriptions, Form, Input, Button, Spin, message, Space, Typography } from 'antd';
 import { getMyProfile, updateMyProfile } from '@/services/employee';
 import type { ProfileVO } from '@/services/employee';
 
@@ -18,48 +18,27 @@ const ProfilePage: React.FC = () => {
   const loadProfile = () => {
     setLoading(true);
     getMyProfile()
-      .then((res) => {
-        if (res.code === 0) {
-          setProfile(res.data);
-          form.setFieldsValue({
-            email: res.data.email,
-            residenceAddress: res.data.residenceAddress,
-            emergencyContact: res.data.emergencyContact,
-            emergencyPhone: res.data.emergencyPhone,
-          });
-        }
-      })
+      .then((res) => { if (res.code === 0) {
+        setProfile(res.data);
+        form.setFieldsValue({
+          email: res.data.email,
+          residenceAddress: res.data.residenceAddress,
+          emergencyContact: res.data.emergencyContact,
+          emergencyPhone: res.data.emergencyPhone,
+        });
+      }})
       .finally(() => setLoading(false));
   };
 
-  useEffect(loadProfile, []);
+  useEffect(loadProfile, [profile?.employeeId]);
 
   const handleSave = async (values: any) => {
     setSubmitting(true);
     try {
       const res = await updateMyProfile(values);
-      if (res.code === 0) {
-        message.success('保存成功');
-        setEditing(false);
-        loadProfile();
-      } else {
-        message.error(res.message);
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setEditing(false);
-    if (profile) {
-      form.setFieldsValue({
-        email: profile.email,
-        residenceAddress: profile.residenceAddress,
-        emergencyContact: profile.emergencyContact,
-        emergencyPhone: profile.emergencyPhone,
-      });
-    }
+      if (res.code === 0) { message.success('保存成功'); setEditing(false); loadProfile(); }
+      else message.error(res.message);
+    } finally { setSubmitting(false); }
   };
 
   if (loading) return <Spin style={{ display: 'block', marginTop: 100 }} />;
@@ -68,7 +47,6 @@ const ProfilePage: React.FC = () => {
   return (
     <>
       <Typography.Title level={4}>我的档案</Typography.Title>
-
       <Card style={{ marginBottom: 16 }}>
         <Descriptions column={2} bordered size="small">
           <Descriptions.Item label="姓名">{profile.name}</Descriptions.Item>
@@ -85,7 +63,7 @@ const ProfilePage: React.FC = () => {
         extra={
           editing ? (
             <Space>
-              <Button size="small" onClick={handleCancel}>取消</Button>
+              <Button size="small" onClick={() => setEditing(false)}>取消</Button>
               <Button size="small" type="primary" loading={submitting} onClick={() => form.submit()}>保存</Button>
             </Space>
           ) : (
@@ -96,24 +74,16 @@ const ProfilePage: React.FC = () => {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Descriptions column={2} bordered size="small">
             <Descriptions.Item label="邮箱" span={2}>
-              {editing ? (
-                <Form.Item name="email" noStyle><Input placeholder="email@example.com" /></Form.Item>
-              ) : (profile.email || '-')}
+              {editing ? <Form.Item name="email" noStyle><Input /></Form.Item> : profile.email || '-'}
             </Descriptions.Item>
             <Descriptions.Item label="现居地址" span={2}>
-              {editing ? (
-                <Form.Item name="residenceAddress" noStyle><Input placeholder="现居地址" /></Form.Item>
-              ) : (profile.residenceAddress || '-')}
+              {editing ? <Form.Item name="residenceAddress" noStyle><Input /></Form.Item> : profile.residenceAddress || '-'}
             </Descriptions.Item>
             <Descriptions.Item label="紧急联系人">
-              {editing ? (
-                <Form.Item name="emergencyContact" noStyle><Input placeholder="联系人姓名" /></Form.Item>
-              ) : (profile.emergencyContact || '-')}
+              {editing ? <Form.Item name="emergencyContact" noStyle><Input /></Form.Item> : profile.emergencyContact || '-'}
             </Descriptions.Item>
             <Descriptions.Item label="紧急电话">
-              {editing ? (
-                <Form.Item name="emergencyPhone" noStyle><Input placeholder="联系电话" /></Form.Item>
-              ) : (profile.emergencyPhone || '-')}
+              {editing ? <Form.Item name="emergencyPhone" noStyle><Input /></Form.Item> : profile.emergencyPhone || '-'}
             </Descriptions.Item>
           </Descriptions>
         </Form>

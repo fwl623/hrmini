@@ -20,6 +20,14 @@ management:
       exposure:
         include: health,info
 
+# MyBatis-Plus 配置
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.company.hrms.*.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
 # 公共模块配置（生产务必用环境变量覆盖密钥）
 #
 # jwt.secret  —— 服务端签发/校验 Access Token 的 HMAC 密钥（系统密钥，不是用户密码）。
