@@ -11,6 +11,7 @@ import java.util.List;
  */
 @Mapper
 public interface EmployeeMobileChangeApplicationMapper {
+    EmployeeMobileChangeApplication selectById(@Param("id") Long id);
     List<EmployeeMobileChangeApplication> selectByEmployeeId(@Param("employeeId") Long employeeId);
     List<EmployeeMobileChangeApplication> selectPending();
     int insert(EmployeeMobileChangeApplication app);

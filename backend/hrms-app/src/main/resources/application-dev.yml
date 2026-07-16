@@ -1,31 +1,37 @@
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
 spring:
   config:
     activate:
       on-profile: dev
   datasource:
-    # 云服务器 MySQL（本机暂无法装 Redis/本地库时用此联调）
-    url: jdbc:mysql://39.101.67.167:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    # 本地 MySQL
+    url: jdbc:mysql://localhost:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root
-    password: "20051002"
+password: "20051002"
     driver-class-name: com.mysql.cj.jdbc.Driver
-    # 本机 MySQL 示例：
-    # url: jdbc:mysql://localhost:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    # 云服务器 MySQL 示例�?
+    # url: jdbc:mysql://39.101.67.167:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     # username: root
-    # password: 123456
+    # password: root
   data:
     redis:
-      # 云服务器 Redis
-      host: 39.101.67.167
+      # 本机 Redis
+      host: localhost
       port: 6379
-      # 本机 Redis 示例：
-      # host: localhost
+      # 云服务器 Redis 示例�?
+      # host: 39.101.67.167
       # port: 6379
   flyway:
     enabled: true
 
-  # ---------- RabbitMQ：Phase 后期启用（审批催办/薪资分片等）----------
-  # 启用步骤：1) 取消下方注释  2) application.yml 去掉 RabbitAutoConfiguration exclude
-  #  3) 确认已引入 spring-boot-starter-amqp（见 hrms-app/pom.xml 注释块）
+  # ---------- RabbitMQ：Phase 后期启用（审批催�?薪资分片等）----------
+  # 启用步骤�?) 取消下方注释  2) application.yml 去掉 RabbitAutoConfiguration exclude
+  #  3) 确认已引�?spring-boot-starter-amqp（见 hrms-app/pom.xml 注释块）
   # rabbitmq:
   #   host: 39.101.67.167
   #   port: 5672
