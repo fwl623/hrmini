@@ -2,9 +2,11 @@
  * HR 手机号变更待办列表页
  *
  * 对接：GET /api/v1/employees/mobile-change-applications
- * 功能：查看待办 → 审批通过/驳回（依赖 C 组审批引擎）
+ *        POST .../{id}/approve（审批通过）
+ *        POST .../{id}/reject（审批驳回）
  *
- * ✅ UI 先行，联调时对接审批操作
+ * 状态机：PENDING → APPROVED（更新 mobile + 同步 auth）| REJECTED
+ * ⚠️ 审批依赖 C 组审批引擎，当前为本地逻辑 + DB 操作
  */
 import React, { useEffect, useState } from 'react';
 import { Card, Table, Tag, Button, Space, message, Typography, Modal } from 'antd';
@@ -44,14 +46,34 @@ const MobileChangePage: React.FC = () => {
 
   useEffect(loadData, []);
 
-  const handleAction = (record: MobileChangeApp, action: 'APPROVE' | 'REJECT') => {
-    // ⚠️ 依赖 C 组审批引擎 — 当前仅 UI 展示，联调时对接 POST /approvals/tasks/{id}/action
+  const handleApprove = (record: MobileChangeApp) => {
     Modal.confirm({
-      title: `确认${action === 'APPROVE' ? '通过' : '驳回'}？`,
+      title: '确认通过？',
       content: `${record.employeeName}（${record.empNo}）申请将手机号变更为 ${record.newMobile}`,
-      onOk: () => {
-        message.success(`模拟${action === 'APPROVE' ? '通过' : '驳回'}成功（联调时对接审批引擎）`);
-        loadData();
+      onOk: async () => {
+        const res = await request(`/api/v1/employees/mobile-change-applications/${record.id}/approve`, { method: 'POST' });
+        if (res.code === 0) {
+          message.success('已通过，手机号已更新并同步 auth');
+          loadData();
+        } else {
+          message.error(res.message || '操作失败');
+        }
+      },
+    });
+  };
+
+  const handleReject = (record: MobileChangeApp) => {
+    Modal.confirm({
+      title: '确认驳回？',
+      content: `${record.employeeName}（${record.empNo}）的变更申请将被驳回`,
+      onOk: async () => {
+        const res = await request(`/api/v1/employees/mobile-change-applications/${record.id}/reject`, { method: 'POST' });
+        if (res.code === 0) {
+          message.success('已驳回');
+          loadData();
+        } else {
+          message.error(res.message || '操作失败');
+        }
       },
     });
   };
@@ -78,9 +100,9 @@ const MobileChangePage: React.FC = () => {
         r.status === 'PENDING' ? (
           <Space>
             <Button type="link" size="small" style={{ color: 'green' }}
-              onClick={() => handleAction(r, 'APPROVE')}>通过</Button>
+              onClick={() => handleApprove(r)}>通过</Button>
             <Button type="link" size="small" danger
-              onClick={() => handleAction(r, 'REJECT')}>驳回</Button>
+              onClick={() => handleReject(r)}>驳回</Button>
           </Space>
         ) : <Typography.Text type="secondary">—</Typography.Text>
       ),

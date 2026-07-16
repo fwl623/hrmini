@@ -6,7 +6,7 @@ spring:
     # 本机 MySQL
     url: jdbc:mysql://localhost:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root
-    password: root
+    password: 159874
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:

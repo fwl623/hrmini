@@ -1,11 +1,12 @@
 /**
  * 我的档案（员工门户）
  * 对接：GET/PUT /api/v1/profile/me
- * 基础信息只读 + 邮箱/地址/紧急联系人可编辑
+ * 基础信息只读 + 邮箱/地址/紧急联系人可编辑 + 手机号变更申请
  */
 import React, { useEffect, useState } from 'react';
 import { Card, Descriptions, Form, Input, Button, Spin, message, Space, Typography } from 'antd';
 import { getMyProfile, updateMyProfile } from '@/services/employee';
+import MobileChangeModal from '@/components/MobileChangeModal';
 import type { ProfileVO } from '@/services/employee';
 
 const ProfilePage: React.FC = () => {
@@ -13,6 +14,7 @@ const ProfilePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [mobileModalOpen, setMobileModalOpen] = useState(false);
   const [form] = Form.useForm();
 
   const loadProfile = () => {
@@ -67,7 +69,9 @@ const ProfilePage: React.FC = () => {
               <Button size="small" type="primary" loading={submitting} onClick={() => form.submit()}>保存</Button>
             </Space>
           ) : (
-            <Button size="small" type="primary" onClick={() => setEditing(true)}>编辑</Button>
+            <Space>
+              <Button size="small" type="primary" onClick={() => setEditing(true)}>编辑</Button>
+            </Space>
           )
         }
       >
@@ -89,15 +93,22 @@ const ProfilePage: React.FC = () => {
         </Form>
       </Card>
 
-      <Card title="不可编辑（如需修改请联系 HR）" style={{ marginTop: 16 }}>
+      <Card title="不可编辑（如需修改请联系 HR）" style={{ marginTop: 16 }}
+        extra={<Button size="small" onClick={() => setMobileModalOpen(true)}>申请变更手机号</Button>}
+      >
         <Descriptions column={2} bordered size="small">
-          {/* TODO: org接口未完成 — 部门/职位数据由后端 JOIN 返回，后续可由 hrms-org 提供实时查询 */}
           <Descriptions.Item label="部门">{profile.department || '-'}</Descriptions.Item>
           <Descriptions.Item label="职位">{profile.position || '-'}</Descriptions.Item>
           <Descriptions.Item label="手机号">{profile.mobile}</Descriptions.Item>
           <Descriptions.Item label="身份证号">***（敏感信息）</Descriptions.Item>
         </Descriptions>
       </Card>
+
+      <MobileChangeModal
+        open={mobileModalOpen}
+        onClose={() => setMobileModalOpen(false)}
+        onSuccess={loadProfile}
+      />
     </>
   );
 };
