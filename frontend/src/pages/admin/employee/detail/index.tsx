@@ -2,11 +2,13 @@
  * 员工档案详情页
  * 对接：GET /api/v1/employees/{id}
  * 三 Tab：个人信息/工作信息/薪资合同
+ * 身份证字段使用 SensitiveFieldModal 二次验证
  */
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from '@umijs/max';
 import { Card, Tabs, Descriptions, Tag, Button, Spin, Space, message } from 'antd';
 import { getEmployeeDetail } from '@/services/employee';
+import SensitiveFieldModal from '@/components/SensitiveFieldModal';
 import type { EmployeeDetail } from '@/services/employee';
 
 const STATUS_MAP: Record<string, { color: string; label: string }> = {
@@ -46,10 +48,13 @@ const EmployeeDetailPage: React.FC = () => {
           <Descriptions.Item label="手机号">{detail.mobile}</Descriptions.Item>
           <Descriptions.Item label="邮箱" span={2}>{detail.email}</Descriptions.Item>
           <Descriptions.Item label="生日">{detail.birthday || '-'}</Descriptions.Item>
-          <Descriptions.Item label="身份证">
-            <span style={{ color: detail.fieldPermissions?.idNumber === 'hidden' ? '#999' : undefined }}>
-              {detail.idNumber || '***'}
-            </span>
+          <Descriptions.Item label="身份证" span={2}>
+            <SensitiveFieldModal
+              employeeId={detail.employeeId}
+              field="idNumber"
+              label="身份证号"
+              defaultValue={detail.idNumber}
+            />
           </Descriptions.Item>
           <Descriptions.Item label="户籍地址" span={2}>{detail.householdAddress || '-'}</Descriptions.Item>
           <Descriptions.Item label="现居地址" span={2}>{detail.residenceAddress || '-'}</Descriptions.Item>
