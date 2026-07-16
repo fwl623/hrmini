@@ -49,7 +49,9 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     public PageResult<EmployeeListVO> pageSearch(EmployeePageQuery query) {
+        // TODO: org接口未完成 — departmentIds 由前端部门树选择器传入，待 hrms-org 提供 /departments/tree 接口后联调
         List<Long> deptIds = parseCommaLongs(query.getDepartmentIds());
+        // TODO: org接口未完成 — positionIds 同理，待 hrms-org 提供 /positions 接口
         List<Long> positionIds = parseCommaLongs(query.getPositionIds());
         List<Integer> statusList = parseStatuses(query.getEmploymentStatus());
         List<String> gradeList = parseCommaStrings(query.getGradeLevels());
@@ -84,6 +86,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         vo.setMobile(maskMobile(emp.getMobile()));
         vo.setEmail(emp.getEmail());
         vo.setDepartmentId(emp.getDepartmentId());
+        // TODO: org接口未完成 — department/position/managerName 需调用 hrms-org 根据 ID 查询名称后填充，当前 SQL JOIN department/position 表直接取 name
         vo.setPositionId(emp.getPositionId());
         vo.setGrade(emp.getGrade());
         vo.setManagerId(emp.getManagerId());

@@ -91,6 +91,7 @@ const ProfilePage: React.FC = () => {
 
       <Card title="不可编辑（如需修改请联系 HR）" style={{ marginTop: 16 }}>
         <Descriptions column={2} bordered size="small">
+          {/* TODO: org接口未完成 — 部门/职位数据由后端 JOIN 返回，后续可由 hrms-org 提供实时查询 */}
           <Descriptions.Item label="部门">{profile.department || '-'}</Descriptions.Item>
           <Descriptions.Item label="职位">{profile.position || '-'}</Descriptions.Item>
           <Descriptions.Item label="手机号">{profile.mobile}</Descriptions.Item>

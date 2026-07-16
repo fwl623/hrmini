@@ -8,8 +8,8 @@ import com.company.hrms.employee.dto.MobileChangeApplyDTO;
 import com.company.hrms.employee.dto.PasswordChangeDTO;
 import com.company.hrms.employee.dto.ProfileUpdateDTO;
 import com.company.hrms.employee.entity.EmployeeMobileChangeApplication;
-import com.company.hrms.employee.mapper.EmployeeMobileChangeApplicationMapper;
 import com.company.hrms.employee.service.EmployeeService;
+import com.company.hrms.employee.service.MobileChangeService;
 import com.company.hrms.employee.vo.LoginLogVO;
 import com.company.hrms.employee.vo.ProfileVO;
 import jakarta.validation.Valid;
@@ -33,111 +33,64 @@ import static com.company.hrms.common.enums.DataScopeType.SELF;
 public class ProfileController {
 
     private final EmployeeService employeeService;
-    private final EmployeeMobileChangeApplicationMapper mobileChangeMapper;
+    private final MobileChangeService mobileChangeService;
 
-    /**
-     * GET /api/v1/profile/me
-     * 本人档案（脱敏）
-     */
+    // ==================== 我的档案 ====================
+
     @GetMapping("/me")
     public Result<ProfileVO> getMyProfile() {
-        Long employeeId = SecurityUtils.getEmployeeId();
-        return Result.success(employeeService.getMyProfile(employeeId));
+        return Result.success(employeeService.getMyProfile(SecurityUtils.getEmployeeId()));
     }
 
-    /**
-     * PUT /api/v1/profile/me
-     * 编辑本人档案（白名单）
-     */
     @PutMapping("/me")
     public Result<Void> updateMyProfile(@Valid @RequestBody ProfileUpdateDTO dto) {
-        Long employeeId = SecurityUtils.getEmployeeId();
-        employeeService.updateMyProfile(employeeId, dto);
+        employeeService.updateMyProfile(SecurityUtils.getEmployeeId(), dto);
         return Result.success();
     }
 
-    // ==================== 手机号变更 ====================
+    // ==================== 手机号变更（提交流程：提交→审批→同步auth） ====================
 
     /**
      * POST /api/v1/profile/mobile-change-applications
-     * 提交手机号变更申请（走 MOBILE_CHANGE 审批）
+     * 提交手机号变更申请
+     *
+     * 流程：创建记录 → 发起 MOBILE_CHANGE 审批（依赖 C 组） → 审批通过后同步 auth（依赖 A 组）
      */
     @PostMapping("/mobile-change-applications")
     public Result<Void> applyMobileChange(@Valid @RequestBody MobileChangeApplyDTO dto) {
-        Long employeeId = SecurityUtils.getEmployeeId();
-        Long userId = SecurityUtils.getUserId();
-        // 创建申请记录，状态 PENDING
-        EmployeeMobileChangeApplication app = new EmployeeMobileChangeApplication();
-        app.setEmployeeId(employeeId);
-        app.setUserId(userId);
-        app.setNewMobile(dto.getNewMobile());
-        app.setReason(dto.getReason());
-        app.setSmsVerified(1);
-        app.setStatus("PENDING");
-        mobileChangeMapper.insert(app);
+        mobileChangeService.apply(SecurityUtils.getEmployeeId(), SecurityUtils.getUserId(), dto);
         return Result.success();
     }
 
-    /**
-     * GET /api/v1/profile/mobile-change-applications
-     * 本人手机号变更申请记录
-     */
+    /** GET /api/v1/profile/mobile-change-applications — 本人申请记录 */
     @GetMapping("/mobile-change-applications")
     public Result<List<EmployeeMobileChangeApplication>> listMyMobileChanges() {
-        Long employeeId = SecurityUtils.getEmployeeId();
-        return Result.success(mobileChangeMapper.selectByEmployeeId(employeeId));
+        return Result.success(mobileChangeService.listMyApplications(SecurityUtils.getEmployeeId()));
     }
 
-    /**
-     * POST /api/v1/profile/mobile-change-applications/{id}/cancel
-     * 撤销手机号变更申请（仅 PENDING 可撤销）
-     */
+    /** POST /api/v1/profile/mobile-change-applications/{id}/cancel — 撤销（仅 PENDING） */
     @PostMapping("/mobile-change-applications/{id}/cancel")
     public Result<Void> cancelMobileChange(@PathVariable Long id) {
-        Long employeeId = SecurityUtils.getEmployeeId();
-        EmployeeMobileChangeApplication app = mobileChangeMapper.selectById(id);
-        if (app == null || !app.getEmployeeId().equals(employeeId)) {
-            return Result.error(404, "申请不存在");
-        }
-        if (!"PENDING".equals(app.getStatus())) {
-            return Result.error(60002, "当前状态不允许撤销");
-        }
-        app.setStatus("CANCELLED");
-        mobileChangeMapper.updateById(app);
+        mobileChangeService.cancel(SecurityUtils.getEmployeeId(), id);
         return Result.success();
     }
 
     // ==================== 账号安全 ====================
 
-    /**
-     * PUT /api/v1/profile/security/password
-     * 修改密码
-     */
     @PutMapping("/security/password")
     public Result<Void> changePassword(@Valid @RequestBody PasswordChangeDTO dto) {
-        Long userId = SecurityUtils.getUserId();
-        employeeService.changePassword(userId, dto);
+        employeeService.changePassword(SecurityUtils.getUserId(), dto);
         return Result.success();
     }
 
-    /**
-     * POST /api/v1/profile/security/mobile/bind
-     * 首次绑定手机号
-     */
     @PostMapping("/security/mobile/bind")
     public Result<Void> bindMobile(@Valid @RequestBody MobileBindDTO dto) {
-        Long userId = SecurityUtils.getUserId();
-        employeeService.bindMobile(userId, dto);
+        employeeService.bindMobile(SecurityUtils.getUserId(), dto);
         return Result.success();
     }
 
-    /**
-     * GET /api/v1/profile/security/login-logs
-     * 本人登录日志
-     */
     @GetMapping("/security/login-logs")
     public Result<List<LoginLogVO>> listLoginLogs() {
-        Long userId = SecurityUtils.getUserId();
-        return Result.success(employeeService.listLoginLogs(userId));
+        return Result.success(employeeService.listLoginLogs(SecurityUtils.getUserId()));
     }
 }
