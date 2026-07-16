@@ -12,6 +12,7 @@ import { getEmployeeDetail, updateEmployee } from '@/services/employee';
 import type { EmployeeDetail } from '@/services/employee';
 import dayjs from 'dayjs';
 
+// TODO: org接口未完成 — departmentId/positionId 的禁用+Tooltip 展示依赖 org 模块组织树数据，后续可增加「点击跳转调岗申请页」链接
 const FLOW_HINTS: Record<string, string> = {
   departmentId: '请走调岗流程（POST /transfers）',
   positionId:   '请走调岗流程（POST /transfers）',
@@ -97,7 +98,8 @@ const EmployeeEditPage: React.FC = () => {
 
         <Descriptions title="不可编辑（须走流程）" column={2} bordered size="small" style={{ marginBottom: 16 }}>
           {[
-            { label: '部门', value: detail.department, key: 'departmentId' },
+            // TODO: org接口未完成 — department/position display 值由后端 JOIN 返回，独立 org 查询待联调
+          { label: '部门', value: detail.department, key: 'departmentId' },
             { label: '职位', value: detail.position, key: 'positionId' },
             { label: '手机号', value: detail.mobile, key: 'mobile' },
             { label: '职级', value: detail.grade, key: 'grade' },

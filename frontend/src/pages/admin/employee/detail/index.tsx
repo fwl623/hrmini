@@ -69,6 +69,7 @@ const EmployeeDetailPage: React.FC = () => {
         <Descriptions column={2} bordered size="small">
           <Descriptions.Item label="工号">{detail.empNo}</Descriptions.Item>
           <Descriptions.Item label="在职状态"><Tag color={s.color}>{s.label}</Tag></Descriptions.Item>
+          {/* TODO: org接口未完成 — department/position/managerName 由后端 JOIN 部门表返回，若需实时查询 org 接口替换 */}
           <Descriptions.Item label="部门">{detail.department}</Descriptions.Item>
           <Descriptions.Item label="职位">{detail.position}</Descriptions.Item>
           <Descriptions.Item label="职级">{detail.grade || '-'}</Descriptions.Item>
