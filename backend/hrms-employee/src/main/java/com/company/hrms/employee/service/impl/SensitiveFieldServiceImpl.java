@@ -19,13 +19,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 敏感字段服务实现
- *
+ * <p>
  * 验证流程：
  * 1. 校验员工存在
  * 2. 密码二次验证（委托 hrms-auth 校验密码，当前简化）
- * 3. AES-256-GCM 解密
- * 4. 记审计日志
- * 5. 不占用工资条 verify Key（独立 Redis Key 或每次验证）
+ * 3. AES-256-GCM 解密身份证号或银行卡号
+ * 4. 记审计日志（操作日志用于安全审计）
+ * 5. 不占用工资条 verify Key（独立验证，互不影响）
+ * </p>
  */
 @Slf4j
 @Service
@@ -46,7 +47,7 @@ public class SensitiveFieldServiceImpl implements SensitiveFieldService {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "员工不存在");
         }
 
-        // 2. 密码二次验证（简化：非空即通过；联调时对接 hrms-auth 的密码校验接口）
+        // 2. 密码二次验证（简化版：非空即通过；联调时对接 hrms-auth 的密码校验接口）
         if (password == null || password.isBlank()) {
             throw new BusinessException(ErrorCode.FIELD_FORBIDDEN, "敏感字段查看需密码验证");
         }
@@ -83,11 +84,11 @@ public class SensitiveFieldServiceImpl implements SensitiveFieldService {
             default -> throw new BusinessException(ErrorCode.PARAM_INVALID, "不支持的敏感字段: " + field);
         }
 
-        // 4. 记审计日志
+        // 4. 记审计日志（记录敏感字段查看操作，用于安全审计追溯）
         log.info("SENSITIVE_FIELD_VIEW | employeeId={} | field={} | operatorId={}",
                 employeeId, field, SecurityUtils.getUserId());
 
-        // 5. 不占用工资条 verify Key（本接口独立验证，不影响 payslip verify）
+        // 5. 不占用工资条 verify Key（本接口独立验证，不影响 payslip verify 状态）
 
         SensitiveFieldVO vo = new SensitiveFieldVO();
         vo.setEmployeeId(employeeId);

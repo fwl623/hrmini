@@ -53,3 +53,10 @@ config/docker/data/
 
 # 个人系分（仅本地，不上传 Gitee）
 李俊毅个人系分/
+# 忽略接口文档、系分设计、PRD需求文档，不提交远端TEST分支
+HRMS-API-Contract*.md
+HRMS-Backend-System-Design*.md
+HRMS-Frontend-System-Design*.md
+人资管理系统-PRD.md
+前端系分模板.md
+后端系分模板.md
