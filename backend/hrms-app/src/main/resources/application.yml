@@ -11,9 +11,6 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
-      # 本地未启 Redis 时先排除，避免启动失败（auth 未接 Redis 前可调 Swagger）
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 
 springdoc:
   api-docs:

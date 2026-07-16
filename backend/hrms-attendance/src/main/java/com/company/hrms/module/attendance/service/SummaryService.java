@@ -1,6 +1,7 @@
 package com.company.hrms.module.attendance.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.company.hrms.attendance.entity.AttendanceDailySummary;
 import com.company.hrms.attendance.entity.AttendanceMonthLock;
 import com.company.hrms.attendance.entity.AttendanceMonthlySummary;
@@ -74,9 +75,7 @@ public class SummaryService {
         }
 
         // 查锁定状态
-        AttendanceMonthLock lock = monthLockMapper.selectOne(
-                new LambdaQueryWrapper<AttendanceMonthLock>()
-                        .eq(AttendanceMonthLock::getYearMonth, period));
+        AttendanceMonthLock lock = monthLockMapper.selectByPeriod(period);
 
         MonthlySummaryVO vo = new MonthlySummaryVO();
         vo.setList(items);
@@ -90,9 +89,7 @@ public class SummaryService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateLock(String period, boolean locked, Long operatorId) {
-        AttendanceMonthLock lock = monthLockMapper.selectOne(
-                new LambdaQueryWrapper<AttendanceMonthLock>()
-                        .eq(AttendanceMonthLock::getYearMonth, period));
+        AttendanceMonthLock lock = monthLockMapper.selectByPeriod(period);
 
         if (locked) {
             if (lock == null) {

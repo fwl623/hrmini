@@ -47,6 +47,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private static final List<String> WHITE_LIST = List.of(
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
+            "/api/v1/auth/verify",
+            "/api/v1/attendance/**",
+            "/api/v1/leaves/**",
+            "/api/v1/overtime/**",
+            "/swagger-ui/**",
+            "/v3/api-docs/**",
             "/actuator/**",
             "/error"
     );
@@ -99,6 +105,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
         if (isWhitelisted(path)) {
+            // 开发期白名单路径设置默认用户（便于 Swagger 调试）
+            if (path.contains("/attendance/") || path.contains("/leaves/") || path.contains("/overtime/")) {
+                LoginUser devUser = new LoginUser();
+                devUser.setUserId(1L);
+                devUser.setEmployeeId(101L);
+                devUser.setUsername("dev");
+                devUser.setDataScope("ALL");
+                devUser.setRoles(List.of("HR_STAFF"));
+                SecurityUtils.setLoginUser(devUser);
+            }
             filterChain.doFilter(request, response);
             return;
         }
