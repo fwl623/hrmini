@@ -31,6 +31,58 @@ declare namespace API {
     code: number;
     message: string;
     data: T;
+    traceId?: string;
+    timestamp?: number;
+  }
+
+  interface LoginRequest {
+    username: string;
+    password: string;
+  }
+
+  interface LoginResponse {
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+    mustChangePassword: boolean;
+  }
+
+  interface RefreshTokenRequest {
+    refreshToken: string;
+  }
+
+  interface ProfileResponse {
+    userId: number;
+    employeeId?: number;
+    username: string;
+    roles: string[];
+    permissions: string[];
+    dataScope: string;
+    mustChangePassword: boolean;
+    passwordExpiredAt?: string;
+  }
+
+  interface ChangePasswordRequest {
+    oldPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }
+
+  interface CurrentUser {
+    userId: number;
+    employeeId?: number;
+    username: string;
+    roles: string[];
+    roleCode: string;
+    permissions: string[];
+    dataScope: string;
+    mustChangePassword: boolean;
+    passwordExpiredAt?: string;
+  }
+
+  interface InitialState {
+    currentUser?: CurrentUser;
+    fetchUserInfo?: () => Promise<CurrentUser | undefined>;
   }
 
   /** 分页结构 */
