@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.payroll.mapper.PayrollBatchMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.payroll.entity.PayrollBatch">
+        <id column="id" property="id" />
+        <result column="period" property="period" />
+        <result column="status" property="status" />
+        <result column="total_count" property="totalCount" />
+        <result column="success_count" property="successCount" />
+        <result column="gross_total" property="grossTotal" />
+        <result column="net_total" property="netTotal" />
+        <result column="anomaly_count" property="anomalyCount" />
+        <result column="instance_id" property="instanceId" />
+        <result column="attendance_locked" property="attendanceLocked" />
+        <result column="created_by" property="createdBy" />
+        <result column="created_at" property="createdAt" />
+        <result column="updated_at" property="updatedAt" />
+    </resultMap>
+
+</mapper>

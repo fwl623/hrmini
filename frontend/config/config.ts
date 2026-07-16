@@ -23,6 +23,12 @@ export default defineConfig({
       routes: [
         { path: '/admin', redirect: '/admin/workbench' },
         { path: '/admin/workbench', component: './admin/workbench' },
+
+        // 考勤管理
+        { path: '/admin/attendance/groups', component: './admin/attendance/groups' },
+
+        // 薪资管理
+        { path: '/admin/payroll/schemes', component: './admin/payroll/schemes' },
       ],
     },
     {
@@ -31,6 +37,9 @@ export default defineConfig({
       routes: [
         { path: '/portal', redirect: '/portal/profile' },
         { path: '/portal/profile', component: './portal/profile' },
+
+        // 员工考勤
+        { path: '/portal/attendance', component: './portal/attendance' },
       ],
     },
   ],

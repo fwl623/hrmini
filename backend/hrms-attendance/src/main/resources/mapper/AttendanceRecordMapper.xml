@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.attendance.mapper.AttendanceRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.attendance.entity.AttendanceRecord">
+        <id column="id" property="id" />
+        <result column="employee_id" property="employeeId" />
+        <result column="punch_date" property="punchDate" />
+        <result column="punch_time" property="punchTime" />
+        <result column="punch_type" property="punchType" />
+        <result column="punch_status" property="punchStatus" />
+        <result column="source" property="source" />
+        <result column="client_ip" property="clientIp" />
+        <result column="gps_json" property="gpsJson" />
+        <result column="created_at" property="createdAt" />
+    </resultMap>
+
+</mapper>

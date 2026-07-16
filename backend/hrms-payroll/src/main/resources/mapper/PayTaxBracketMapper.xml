@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.payroll.mapper.PayTaxBracketMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.payroll.entity.PayTaxBracket">
+        <id column="id" property="id" />
+        <result column="tax_year" property="taxYear" />
+        <result column="min_taxable" property="minTaxable" />
+        <result column="max_taxable" property="maxTaxable" />
+        <result column="rate" property="rate" />
+        <result column="quick_deduction" property="quickDeduction" />
+    </resultMap>
+
+</mapper>

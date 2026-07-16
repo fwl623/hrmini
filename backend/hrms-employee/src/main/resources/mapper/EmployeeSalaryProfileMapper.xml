@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper">
+
+    <select id="selectByEmployeeId" resultType="com.company.hrms.employee.entity.EmployeeSalaryProfile">
+        SELECT * FROM employee_salary_profile WHERE employee_id = #{employeeId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO employee_salary_profile (employee_id, scheme_id, base_salary,
+            allowance_base_json, ss_base, hf_base, performance_base, probation_ratio, effective_date)
+        VALUES (#{employeeId}, #{schemeId}, #{baseSalary}, #{allowanceBaseJson},
+            #{ssBase}, #{hfBase}, #{performanceBase}, #{probationRatio}, #{effectiveDate})
+    </insert>
+
+    <update id="updateById">
+        UPDATE employee_salary_profile
+        <set>
+            <if test="schemeId != null">scheme_id = #{schemeId},</if>
+            <if test="baseSalary != null">base_salary = #{baseSalary},</if>
+            <if test="ssBase != null">ss_base = #{ssBase},</if>
+            <if test="hfBase != null">hf_base = #{hfBase},</if>
+            <if test="performanceBase != null">performance_base = #{performanceBase},</if>
+            <if test="probationRatio != null">probation_ratio = #{probationRatio},</if>
+            <if test="allowanceBaseJson != null">allowance_base_json = #{allowanceBaseJson},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+</mapper>

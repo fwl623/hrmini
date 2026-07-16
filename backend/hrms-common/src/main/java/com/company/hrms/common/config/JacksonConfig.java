@@ -12,6 +12,9 @@ import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import java.time.ZoneId;
 import java.util.TimeZone;
 
+/**
+ * Jackson 全局配置
+ */
 @Configuration
 public class JacksonConfig {
 
