@@ -1,0 +1,91 @@
+package com.company.hrms.workflow.dto;
+
+import lombok.Data;
+
+import java.util.List;
+import java.util.Map;
+
+public final class ApprovalDtos {
+    private ApprovalDtos() {
+    }
+
+    @Data
+    public static class TaskStatsVO {
+        private long pending;
+        private long approvedToday;
+        private long overdueCount;
+    }
+
+    @Data
+    public static class TaskListItemVO {
+        private Long taskId;
+        private Long instanceId;
+        private String processType;
+        private String title;
+        private String applicantName;
+        private String applicantDept;
+        private String businessNo;
+        private String businessSummary;
+        private String currentNodeLabel;
+        private String createTime;
+        private String dueAt;
+        private String status;
+    }
+
+    @Data
+    public static class TaskDetailVO {
+        private TaskBriefVO task;
+        private InstanceBriefVO instance;
+        private Map<String, Object> businessDetail;
+        private List<TimelineItemVO> timeline;
+        private List<String> actions;
+    }
+
+    @Data
+    public static class TaskBriefVO {
+        private Long id;
+        private String status;
+        private String currentNodeLabel;
+        private String dueAt;
+    }
+
+    @Data
+    public static class InstanceBriefVO {
+        private String processType;
+        private String businessNo;
+        private String initiator;
+        private String createdAt;
+        private String status;
+    }
+
+    @Data
+    public static class TimelineItemVO {
+        private String node;
+        private String assignee;
+        private String action;
+        private String comment;
+        private String time;
+        private String displayText;
+    }
+
+    @Data
+    public static class ActionRequest {
+        private String action;
+        private String comment;
+        private Long targetUserId;
+    }
+
+    @Data
+    public static class InstanceListItemVO {
+        private Long instanceId;
+        private Long taskId;
+        private String processType;
+        private String title;
+        private String applicantName;
+        private String applicantDept;
+        private String currentNodeLabel;
+        private String createTime;
+        private String dueAt;
+        private String status;
+    }
+}
