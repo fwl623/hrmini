@@ -405,7 +405,7 @@ export async function getMonthlySummary(params: { period: string; departmentId?:
  * @param data.locked - true 表示锁定汇总数据；false 表示解锁
  * @returns 无返回数据，仅表示操作成功或失败
  */
-export async function updateMonthlySummaryLock(data: { locked: boolean }) {
+export async function updateMonthlySummaryLock(data: { period: string; locked: boolean }) {
   return request<API.Result<null>>(`/api/v1/attendance/monthly-summary`, {
     method: 'PUT',
     data,
