@@ -10,7 +10,8 @@
     </parent>
     <artifactId>hrms-workflow</artifactId>
     <name>hrms-workflow</name>
-    <description>入转调离 + 审批中心 — 同学 C</description>
+    <description>入转调离 + 审批中心 — 郭策</description>
+
     <dependencies>
         <dependency>
             <groupId>com.company.hrms</groupId>
@@ -23,6 +24,15 @@
         <dependency>
             <groupId>com.company.hrms</groupId>
             <artifactId>hrms-employee</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
         </dependency>
     </dependencies>
 </project>

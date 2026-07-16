@@ -88,4 +88,4 @@ dto/          ← 请求/响应 VO
 - **Mapper**：直接继承 `BaseMapper<Entity>`，默认自带 CRUD；复杂 SQL 用 `@Select` 注解或 XML，避免手写重复的 insert/update/delete
 - **日志**：Service 类加 `@Slf4j` 注解，直接用 `log.info()` / `log.warn()` / `log.error()` 记录关键操作和异常
 - **Lombok**：优先使用 `@Data`（实体/DTO）、`@RequiredArgsConstructor`（构造器注入）、`@Slf4j`（日志），减少模板代码
-- **DTO/VO**：放在 `dto/` 包，Controller 入参用 DTO，出参用 VO，与 Entity 解耦`
+- **DTO/VO**：放在 `dto/` 包，Controller 入参用 DTO，出参用 VO，与 Entity 解耦

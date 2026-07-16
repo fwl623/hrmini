@@ -17,7 +17,7 @@ import java.lang.annotation.Target;
  *   <li>{@code @DataScope(SELF)} — 强制仅本人（如 /profile/*）</li>
  *   <li>{@code @DataScope(DEPT_TREE)} — 强制本部门及下级</li>
  * </ul>
- * 拦截器实现将在对接员工列表等查询时完善。
+ * 配合 {@link DataScopeAspect} + {@link DataScopeInterceptor} 自动追加 WHERE。
  */
 @Target({ElementType.METHOD, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
@@ -26,7 +26,7 @@ public @interface DataScope {
 
     /**
      * 本接口要求的数据范围。
-     * AUTO：跟随 LoginUser.dataScope；其余为强制覆盖（取更严一侧由拦截器实现）。
+     * AUTO：跟随 LoginUser.dataScope；其余为注解强制值。
      */
     DataScopeType value() default DataScopeType.AUTO;
 

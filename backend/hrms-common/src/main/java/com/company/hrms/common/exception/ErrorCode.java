@@ -19,6 +19,9 @@ public enum ErrorCode {
     FORBIDDEN(20002, "无权限", HttpStatus.FORBIDDEN),
     FIELD_FORBIDDEN(20003, "字段权限不足", HttpStatus.FORBIDDEN),
 
+    RESOURCE_CONFLICT(40901, "资源已存在", HttpStatus.CONFLICT),
+    ACCOUNT_LOCKED(42201, "账号已锁定，请 15 分钟后再试", HttpStatus.UNPROCESSABLE_ENTITY),
+
     DEPT_LEVEL_EXCEEDED(30001, "部门层级超过 5 层", HttpStatus.UNPROCESSABLE_ENTITY),
     DEPT_MERGE_HAS_EMPLOYEE(30002, "部门合并前尚有员工", HttpStatus.UNPROCESSABLE_ENTITY),
     EMPLOYEE_STATUS_INVALID(30003, "员工状态不允许此操作", HttpStatus.UNPROCESSABLE_ENTITY),

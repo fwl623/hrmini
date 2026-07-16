@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.employee.mapper.EmployeeTransferHistoryMapper">
+
+    <select id="selectByEmployeeId" resultType="com.company.hrms.employee.entity.EmployeeTransferHistory">
+        SELECT * FROM employee_transfer_history WHERE employee_id = #{employeeId} ORDER BY transfer_date DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO employee_transfer_history (employee_id, transfer_app_id,
+            from_department_id, to_department_id, from_position_id, to_position_id,
+            transfer_date, reason)
+        VALUES (#{employeeId}, #{transferAppId}, #{fromDepartmentId}, #{toDepartmentId},
+            #{fromPositionId}, #{toPositionId}, #{transferDate}, #{reason})
+    </insert>
+
+</mapper>
