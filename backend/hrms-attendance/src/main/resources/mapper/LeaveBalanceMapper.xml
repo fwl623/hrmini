@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.attendance.mapper.LeaveBalanceMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.attendance.entity.LeaveBalance">
+        <id column="id" property="id" />
+        <result column="employee_id" property="employeeId" />
+        <result column="leave_type" property="leaveType" />
+        <result column="balance" property="balance" />
+        <result column="year" property="year" />
+        <result column="expire_date" property="expireDate" />
+        <result column="updated_at" property="updatedAt" />
+    </resultMap>
+
+</mapper>

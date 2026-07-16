@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.payroll.mapper.PayrollAdjustmentMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.payroll.entity.PayrollAdjustment">
+        <id column="id" property="id" />
+        <result column="detail_id" property="detailId" />
+        <result column="item_code" property="itemCode" />
+        <result column="adjust_amount" property="adjustAmount" />
+        <result column="reason" property="reason" />
+        <result column="operator_id" property="operatorId" />
+        <result column="created_at" property="createdAt" />
+    </resultMap>
+
+</mapper>

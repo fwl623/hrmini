@@ -1,36 +1,27 @@
 package com.company.hrms.common.entity;
 
-import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import lombok.Data;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * 基础实体类
- * 所有业务实体继承此类，自动填充通用字段
+ * 可选基类：含审计时间与逻辑删除字段的表可继承。
+ * 注意：并非所有表都有 deleted 字段，按表选择是否继承。
  */
 @Data
-public class BaseEntity {
+public abstract class BaseEntity implements Serializable {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
+    @TableField(value = "created_at", fill = FieldFill.INSERT)
+    private LocalDateTime createdAt;
 
-    @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime createTime;
-
-    @TableField(fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updateTime;
-
-    @TableField(fill = FieldFill.INSERT)
-    private Long createBy;
-
-    @TableField(fill = FieldFill.INSERT_UPDATE)
-    private Long updateBy;
+    @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
+    private LocalDateTime updatedAt;
 
     @TableLogic
     @TableField("deleted")
-    private Boolean deleted;
-
-    @Version
-    private Integer version;
+    private Integer deleted;
 }
