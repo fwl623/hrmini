@@ -45,5 +45,8 @@ logs/
 tmp/
 temp/
 
+# Root-level design docs (not part of source code)
+/*.md
+
 # Docker volumes (local)
 config/docker/data/
