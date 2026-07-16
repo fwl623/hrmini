@@ -2,6 +2,7 @@ package com.company.hrms.workflow.service;
 
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
+import com.company.hrms.employee.dto.OnboardingArchiveCommand;
 import com.company.hrms.workflow.core.ApprovalStateMachine;
 import com.company.hrms.workflow.dto.OnboardingDtos;
 import com.company.hrms.workflow.entity.OnboardingApplication;
@@ -30,13 +31,16 @@ public class OnboardingService {
     private final WorkflowMemoryStore store;
     private final ApprovalEngine approvalEngine;
     private final CurrentUserProvider currentUserProvider;
+    private final com.company.hrms.employee.service.OnboardingService employeeOnboardingService;
 
     public OnboardingService(WorkflowMemoryStore store,
                              ApprovalEngine approvalEngine,
-                             CurrentUserProvider currentUserProvider) {
+                             CurrentUserProvider currentUserProvider,
+                             com.company.hrms.employee.service.OnboardingService employeeOnboardingService) {
         this.store = store;
         this.approvalEngine = approvalEngine;
         this.currentUserProvider = currentUserProvider;
+        this.employeeOnboardingService = employeeOnboardingService;
     }
 
     public OnboardingDtos.OnboardingListResponse list(int page, int pageSize, String status) {
@@ -165,11 +169,37 @@ public class OnboardingService {
 
     public OnboardingDtos.OnboardingVO confirm(long id) {
         OnboardingApplication app = require(id);
-        String next = ApprovalStateMachine.transit(
-                ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.APPROVE);
-        app.setStatus(next);
-        app.setActualOnboardDate(LocalDate.now());
-        // TODO: 调员工建档 / auth 建号
+        if (!ApprovalStatus.Onboarding.APPROVED_PENDING.code().equalsIgnoreCase(app.getStatus())) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "仅「审批通过待入职」可确认入职");
+        }
+        LocalDate actual = LocalDate.now();
+        OnboardingArchiveCommand cmd = new OnboardingArchiveCommand();
+        cmd.setApplicationId(app.getId());
+        cmd.setActualOnboardDate(actual);
+        cmd.setName(app.getName());
+        cmd.setGender(app.getGender());
+        cmd.setMobile(app.getMobile());
+        cmd.setEmail(app.getEmail());
+        cmd.setIdNumber(app.getIdNumberEnc());
+        cmd.setDepartmentId(app.getDepartmentId());
+        cmd.setPositionId(app.getPositionId());
+        cmd.setEmploymentType(app.getEmploymentType());
+        cmd.setProbationMonths(app.getProbationMonths());
+        cmd.setProbationSalaryRatio(app.getProbationSalaryRatio());
+        cmd.setBaseSalary(app.getBaseSalary());
+        cmd.setManagerId(app.getManagerId());
+        cmd.setExpectedOnboardDate(app.getExpectedOnboardDate());
+
+        Long employeeId = employeeOnboardingService.confirm(cmd);
+
+        try {
+            app.setStatus(ApprovalStateMachine.transit(
+                    ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.APPROVE));
+        } catch (IllegalStateException | IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, ex.getMessage());
+        }
+        app.setActualOnboardDate(actual);
+        app.setEmployeeId(employeeId);
         app.setUpdatedAt(LocalDateTime.now());
         store.saveOnboarding(app);
         return toVo(app);
@@ -195,13 +225,19 @@ public class OnboardingService {
             return;
         }
         if (approved) {
-            String next = ApprovalStateMachine.transit(
-                    ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.APPROVE);
-            app.setStatus(next);
+            try {
+                app.setStatus(ApprovalStateMachine.transit(
+                        ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.APPROVE));
+            } catch (IllegalStateException | IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, ex.getMessage());
+            }
         } else {
-            String next = ApprovalStateMachine.transit(
-                    ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.REJECT);
-            app.setStatus(next);
+            try {
+                app.setStatus(ApprovalStateMachine.transit(
+                        ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.REJECT));
+            } catch (IllegalStateException | IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, ex.getMessage());
+            }
         }
         app.setUpdatedAt(LocalDateTime.now());
         store.saveOnboarding(app);

@@ -1,21 +1,16 @@
 package com.company.hrms.employee.service;
 
+import com.company.hrms.employee.dto.OnboardingArchiveCommand;
+
 /**
- * 入职建档服务
- *
- * 流程：confirm → create employee → auth create user → MQ event
- *
- * ⚠️ 调 A 组 (李俊毅) 的 auth 建号 — 先约定接口，联调验证
- * ⚠️ MQ 事件通知考勤/薪资模块 — 待 MQ 基础设施就绪
+ * 入职建档服务：confirm → 员工档案 + 系统账号。
  */
 public interface OnboardingService {
 
     /**
-     * 确认入职：创建员工档案 + 系统账号 + 发送 MQ 事件
+     * 确认入职：创建员工档案、个人信息、合同占位、系统账号。
      *
-     * @param applicationId 入职申请ID（来自 hrms-workflow）
-     * @param actualOnboardDate 实际入职日期
-     * @return 新建员工ID
+     * @return 新建员工 ID
      */
-    Long confirm(Long applicationId, java.time.LocalDate actualOnboardDate);
+    Long confirm(OnboardingArchiveCommand command);
 }

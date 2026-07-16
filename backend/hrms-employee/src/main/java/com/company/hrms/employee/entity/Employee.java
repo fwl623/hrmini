@@ -27,6 +27,7 @@ public class Employee {
     private Integer employmentStatus; // 10/20/30/40
     private LocalDate lastWorkDay;
     private java.math.BigDecimal probationPayRatio;
+    private LocalDate probationEndDate;
     private Integer deleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

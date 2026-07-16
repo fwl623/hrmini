@@ -50,3 +50,12 @@ config/docker/data/
 
 # 个人系分（仅本地，不上传 Gitee）
 李俊毅个人系分/
+
+# 系分 / 契约 / PRD（仅本地，不推远程）
+HRMS-API-Contract(3).md
+HRMS-API-Contract.md
+HRMS-Backend-System-Design.md
+HRMS-Frontend-System-Design.md
+后端系分模板.md
+前端系分模板.md
+人资管理系统-PRD.md

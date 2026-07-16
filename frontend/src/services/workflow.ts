@@ -171,11 +171,30 @@ export async function fetchOnboardingApplications(params?: {
   page?: number;
   pageSize?: number;
 }) {
-  return request<API.Result<unknown>>(`${ONBOARDING_PREFIX}`, {
+  const res = await request<
+    API.Result<{
+      list: Array<{
+        id: number;
+        status: string;
+        name: string;
+        mobile?: string;
+        departmentId?: number;
+        positionId?: number;
+        baseSalary?: number;
+        expectedOnboardDate?: string;
+        employeeId?: number;
+        instanceId?: number;
+        createdAt?: string;
+      }>;
+      total: number;
+      stats?: Record<string, number>;
+    }>
+  >(`${ONBOARDING_PREFIX}`, {
     method: 'GET',
     params,
     headers: { 'X-User-Id': '1001' },
   });
+  return res.data;
 }
 
 export async function createOnboardingApplication(data: OnboardingForm) {

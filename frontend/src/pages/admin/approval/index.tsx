@@ -117,7 +117,7 @@ export default function ApprovalCenterPage() {
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         待办 {stats?.pending ?? '-'} · 今日已审 {stats?.approvedToday ?? '-'} · 超时{' '}
         {stats?.overdueCount ?? '-'}
-        （开发期默认 X-User-Id=1002 看待办）
+        （开发期请求头 X-User-Id=1002 看待办；入职一审也是 1002）
       </Typography.Paragraph>
 
       <Card>

@@ -27,12 +27,12 @@ import java.util.stream.Collectors;
 @Component
 public class WorkflowMemoryStore {
 
-    private final AtomicLong processDefSeq = new AtomicLong(1);
-    private final AtomicLong instanceSeq = new AtomicLong(1);
-    private final AtomicLong taskSeq = new AtomicLong(1);
-    private final AtomicLong logSeq = new AtomicLong(1);
-    private final AtomicLong delegationSeq = new AtomicLong(1);
-    private final AtomicLong onboardingSeq = new AtomicLong(1);
+    private final AtomicLong processDefSeq = new AtomicLong(1_000_000);
+    private final AtomicLong instanceSeq = new AtomicLong(1_000_000);
+    private final AtomicLong taskSeq = new AtomicLong(1_000_000);
+    private final AtomicLong logSeq = new AtomicLong(1_000_000);
+    private final AtomicLong delegationSeq = new AtomicLong(1_000_000);
+    private final AtomicLong onboardingSeq = new AtomicLong(1_000_000);
 
     private final Map<Long, ApprovalProcessDef> processDefs = new ConcurrentHashMap<>();
     private final Map<Long, ApprovalInstance> instances = new ConcurrentHashMap<>();

@@ -32,6 +32,13 @@ export default defineConfig({
         // 员工管理
         { path: '/admin/employee/list', component: './admin/employee/list' },
 
+        // 入转调离
+        { path: '/admin/onboarding', component: './admin/onboarding' },
+        { path: '/admin/regularization', component: './admin/regularization' },
+        { path: '/admin/transfers', component: './admin/transfers' },
+        { path: '/admin/resignation', component: './admin/resignation' },
+        { path: '/admin/approval', component: './admin/approval' },
+
         // 考勤管理
         { path: '/admin/attendance/groups', component: './admin/attendance/groups' },
 
@@ -53,8 +60,8 @@ export default defineConfig({
         { path: '/portal/leave', component: './portal/profile' },
         { path: '/portal/overtime', component: './portal/profile' },
         { path: '/portal/payslips', component: './portal/profile' },
-        { path: '/portal/resignation', component: './portal/profile' },
-        { path: '/portal/security', component: './portal/profile' },
+        { path: '/portal/resignation', component: './portal/resignation' },
+        { path: '/portal/security', component: './portal/security' },
       ],
     },
   ],

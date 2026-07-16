@@ -36,4 +36,7 @@ public interface EmployeeMapper {
     Employee selectByMobile(@Param("mobile") String mobile);
     int insert(Employee employee);
     int updateById(Employee employee);
+
+    /** 试用期结束日在 [from, to] 内的试用员工 */
+    List<Employee> listPendingRegularization(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }
