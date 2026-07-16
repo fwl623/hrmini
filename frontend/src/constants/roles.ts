@@ -18,4 +18,22 @@ export const ADMIN_ROLES: RoleCode[] = [
   ROLES.FINANCE,
 ];
 
+/** 多角色时取主角色（优先级高的在前） */
+export const ROLE_PRIORITY: RoleCode[] = [
+  ROLES.SYS_ADMIN,
+  ROLES.HR_STAFF,
+  ROLES.FINANCE,
+  ROLES.DEPT_MANAGER,
+  ROLES.EMPLOYEE,
+];
+
+export function resolvePrimaryRole(roles: string[] = []): string {
+  for (const role of ROLE_PRIORITY) {
+    if (roles.includes(role)) {
+      return role;
+    }
+  }
+  return roles[0] ?? '';
+}
+
 export const API_BASE = '/api/v1';
