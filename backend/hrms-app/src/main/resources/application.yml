@@ -6,9 +6,41 @@ spring:
     name: hrms-app
   profiles:
     active: dev
+  # RabbitMQ 未启用前排除自动配置，避免启动去连默认 localhost:5672。
+  # 启用 MQ：取消本 exclude，并在 application-dev.yml 取消 rabbitmq 注释。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
 
+
+# 给运维/自己看的健康检查接口，比如服务是否活着
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+# 公共模块配置（生产务必用环境变量覆盖密钥）
+#
+# jwt.secret  —— 服务端签发/校验 Access Token 的 HMAC 密钥（系统密钥，不是用户密码）。
+#               用户登录用的是自己的账号密码；登录成功后服务端用此 secret 签名 JWT。
+# crypto.aes-key —— 身份证/银行卡等库内加密用的 AES-256 密钥（Base64，解码后 32 字节）。
+#               与登录无关，防库泄露时敏感字段明文可见。
+#
+hrms:
+  jwt:
+    secret: hrms-dev-secret-key-change-me-32bytes!!
+    access-expire-seconds: 7200
+  # 模块间内部接口密钥（请求头 X-Internal-Token）；生产务必用环境变量覆盖
+  internal:
+    token: ${HRMS_INTERNAL_TOKEN:hrms-dev-internal-token-change-me}
+  # 短信：联调开启开发码；生产设 hrms.sms.dev-enabled=false
+  sms:
+    dev-enabled: true
+    dev-code: "123456"
+  # Base64(UTF-8 "hrms-dev-aes-256-key-32bytes!!!!")；仅本地开发
+  # 生产示例：export HRMS_AES_KEY=... 或 SPRING_APPLICATION_JSON 覆盖 hrms.crypto.aes-key
+  crypto:
+    aes-key: aHJtcy1kZXYtYWVzLTI1Ni1rZXktMzJieXRlcyEhISE=
+  cors:
+    allowed-origins: http://localhost:8000,http://127.0.0.1:8000
