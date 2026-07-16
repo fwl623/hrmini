@@ -1,37 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Button, Statistic, Timeline, Tag, Typography, message, Space } from 'antd';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Card, Row, Col, Button, Statistic, Timeline, Tag, Typography, message, Space, Modal, Form, DatePicker, TimePicker, Input, Select,
+} from 'antd';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
   AimOutlined,
 } from '@ant-design/icons';
+import dayjs from 'dayjs';
 
-/** Mock 今日打卡状态 */
-const MOCK_TODAY_STATUS = {
-  clockedCount: 45,   // 已打卡人数
-  totalCount: 50,     // 应打卡总人数
-  lateCount: 3,       // 迟到人数
-  earlyLeaveCount: 1, // 早退人数
-  absentCount: 1,     // 缺卡人数
-};
+import { portalPunch, getTodayPunchStatus, getPunchFixQuota, applyPunchFix } from '@/services/attendance';
 
-/** Mock 今日打卡记录 */
-const MOCK_TODAY_RECORDS = [
-  { time: '08:55', type: '上班', status: 'NORMAL' },
-  { time: '18:05', type: '下班', status: 'NORMAL' },
-];
-
-/* 打卡状态 → 颜色映射（用于 Tag 和 Timeline 圆点） */
+/* 打卡状态 → 颜色映射 */
 const statusColorMap: Record<string, string> = {
-  NORMAL: 'green',         // 正常 → 绿色
-  LATE: 'orange',          // 迟到 → 橙色
-  EARLY_LEAVE: 'orange',   // 早退 → 橙色
-  ABSENT_HALF: 'red',      // 旷工半天 → 红色
-  ABSENT: 'red',           // 旷工全天 → 红色
+  NORMAL: 'green',
+  LATE: 'orange',
+  EARLY_LEAVE: 'orange',
+  ABSENT_HALF: 'red',
+  ABSENT: 'red',
 };
 
-/* 打卡状态 → 中文标签映射 */
+/* 打卡状态 → 中文标签 */
 const statusLabelMap: Record<string, string> = {
   NORMAL: '正常',
   LATE: '迟到',
@@ -41,32 +31,88 @@ const statusLabelMap: Record<string, string> = {
 };
 
 const AttendancePunchPage: React.FC = () => {
-  const [todayStatus] = useState(MOCK_TODAY_STATUS);
-  const [records] = useState(MOCK_TODAY_RECORDS);
+  const [todayStatus, setTodayStatus] = useState({ clockedCount: 0, totalCount: 2, lateCount: 0, earlyLeaveCount: 0, absentCount: 0 });
+  const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastPunch, setLastPunch] = useState<string | null>(null);
+  const [quota, setQuota] = useState({ totalQuota: 2, usedQuota: 0, remainingQuota: 2 });
+  const [fixModalOpen, setFixModalOpen] = useState(false);
+  const [fixForm] = Form.useForm();
+  const [fixSubmitting, setFixSubmitting] = useState(false);
 
-  // 当前时间用于展示
+  // 当前时间
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // 加载今日数据和补卡配额
+  const loadData = useCallback(async () => {
+    try {
+      const [statusRes, quotaRes] = await Promise.all([
+        getTodayPunchStatus(),
+        getPunchFixQuota(),
+      ]);
+      if (statusRes.data) setTodayStatus(statusRes.data);
+      if (quotaRes.data) setQuota(quotaRes.data);
+    } catch {
+      // API 未就绪时静默失败
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
   const handlePunch = async (type: 'in' | 'out') => {
     setLoading(true);
-    // Mock: 模拟打卡
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const mockStatus = type === 'in' ? 'NORMAL' : 'NORMAL';
-    const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-    setLastPunch(`${type === 'in' ? '上班' : '下班'} ${timeStr} — ${statusLabelMap[mockStatus]}`);
-    message.success(`${type === 'in' ? '上班' : '下班'}打卡成功`);
-    setLoading(false);
+    try {
+      const res = await portalPunch({ type, punchTime: new Date().toISOString() });
+      const punchStatus = res.data?.punchStatus || 'NORMAL';
+      const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      setLastPunch(`${type === 'in' ? '上班' : '下班'} ${timeStr} — ${statusLabelMap[punchStatus]}`);
+      message.success(`${type === 'in' ? '上班' : '下班'}打卡成功`);
+
+      // 刷新数据和记录
+      await loadData();
+      // 添加模拟记录（实时反馈）
+      setRecords(prev => [
+        ...prev,
+        { time: timeStr, type: type === 'in' ? '上班' : '下班', status: punchStatus },
+      ]);
+    } catch (err: any) {
+      message.error(err?.message || '打卡失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 补卡
+  const handleFixSubmit = async () => {
+    try {
+      const values = await fixForm.validateFields();
+      setFixSubmitting(true);
+      await applyPunchFix({
+        punchDate: values.punchDate.format('YYYY-MM-DD'),
+        type: values.type,
+        punchTime: values.punchTime.format('HH:mm'),
+        reason: values.reason,
+      });
+      message.success('补卡申请已提交，请等待审批');
+      setFixModalOpen(false);
+      fixForm.resetFields();
+      await loadData();
+    } catch (err: any) {
+      if (err?.message) message.error(err.message);
+    } finally {
+      setFixSubmitting(false);
+    }
   };
 
   return (
     <Row gutter={[24, 24]}>
-      {/* 时间卡片 */}
+      {/* 时间卡片 + 打卡按钮 */}
       <Col xs={24} lg={8}>
         <Card>
           <Typography.Title level={2} style={{ textAlign: 'center', marginBottom: 0 }}>
@@ -77,7 +123,6 @@ const AttendancePunchPage: React.FC = () => {
           </Typography.Text>
         </Card>
 
-        {/* 打卡按钮 */}
         <Card style={{ marginTop: 16 }}>
           <Space direction="vertical" style={{ width: '100%' }} size="large">
             <Button
@@ -111,13 +156,18 @@ const AttendancePunchPage: React.FC = () => {
 
         {/* 补卡入口 */}
         <Card style={{ marginTop: 16 }} size="small">
-          <Typography.Text type="secondary">
-            本月补卡剩余次数：2 次（最多 2 次/月）
-          </Typography.Text>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Typography.Text type="secondary">
+              本月补卡剩余次数：{quota.remainingQuota} 次（最多 {quota.totalQuota} 次/月）
+            </Typography.Text>
+            <Button type="link" size="small" onClick={() => setFixModalOpen(true)} disabled={quota.remainingQuota <= 0}>
+              申请补卡
+            </Button>
+          </Space>
         </Card>
       </Col>
 
-      {/* 今日状态 */}
+      {/* 今日状态 + 打卡记录 */}
       <Col xs={24} lg={16}>
         <Card title="今日打卡状态">
           <Row gutter={[16, 16]}>
@@ -156,23 +206,54 @@ const AttendancePunchPage: React.FC = () => {
           </Row>
         </Card>
 
-        {/* 今日打卡记录 */}
         <Card title="今日打卡记录" style={{ marginTop: 16 }}>
-          <Timeline
-            items={records.map((r) => ({
-              color: statusColorMap[r.status],
-              children: (
-                <>
-                  <Typography.Text strong>{r.time}</Typography.Text>
-                  <Tag color={statusColorMap[r.status]} style={{ marginLeft: 8 }}>
-                    {r.type} · {statusLabelMap[r.status]}
-                  </Tag>
-                </>
-              ),
-            }))}
-          />
+          {records.length > 0 ? (
+            <Timeline
+              items={records.map((r, i) => ({
+                key: i,
+                color: statusColorMap[r.status] || 'gray',
+                children: (
+                  <>
+                    <Typography.Text strong>{r.time}</Typography.Text>
+                    <Tag color={statusColorMap[r.status] || 'default'} style={{ marginLeft: 8 }}>
+                      {r.type} · {statusLabelMap[r.status] || r.status}
+                    </Tag>
+                  </>
+                ),
+              }))}
+            />
+          ) : (
+            <Typography.Text type="secondary">暂无打卡记录</Typography.Text>
+          )}
         </Card>
       </Col>
+
+      {/* 补卡申请弹窗 */}
+      <Modal
+        title="申请补卡"
+        open={fixModalOpen}
+        onOk={handleFixSubmit}
+        onCancel={() => { setFixModalOpen(false); fixForm.resetFields(); }}
+        confirmLoading={fixSubmitting}
+      >
+        <Form form={fixForm} layout="vertical">
+          <Form.Item name="punchDate" label="补卡日期" rules={[{ required: true, message: '请选择日期' }]}>
+            <DatePicker style={{ width: '100%' }} disabledDate={(d) => d && d.isAfter(dayjs())} />
+          </Form.Item>
+          <Form.Item name="type" label="补卡类型" rules={[{ required: true, message: '请选择类型' }]}>
+            <Select options={[
+              { label: '上班卡 (IN)', value: 'in' },
+              { label: '下班卡 (OUT)', value: 'out' },
+            ]} />
+          </Form.Item>
+          <Form.Item name="punchTime" label="补卡时间" rules={[{ required: true, message: '请选择时间' }]}>
+            <TimePicker format="HH:mm" style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="reason" label="补卡原因" rules={[{ required: true, max: 256, message: '请输入原因（≤256字符）' }]}>
+            <Input.TextArea rows={3} maxLength={256} showCount />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Row>
   );
 };

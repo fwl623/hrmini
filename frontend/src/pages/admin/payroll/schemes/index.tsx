@@ -110,7 +110,7 @@ const PayrollSchemePage: React.FC = () => {
       /* 工资项目列：展示该账套下的所有工资项目，计算项附带 SpEL 公式提示 */
       title: '工资项目',
       width: 300,
-      render: (_, record: any) => (
+      render: (_: any, record: any) => (
         <Space wrap>
           {record.items?.map((item: any) => (
             <Tag key={item.itemCode} color="blue" title={item.calcRule ? `SpEL: ${item.calcRule}` : undefined}>
@@ -126,7 +126,7 @@ const PayrollSchemePage: React.FC = () => {
       /* 操作列：编辑 / 删除 */
       title: '操作',
       width: 120,
-      render: (_, record) => (
+      render: (_: any, record: any) => (
         <Space>
           <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑

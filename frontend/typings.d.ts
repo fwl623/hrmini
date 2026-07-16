@@ -1,5 +1,30 @@
 /// <reference types="@umijs/max" />
 
+/**
+ * Umi 运行时生成类型补全
+ * `@umijs/max` → `umi` → `@@/exports` 依赖 Umi 构建时生成，
+ * tsc 独立检查时需要手动声明实际使用的导出。
+ */
+declare module '@umijs/max' {
+  export const Outlet: React.FC<{}>;
+  export const history: { push: (path: string) => void; goBack: () => void };
+  export function useLocation<T = { pathname: string }>(): T;
+  export function useParams<T = Record<string, string>>(): T;
+  export function useRouteData(): any;
+  export function useModel<T = any>(namespace: string): T;
+  export function useAccess(): Record<string, boolean>;
+
+  export function request<T = any>(url: string, options?: {
+    method?: string;
+    params?: Record<string, any>;
+    data?: any;
+    headers?: Record<string, string>;
+    [key: string]: any;
+  }): Promise<T>;
+
+  export function defineConfig(config: Record<string, any>): Record<string, any>;
+}
+
 declare namespace API {
   /** 统一响应结构 */
   interface Result<T = unknown> {
