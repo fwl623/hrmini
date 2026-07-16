@@ -37,7 +37,9 @@
                d.name AS department_name,
                p.name AS position_name
         FROM employee e
+        <!-- TODO: org接口未完成 — 直接 JOIN department/position 表取名称，后续可改为调用 hrms-org Feign 接口 -->
         LEFT JOIN department d ON e.department_id = d.id AND d.deleted = 0
+        <!-- TODO: org接口未完成 — position JOIN 同样依赖 org 模块数据 -->
         LEFT JOIN position p ON e.position_id = p.id AND p.deleted = 0
         WHERE e.deleted = 0
         <if test="keyword != null and keyword != ''">

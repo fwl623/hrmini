@@ -51,6 +51,7 @@ const EmployeeListPage: React.FC = () => {
       ),
     },
     {
+      // TODO: org接口未完成 — 部门列数据依赖后端 JOIN department 表返回，后续若需部门树下拉筛选需接入 GET /api/v1/departments/tree
       title: '部门',
       dataIndex: 'department',
       width: 120,
