@@ -19,6 +19,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void configurePathMatch(PathMatchConfigurer configurer) {
+        // 业务 Controller 统一加 /api/v1；排除 Spring / springdoc，避免 Swagger 落到 /api/v1/v3/api-docs
         configurer.addPathPrefix("/api/v1", c -> c.isAnnotationPresent(RestController.class)
                 && !c.getPackageName().startsWith("org.springframework")
                 && !c.getPackageName().startsWith("org.springdoc"));

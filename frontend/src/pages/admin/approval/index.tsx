@@ -1,80 +1,83 @@
-import { Card, Space, Table, Tabs, Typography } from 'antd';
+import { Card, Space, Table, Tabs, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import ApprovalActions from '@/components/ApprovalActions';
 import ApprovalTimeline from '@/components/ApprovalTimeline';
+import type { ApprovalTimelineNode } from '@/components/ApprovalTimeline';
 import ProcessStatusTag from '@/components/ProcessStatusTag';
-import type { ApprovalTaskItem } from '@/services/workflow';
+import {
+  fetchMyInstances,
+  fetchTaskDetail,
+  fetchTaskStats,
+  fetchTasks,
+  postTaskAction,
+  withdrawInstance,
+  type ApprovalTaskDetail,
+  type ApprovalTaskItem,
+  type ApprovalTaskStats,
+} from '@/services/workflow';
 
 type TabKey = 'todo' | 'done' | 'mine';
 
-const MOCK_TODO: ApprovalTaskItem[] = [
-  {
-    taskId: 1001,
-    instanceId: 201,
-    processType: 'ONBOARDING',
-    title: '张三入职审批',
-    applicantName: '李 HR',
-    applicantDept: '人力资源部',
-    currentNodeLabel: '部门负责人审批',
-    createTime: '2026-07-14 10:20:00',
-    dueAt: '2026-07-16 10:20:00',
-    status: 'pending',
-  },
-  {
-    taskId: 1002,
-    instanceId: 202,
-    processType: 'TRANSFER',
-    title: '王五调岗审批',
-    applicantName: '李 HR',
-    applicantDept: '人力资源部',
-    currentNodeLabel: '原部门确认',
-    createTime: '2026-07-13 09:00:00',
-    dueAt: '2026-07-15 09:00:00',
-    status: 'pending',
-  },
-];
-
-const MOCK_DONE: ApprovalTaskItem[] = [
-  {
-    taskId: 9001,
-    instanceId: 180,
-    processType: 'LEAVE',
-    title: '赵六请假审批',
-    applicantName: '赵六',
-    applicantDept: '研发部',
-    currentNodeLabel: '已结束',
-    createTime: '2026-07-10 11:00:00',
-    status: 'approved',
-  },
-];
-
-const MOCK_MINE: ApprovalTaskItem[] = [
-  {
-    taskId: 0,
-    instanceId: 210,
-    processType: 'RESIGNATION_REQUEST',
-    title: '我的离职申请',
-    applicantName: '当前用户',
-    currentNodeLabel: 'HR 备案',
-    createTime: '2026-07-12 16:00:00',
-    status: 'pending',
-  },
-];
-
 /**
- * 审批中心（Day1 Mock）三 Tab：我的待办 / 我的已办 / 我发起的
- * 路由未挂载：需自行在 config.ts 增加 /admin/approval
+ * 审批中心：我的待办 / 我的已办 / 我发起的
  */
 export default function ApprovalCenterPage() {
   const [tab, setTab] = useState<TabKey>('todo');
-  const [selected, setSelected] = useState<ApprovalTaskItem | null>(MOCK_TODO[0]);
+  const [loading, setLoading] = useState(false);
+  const [list, setList] = useState<ApprovalTaskItem[]>([]);
+  const [stats, setStats] = useState<ApprovalTaskStats | null>(null);
+  const [selected, setSelected] = useState<ApprovalTaskItem | null>(null);
+  const [detail, setDetail] = useState<ApprovalTaskDetail | null>(null);
 
-  const data = useMemo(() => {
-    if (tab === 'todo') return MOCK_TODO;
-    if (tab === 'done') return MOCK_DONE;
-    return MOCK_MINE;
-  }, [tab]);
+  const loadList = useCallback(async (key: TabKey) => {
+    setLoading(true);
+    try {
+      if (key === 'mine') {
+        const data = await fetchMyInstances({ page: 1, pageSize: 50 });
+        const rows = data?.list ?? [];
+        setList(rows);
+        setSelected(rows[0] ?? null);
+      } else {
+        const status = key === 'todo' ? 'pending' : 'done';
+        const data = await fetchTasks({ status, page: 1, pageSize: 50 });
+        const rows = data?.list ?? [];
+        setList(rows);
+        setSelected(rows[0] ?? null);
+      }
+      const s = await fetchTaskStats();
+      setStats(s ?? null);
+    } catch (e) {
+      message.error((e as Error)?.message || '加载审批列表失败，请确认后端已启动');
+      setList([]);
+      setSelected(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadList(tab);
+  }, [tab, loadList]);
+
+  useEffect(() => {
+    if (!selected?.taskId) {
+      setDetail(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await fetchTaskDetail(selected.taskId);
+        if (!cancelled) setDetail(d);
+      } catch {
+        if (!cancelled) setDetail(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.taskId]);
 
   const columns: ColumnsType<ApprovalTaskItem> = [
     { title: '标题', dataIndex: 'title' },
@@ -91,24 +94,36 @@ export default function ApprovalCenterPage() {
     { title: '截止', dataIndex: 'dueAt', width: 180 },
   ];
 
+  const timelineNodes: ApprovalTimelineNode[] = (detail?.timeline ?? []).map((t, idx) => ({
+    key: String(idx),
+    title: t.node || t.action,
+    assigneeName: t.assignee,
+    comment: t.comment,
+    time: t.time,
+    displayText: t.displayText,
+    status:
+      t.action === 'REJECT'
+        ? 'error'
+        : idx === (detail?.timeline?.length ?? 0) - 1 && selected?.status === 'pending'
+          ? 'process'
+          : 'finish',
+  }));
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         审批中心
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        Day1 Mock 页 · 组件：ProcessStatusTag / ApprovalTimeline / ApprovalActions · API 见 services/workflow.ts
+        待办 {stats?.pending ?? '-'} · 今日已审 {stats?.approvedToday ?? '-'} · 超时{' '}
+        {stats?.overdueCount ?? '-'}
+        （开发期默认 X-User-Id=1002 看待办）
       </Typography.Paragraph>
 
       <Card>
         <Tabs
           activeKey={tab}
-          onChange={(k) => {
-            const next = k as TabKey;
-            setTab(next);
-            const list = next === 'todo' ? MOCK_TODO : next === 'done' ? MOCK_DONE : MOCK_MINE;
-            setSelected(list[0] ?? null);
-          }}
+          onChange={(k) => setTab(k as TabKey)}
           items={[
             { key: 'todo', label: '我的待办' },
             { key: 'done', label: '我的已办' },
@@ -118,7 +133,8 @@ export default function ApprovalCenterPage() {
         <Table
           rowKey={(r) => `${r.instanceId}-${r.taskId}`}
           columns={columns}
-          dataSource={data}
+          dataSource={list}
+          loading={loading}
           pagination={false}
           onRow={(record) => ({
             onClick: () => setSelected(record),
@@ -135,27 +151,25 @@ export default function ApprovalCenterPage() {
               <ProcessStatusTag status={selected.status} />
               <div style={{ marginTop: 16 }}>
                 <ApprovalTimeline
-                  nodes={[
-                    {
-                      key: '1',
-                      title: '发起申请',
-                      assigneeName: selected.applicantName,
-                      status: 'finish',
-                      time: selected.createTime,
-                    },
-                    {
-                      key: '2',
-                      title: selected.currentNodeLabel,
-                      assigneeName: '当前审批人',
-                      status: selected.status === 'pending' ? 'process' : 'finish',
-                      time: selected.dueAt,
-                    },
-                    {
-                      key: '3',
-                      title: '结束',
-                      status: selected.status === 'pending' ? 'wait' : 'finish',
-                    },
-                  ]}
+                  nodes={
+                    timelineNodes.length > 0
+                      ? timelineNodes
+                      : [
+                          {
+                            key: '1',
+                            title: '发起申请',
+                            assigneeName: selected.applicantName,
+                            status: 'finish',
+                            time: selected.createTime,
+                          },
+                          {
+                            key: '2',
+                            title: selected.currentNodeLabel,
+                            status: selected.status === 'pending' ? 'process' : 'finish',
+                            time: selected.dueAt,
+                          },
+                        ]
+                  }
                 />
               </div>
             </div>
@@ -164,8 +178,17 @@ export default function ApprovalCenterPage() {
               <ApprovalActions
                 canAct={tab === 'todo' && selected.status === 'pending'}
                 canWithdraw={tab === 'mine' && selected.status === 'pending'}
-                onAction={async (action) => {
-                  console.info('[mock approval action]', action, selected.taskId);
+                onAction={async (action, payload) => {
+                  if (action === 'WITHDRAW') {
+                    await withdrawInstance(selected.instanceId);
+                  } else if (selected.taskId) {
+                    await postTaskAction(selected.taskId, {
+                      action: action as 'APPROVE' | 'REJECT' | 'FORWARD',
+                      comment: payload.comment,
+                      targetUserId: payload.targetUserId,
+                    });
+                  }
+                  await loadList(tab);
                 }}
               />
             </div>

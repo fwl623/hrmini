@@ -6,7 +6,7 @@ spring:
     # 云服务器 MySQL（本机暂无法装 Redis/本地库时用此联调）
     url: jdbc:mysql://39.101.67.167:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root
-    password: root
+    password: "20051002"
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 本机 MySQL 示例：
     # url: jdbc:mysql://localhost:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai

@@ -3,6 +3,9 @@ package com.company.hrms.config;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.Contact;
+import io.swagger.v3.oas.models.media.StringSchema;
+import io.swagger.v3.oas.models.parameters.Parameter;
+import org.springdoc.core.customizers.OperationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -24,5 +27,19 @@ public class OpenApiConfig {
                         .description("考勤、请假、加班、薪资一体化管理接口")
                         .contact(new Contact()
                                 .name("HRMS Team")));
+    }
+
+    /** 开发期：在 Swagger 中统一露出 X-User-Id，便于模拟当前用户 */
+    @Bean
+    public OperationCustomizer userIdHeaderCustomizer() {
+        return (operation, handlerMethod) -> {
+            operation.addParametersItem(new Parameter()
+                    .in("header")
+                    .name("X-User-Id")
+                    .description("开发期当前用户（默认 1002=部门负责人，1001=HR）")
+                    .required(false)
+                    .schema(new StringSchema()._default("1002")));
+            return operation;
+        };
     }
 }
