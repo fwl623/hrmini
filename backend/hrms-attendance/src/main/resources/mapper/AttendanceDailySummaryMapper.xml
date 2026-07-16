@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.attendance.entity.AttendanceDailySummary">
+        <id column="id" property="id" />
+        <result column="employee_id" property="employeeId" />
+        <result column="summary_date" property="summaryDate" />
+        <result column="day_status" property="dayStatus" />
+        <result column="clock_in_time" property="clockInTime" />
+        <result column="clock_out_time" property="clockOutTime" />
+        <result column="leave_days" property="leaveDays" />
+        <result column="overtime_hours" property="overtimeHours" />
+    </resultMap>
+
+    <insert id="batchInsert">
+        INSERT INTO attendance_daily_summary (employee_id, summary_date, day_status, clock_in_time, clock_out_time, leave_days, overtime_hours)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.employeeId}, #{item.summaryDate}, #{item.dayStatus}, #{item.clockInTime}, #{item.clockOutTime}, #{item.leaveDays}, #{item.overtimeHours})
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+        day_status = VALUES(day_status),
+        clock_in_time = VALUES(clock_in_time),
+        clock_out_time = VALUES(clock_out_time),
+        leave_days = VALUES(leave_days),
+        overtime_hours = VALUES(overtime_hours)
+    </insert>
+
+</mapper>

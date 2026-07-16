@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.attendance.mapper.AttendanceGroupScopeMapper">
+
+    <resultMap id="BaseResultMap" type="com.company.hrms.attendance.entity.AttendanceGroupScope">
+        <id column="id" property="id" />
+        <result column="group_id" property="groupId" />
+        <result column="scope_type" property="scopeType" />
+        <result column="scope_id" property="scopeId" />
+    </resultMap>
+
+    <select id="selectByGroupId" resultMap="BaseResultMap">
+        SELECT * FROM attendance_group_scope WHERE group_id = #{groupId}
+    </select>
+
+    <delete id="deleteByGroupId">
+        DELETE FROM attendance_group_scope WHERE group_id = #{groupId}
+    </delete>
+
+</mapper>

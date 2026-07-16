@@ -1,6 +1,6 @@
 # HRMS 后端系统分析文档
 
-> **文档版本**：v1.8.2（统一契约锚点 v1.0.0；Part I/II 与契约 §5~§11 零偏差）  
+> **文档版本**：v2.0.0（统一契约锚点 v1.0.0；Part I/II 与契约 §5~§11 零偏差）  
 > **PRD 来源**：[人资管理系统-PRD.md](../人资管理系统-PRD.md)（2026-07-07）  
 > **目标读者**：后端开发、DBA、测试、架构评审、产品经理  
 > **技术栈**：Spring Boot 3 + MyBatis-Plus + MySQL 8 + Redis 7 + RabbitMQ  
@@ -511,6 +511,8 @@ Redis: emp_no:{year}:{deptCode}
 | flexibleRange | 弹性班范围 | N | object | `{ earliest, latest }` 格式 `HH:mm` |
 | lateThreshold | 迟到阈值（分钟） | Y | number | 默认 15 |
 | earlyLeaveThreshold | 早退阈值（分钟） | Y | number | 默认 15 |
+| ipWhitelist | IP 白名单 | N | string[] | JSON 数组，如 `["192.168.1.0/24"]` |
+| gpsRange | GPS 打卡范围 | N | object | `{ lat, lng, radiusM }` |
 
 ###### 打卡请求（POST `/attendance/punch`）
 
@@ -548,7 +550,7 @@ Redis: emp_no:{year}:{deptCode}
 
 ##### 数据模型
 
-`attendance_group`、`attendance_group_member`、`attendance_record`、`attendance_supplement`、`attendance_daily_summary`、`attendance_monthly_summary`、`attendance_month_lock`、`holiday_calendar`
+`attendance_group`、`attendance_group_scope`、`attendance_group_member`、`attendance_record`、`attendance_supplement`、`attendance_daily_summary`、`attendance_monthly_summary`、`attendance_month_lock`、`holiday_calendar`
 
 ##### 业务逻辑
 
@@ -570,7 +572,7 @@ Redis: emp_no:{year}:{deptCode}
 
 **病假：** 天数>1 附件必填
 
-**加班审批 SpEL：** `#dailyTotalHours >= 4 ? ['supervisor','hr_head'] : ['supervisor']`
+**加班审批 SpEL：** `#dailyTotalHours >= 4 ? ['supervisor','HR_STAFF'] : ['supervisor']`
 
 **加班倍率：** 工作日1.5 / 休息日2.0 / 法定3.0
 
@@ -630,7 +632,7 @@ Redis: emp_no:{year}:{deptCode}
 
 ##### 数据模型
 
-`leave_balance`、`leave_application`、`overtime_application`、`overtime_ledger`、`overtime_rate_config`
+`leave_balance`、`leave_application`、`overtime_application`、`overtime_ledger`
 
 ---
 
@@ -788,6 +790,7 @@ seg_gross = (基本+津贴)×试用比例×seg_ratio + 绩效×seg_ratio + 加�
 | POST | `/approvals/tasks/{id}/action` | 审批操作 `{ action: APPROVE/REJECT/FORWARD, comment, targetUserId? }` | §8.2 |
 | POST | `/approvals/tasks/{id}/remind` | 催办：向当前审批人发送催办通知 | §5.1.4 |
 | POST | `/approvals/instances/{id}/withdraw` | 撤回实例 | §8 |
+| GET | `/approvals/instances` | 我发起的审批列表（按发起人过滤） | §8 |
 | GET/POST/PUT/DELETE | `/approvals/delegations` `/approvals/delegations/{id}` | 委托 CRUD（同时仅 1 条有效） | §8.3 |
 
 ##### 数据模型
@@ -798,15 +801,15 @@ seg_gross = (基本+津贴)×试用比例×seg_ratio + 绩效×seg_ratio + 加�
 
 | processType | 节点链 | 条件 |
 | --- | --- | --- |
-| ONBOARDING | dept_head → hr_head? | 非标准职位或 baseSalary 超职级 |
-| REGULARIZATION | dept_head → hr_head | — |
-| TRANSFER | old → new → hr_head | — |
-| RESIGNATION | dept_head → hr_head | — |
-| RESIGNATION_REQUEST | supervisor → hr_staff | 员工离职申请 |
-| MOBILE_CHANGE | hr_staff | 手机号变更 |
+| ONBOARDING | dept_head → HR_STAFF? | 非标准职位或 baseSalary 超职级 |
+| REGULARIZATION | dept_head → HR_STAFF | — |
+| TRANSFER | old → new → HR_STAFF | — |
+| RESIGNATION | dept_head → HR_STAFF | — |
+| RESIGNATION_REQUEST | supervisor → HR_STAFF | 员工离职申请 |
+| MOBILE_CHANGE | HR_STAFF | 手机号变更 |
 | LEAVE | 动态 | 见请假规则表 |
 | MAKEUP | supervisor | 补卡 |
-| OVERTIME | supervisor → hr_head? | 单日累计 ≥4h |
+| OVERTIME | supervisor → HR_STAFF? | 单日累计 ≥4h |
 | PAYROLL_BATCH | finance → boss? | AD-07 条件 |
 
 ---
@@ -1113,9 +1116,9 @@ attendance_month_lock / holiday_calendar
 | --- | --- |
 | 系统 | sys_user, sys_role, sys_permission, sys_user_role, sys_role_permission, operation_log, login_log |
 | 组织员工 | department, position, employee, employee_personal, employee_no_history, employee_contract, employee_salary_profile, employee_salary_history, employee_transfer_history, onboarding_application, regularization_application, transfer_application, employee_resignation_request, resignation_application, employee_mobile_change_application |
-| 考勤 | attendance_group, attendance_group_member, attendance_record, attendance_supplement, attendance_daily_summary, attendance_monthly_summary, attendance_month_lock, holiday_calendar |
-| 请假加班 | leave_balance, leave_application, overtime_application, overtime_ledger, overtime_rate_config |
-| 薪资 | payroll_scheme, payroll_scheme_item, payroll_scheme_scope, payroll_batch, payroll_detail |
+| 考勤 | attendance_group, attendance_group_scope, attendance_group_member, attendance_record, attendance_supplement, attendance_daily_summary, attendance_monthly_summary, attendance_month_lock, holiday_calendar, workday_config |
+| 请假加班 | leave_balance, leave_application, overtime_application, overtime_ledger |
+| 薪资 | payroll_scheme, payroll_scheme_item, payroll_scheme_scope, payroll_batch, payroll_detail, payroll_adjustment, pay_tax_ytd_record, payslip_view_log |
 | 审批 | approval_process_def, approval_node_def, approval_instance, approval_task, approval_delegation, approval_log |
 | 迁移 | import_batch, import_row_error |
 
@@ -1261,6 +1264,7 @@ attendance_month_lock / holiday_calendar
 | 薪资 | GET | `/payroll/payslips` `/payroll/payslips/{month}` `/payroll/cost-report` |
 | 审批 | GET/POST | `/approvals/tasks/stats` `/approvals/tasks` `/approvals/tasks/{id}` `/approvals/tasks/{id}/action` |
 | 审批 | POST | `/approvals/tasks/{id}/remind` `.../instances/{id}/withdraw` |
+| 审批 | GET | `/approvals/instances` | 我发起的审批列表 |
 | 审批 | CRUD | `/approvals/delegations` `/approvals/delegations/{id}` |
 | 迁移 | GET/POST | `/imports/templates/{type}` `/imports/batches` `.../commit` |
 | 系统 | GET/POST/PUT | `/workbench/summary` `/system/users` `/system/users/{id}` `/system/roles` `/system/roles/{id}/permissions` |
@@ -1404,6 +1408,7 @@ flowchart TB
 | 30001 | 部门层级超过 5 层 |
 | 30002 | 部门合并前尚有员工 |
 | 30003 | 员工状态不允许此操作 |
+| 30004 | 调岗部门未变更（须不等于原部门） |
 | 40001 | 考勤月已锁定 |
 | 40002 | 补卡次数超限（2次/月） |
 | 40003 | 请假余额不足 |
@@ -3077,7 +3082,7 @@ public PageResult<TaskWorkbenchVO> pendingTasks(
 | businessSummary | 摘要 |
 | currentNodeLabel | 当前节点，如「部门负责人审批」 |
 | createdAt | 申请时间 |
-| slaDeadline | 截止时间 |
+| dueAt | 截止时间 |
 | overdue | 是否逾期 |
 
 **操作**：查看详情、通过、拒绝、转交。
@@ -3086,7 +3091,7 @@ public PageResult<TaskWorkbenchVO> pendingTasks(
 
 ```
 GET /approvals/tasks/stats
-→ { pending: 6, approvedToday: 1, overdue: 6 }
+→ { pending: 6, approvedToday: 1, overdueCount: 6 }
 ```
 
 ##### 已办列表
@@ -3103,7 +3108,7 @@ GET /approvals/tasks/{id}
 
 ```json
 {
-  "task": { "id", "status", "slaDeadline", "currentNodeLabel" },
+  "task": { "id", "status", "dueAt", "currentNodeLabel" },
   "instance": { "processType", "businessNo", "initiator", "createdAt" },
   "businessDetail": { /* 按 processType 动态，如入职候选人信息 */ },
   "timeline": [ { "node", "assignee", "action", "comment", "time" } ],
@@ -3189,7 +3194,7 @@ public class DelegationService {
 
 #### A.3.7.5 超时与催办
 
-沿用 §5.1.4：每级 48h SLA。逾期任务 `approval_task.overdue=1`，工作台红色高亮；`GET /approvals/tasks/stats` 计入 `overdue` 数。
+沿用 §5.1.4：每级 48h SLA。逾期任务 `approval_task.overdue=1`，工作台红色高亮；`GET /approvals/tasks/stats` 计入 `overdueCount` 数。
 
 RabbitMQ 延迟队列 → 催办邮件/站内信；可选升级至上级。
 
@@ -3393,8 +3398,8 @@ GET /profile/security/login-logs?page=&pageSize=
 
 - 独立表：`overtime_application`（申请）、`overtime_ledger`（批准台账，供算薪）
 - API：`POST/GET /overtime/applications`
-- 审批 SpEL：`#dailyTotalHours >= 4 ? supervisor + hr_head : supervisor`
-- 倍率：工作日 1.5 / 休息日 2.0 / 法定 3.0 → `overtime_rate_config`
+- 审批 SpEL：`#dailyTotalHours >= 4 ? supervisor + HR_STAFF : supervisor`
+- 倍率：工作日 1.5 / 休息日 2.0 / 法定 3.0（写死在业务代码中）
 
 ### A.3.12 分段计薪与考勤月锁定（AD-01/AD-08）
 
@@ -3520,6 +3525,7 @@ CREATE TABLE position (
     rank_min                VARCHAR(8)   NOT NULL,
     rank_max                VARCHAR(8)   NOT NULL,
     default_probation_months INT         NOT NULL DEFAULT 3,
+    is_standard             TINYINT      NOT NULL DEFAULT 1 COMMENT '是否标准职位：0→入职二审',
     description             VARCHAR(512) NULL,
     deleted                 TINYINT      NOT NULL DEFAULT 0,
     created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -3544,7 +3550,7 @@ CREATE TABLE employee (
     position_id         BIGINT       NOT NULL,
     grade               VARCHAR(8)   NULL COMMENT '职级，如 P5',
     manager_id          BIGINT       NULL,
-    work_location       VARCHAR(64)  NULL,
+    work_location       VARCHAR(128) NULL,
     hire_date           DATE         NOT NULL,
     employment_type     VARCHAR(16)  NOT NULL COMMENT 'fulltime/parttime/intern',
     employment_status   TINYINT      NOT NULL COMMENT '10=试用期/20=正式/30=待离职/40=已离职',
@@ -3577,6 +3583,8 @@ CREATE TABLE employee_contract (
     probation_salary_ratio  DECIMAL(5,4) NOT NULL COMMENT '0.80-1.00',
     scheme_id               BIGINT       NOT NULL COMMENT '关联 payroll_scheme.id',
     base_salary             DECIMAL(12,2) NOT NULL,
+    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_employee (employee_id)
 ) COMMENT='合同与薪资配置';
 
@@ -3584,7 +3592,9 @@ CREATE TABLE employee_bank (
     employee_id         BIGINT PRIMARY KEY,
     bank_account_enc    VARCHAR(256) NULL,
     bank_account_tail   VARCHAR(4)   NULL COMMENT '后四位',
-    bank_name           VARCHAR(64)  NULL
+    bank_name           VARCHAR(64)  NULL,
+    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) COMMENT='银行信息';
 
 CREATE TABLE employee_id_sequence_deprecated (
@@ -3592,6 +3602,8 @@ CREATE TABLE employee_id_sequence_deprecated (
     year        CHAR(4)     NOT NULL,
     dept_code   VARCHAR(8)  NOT NULL,
     current_val INT         NOT NULL DEFAULT 0,
+    created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_year_dept (year, dept_code)
 ) COMMENT='工号序号';
 ```
@@ -3607,6 +3619,7 @@ CREATE TABLE sys_user (
     employee_id     BIGINT       NULL,
     status          TINYINT      NOT NULL DEFAULT 1,
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_username (username)
 );
 
@@ -3615,27 +3628,33 @@ CREATE TABLE sys_role (
     code        VARCHAR(32) NOT NULL,
     name        VARCHAR(64) NOT NULL,
     data_scope  VARCHAR(16) NOT NULL COMMENT 'ALL/DEPT_TREE/SELF/PAYROLL/NONE_PAYROLL',
+    created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_code (code)
 );
 
 CREATE TABLE sys_permission (
-    id      BIGINT PRIMARY KEY AUTO_INCREMENT,
-    code    VARCHAR(64) NOT NULL,
-    name    VARCHAR(64) NOT NULL,
-    module  VARCHAR(32) NOT NULL,
-    type    VARCHAR(16) NOT NULL COMMENT 'MENU/BUTTON/API',
+    id        BIGINT PRIMARY KEY AUTO_INCREMENT,
+    code      VARCHAR(64) NOT NULL,
+    name      VARCHAR(64) NOT NULL,
+    module    VARCHAR(32) NOT NULL,
+    type      VARCHAR(16) NOT NULL COMMENT 'MENU/BUTTON/API',
+    created_at DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_code (code)
 );
 
 CREATE TABLE sys_user_role (
-    user_id BIGINT NOT NULL,
-    role_id BIGINT NOT NULL,
+    user_id    BIGINT   NOT NULL,
+    role_id    BIGINT   NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, role_id)
 );
 
 CREATE TABLE sys_role_permission (
-    role_id       BIGINT NOT NULL,
-    permission_id BIGINT NOT NULL,
+    role_id       BIGINT   NOT NULL,
+    permission_id BIGINT   NOT NULL,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (role_id, permission_id)
 );
 
@@ -3649,6 +3668,7 @@ CREATE TABLE login_log (
     location        VARCHAR(64)  NULL COMMENT 'IP 归属地，可选',
     success         TINYINT      NOT NULL COMMENT '1成功0失败',
     fail_reason     VARCHAR(64)  NULL,
+    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_user_time (user_id, login_time)
 ) COMMENT='登录日志，§9.5';
 ```
@@ -3731,7 +3751,7 @@ CREATE TABLE onboarding_application (
     instance_id             BIGINT       NULL,
     status                  VARCHAR(16)  NOT NULL COMMENT 'DRAFT/APPROVING/APPROVED/REJECTED/ONBOARDED/ABANDONED',
     name                    VARCHAR(32)  NOT NULL,
-    gender                  TINYINT      NOT NULL,
+    gender                  VARCHAR(8)   NOT NULL COMMENT 'MALE/FEMALE',
     mobile                  VARCHAR(16)  NOT NULL,
     email                   VARCHAR(128) NOT NULL,
     id_number_enc           VARCHAR(256) NOT NULL,
@@ -3742,6 +3762,8 @@ CREATE TABLE onboarding_application (
     employment_type         VARCHAR(16)  NOT NULL COMMENT 'fulltime/parttime/intern',
     probation_months        INT          NOT NULL,
     probation_salary_ratio  DECIMAL(5,4) NOT NULL,
+    base_salary             DECIMAL(12,2) NULL COMMENT '约定薪资',
+    actual_onboard_date     DATE         NULL COMMENT '实际入职日',
     manager_id              BIGINT       NULL,
     employee_id             BIGINT       NULL COMMENT '审批通过后关联',
     created_by              BIGINT       NOT NULL,
@@ -3799,6 +3821,7 @@ CREATE TABLE employee_transfer_history (
     transfer_date       DATE         NOT NULL,
     reason              VARCHAR(512) NULL,
     created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_employee (employee_id)
 ) COMMENT='调岗历史';
 
@@ -4120,6 +4143,16 @@ CREATE TABLE payroll_detail (
     UNIQUE KEY uk_batch_emp (batch_id, employee_id)
 ) COMMENT='批次核算明细';
 
+CREATE TABLE pay_tax_bracket (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    tax_year        INT           NOT NULL COMMENT '纳税年度',
+    min_taxable     DECIMAL(12,2) NOT NULL COMMENT '起征金额',
+    max_taxable     DECIMAL(12,2) NULL COMMENT '上限，NULL=无限',
+    rate            DECIMAL(5,4)  NOT NULL COMMENT '税率，如 0.03',
+    quick_deduction DECIMAL(12,2) NOT NULL COMMENT '速算扣除数',
+    UNIQUE KEY uk_year_range (tax_year, min_taxable)
+) COMMENT='个税税率表（累计预扣法）';
+
 CREATE TABLE payroll_adjustment (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     detail_id       BIGINT        NOT NULL,
@@ -4141,7 +4174,7 @@ CREATE TABLE pay_tax_ytd_record (
     UNIQUE KEY uk_emp_period (employee_id, period)
 ) COMMENT='个税累计预扣记录';
 
-CREATE TABLE pay_payslip_view_log (
+CREATE TABLE payslip_view_log (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     employee_id     BIGINT      NOT NULL,
     batch_id        BIGINT      NOT NULL,
@@ -4189,8 +4222,10 @@ CREATE TABLE sys_dict (
     dict_code   VARCHAR(32) NOT NULL,
     dict_label  VARCHAR(64) NOT NULL,
     sort_order  INT         NOT NULL DEFAULT 0,
+    created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_type_code (dict_type, dict_code)
-);
+) COMMENT='数据字典';
 ```
 
 | dict_type | 示例 dict_code |
@@ -4324,6 +4359,7 @@ CREATE TABLE sys_dict (
 | POST | `/approvals/tasks/{id}/action` | 审批操作 `{ action: APPROVE/REJECT/FORWARD, comment, targetUserId? }` | §8.2 |
 | POST | `/approvals/tasks/{id}/remind` | 催办：向当前审批人发送催办通知 | §5.1.4 |
 | POST | `/approvals/instances/{id}/withdraw` | 撤回实例（仅发起人且第一级） | §8 |
+| GET | `/approvals/instances` | 我发起的审批列表（按 initiator_id 过滤） | §8 |
 | GET/POST/PUT/DELETE | `/approvals/delegations` `/approvals/delegations/{id}` | 委托 CRUD（同时仅 1 条有效） | §8.3 |
 
 #### 考勤规则（§6.1）
@@ -4463,7 +4499,7 @@ Gateway 层：
 | 0 | 成功 |
 | 10001 | 参数校验失败 |
 | 20001~20003 | 认证/权限 |
-| 30001~30003 | 组织/员工 |
+| 30001~30004 | 组织/员工 |
 | 40001~40004 | 考勤/请假 |
 | 50001~50005 | 薪资 |
 | 60001~60004 | 审批/个人中心 |
@@ -4474,6 +4510,7 @@ Gateway 层：
 ```json
 { "code": 30001, "message": "部门层级不能超过5层", "data": null }
 { "code": 30003, "message": "当前状态不允许撤回", "data": null }
+{ "code": 30004, "message": "调岗部门未变更", "data": null }
 { "code": 40001, "message": "考勤月已锁定", "data": null }
 { "code": 40002, "message": "本月补卡次数已用完", "data": null }
 ```
@@ -4627,7 +4664,7 @@ Nginx `weight` 或 K8s Rolling Update，`maxUnavailable=0`。
 | 累计预扣个税 | 跨月累计正确 |
 | 异常检测 | 30% 变动、无档案阻断 |
 | 委托审批 | 代审记录 display_text 正确 |
-| 工作台逾期统计 | overdue 计数与 SLA 一致 |
+| 工作台逾期统计 | overdueCount 计数与 SLA 一致 |
 | 9 类 processType 详情 Adapter | 统一 detail API 返回正确（含 RESIGNATION_REQUEST、MOBILE_CHANGE） |
 | 手机号变更申请 | 审批通过后同步 mobile 与 username |
 | 员工离职申请 | 通过后 HR 可发起正式离职 |
