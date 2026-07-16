@@ -1,8 +1,129 @@
-import { Button, Card, Space, Typography } from 'antd';
-import { history } from '@umijs/max';
+import { LockOutlined, MobileOutlined } from '@ant-design/icons';
+import { history, useModel } from '@umijs/max';
+import { Alert, Button, Card, Checkbox, Form, Input, Typography, message } from 'antd';
+import React, { useEffect, useState } from 'react';
+import ChangePasswordModal from '@/components/ChangePasswordModal';
+import { getProfile, login, toCurrentUser } from '@/services/auth';
+import { usePermissionStore } from '@/stores/permissionStore';
+import { useUserStore } from '@/stores/userStore';
+import { forceLogout, getHomePath } from '@/utils/authSession';
+import { startIdleDetector } from '@/utils/idleDetector';
+import {
+  getAccessToken,
+  getRememberedUsername,
+  isRememberMe,
+  setRememberedUsername,
+  setTokens,
+  clearRememberedUsername,
+} from '@/utils/token';
+import { startTokenRefresher } from '@/utils/tokenRefresher';
+import { getRequestErrorMessage } from '@/utils/requestError';
 
-/** 登录页临时欢迎 — Sprint 1 按系分 §2.2.1 实现真实登录 */
-export default function LoginPage() {
+interface LoginForm {
+  username: string;
+  password: string;
+  remember: boolean;
+}
+
+const LoginPage: React.FC = () => {
+  const [form] = Form.useForm<LoginForm>();
+  const [submitting, setSubmitting] = useState(false);
+  const [changePwdOpen, setChangePwdOpen] = useState(false);
+  const { setInitialState } = useModel('@@initialState');
+
+  useEffect(() => {
+    const bootstrapIfLoggedIn = async () => {
+      if (!getAccessToken()) {
+        return;
+      }
+      try {
+        const profileRes = await getProfile();
+        if (profileRes.code === 0 && profileRes.data) {
+          history.replace(getHomePath(profileRes.data.roles));
+        }
+      } catch {
+        // token 无效则留在登录页
+      }
+    };
+
+    void bootstrapIfLoggedIn();
+
+    const params = new URLSearchParams(window.location.search);
+    const msg = params.get('msg');
+    if (msg) {
+      message.warning(msg);
+    }
+    form.setFieldsValue({
+      username: getRememberedUsername(),
+      remember: isRememberMe(),
+    });
+  }, [form]);
+
+  const bootstrapSession = async (
+    accessToken: string,
+    refreshToken: string,
+    remember: boolean,
+    mustChangePassword: boolean,
+  ) => {
+    setTokens(accessToken, refreshToken, remember);
+    if (remember) {
+      setRememberedUsername(form.getFieldValue('username'));
+    } else {
+      clearRememberedUsername();
+    }
+
+    const { getProfile: fetchProfile } = await import('@/services/auth');
+    const profileRes = await fetchProfile();
+    if (profileRes.code !== 0 || !profileRes.data) {
+      throw new Error(profileRes.message || '获取用户信息失败');
+    }
+
+    const currentUser = toCurrentUser(profileRes.data);
+    useUserStore.getState().setCurrentUser(currentUser);
+    usePermissionStore.getState().setPermissions(currentUser.permissions);
+    await setInitialState((s) => ({ ...s, currentUser }));
+    startTokenRefresher();
+    startIdleDetector();
+
+    const home = getHomePath(currentUser.roles);
+    if (mustChangePassword || currentUser.mustChangePassword) {
+      setChangePwdOpen(true);
+      return;
+    }
+    message.success('登录成功');
+    history.replace(home);
+  };
+
+  const onFinish = async (values: LoginForm) => {
+    setSubmitting(true);
+    try {
+      const res = await login({
+        username: values.username.trim(),
+        password: values.password,
+      });
+      if (res.code !== 0 || !res.data) {
+        message.error(res.message || '登录失败');
+        return;
+      }
+      await bootstrapSession(
+        res.data.accessToken,
+        res.data.refreshToken,
+        values.remember,
+        res.data.mustChangePassword,
+      );
+    } catch (err: unknown) {
+      message.error(getRequestErrorMessage(err, '登录失败'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handlePasswordChanged = async () => {
+    setChangePwdOpen(false);
+    await forceLogout();
+    message.info('请使用新密码重新登录');
+  };
+
   return (
     <div
       style={{
@@ -11,27 +132,65 @@ export default function LoginPage() {
         alignItems: 'center',
         justifyContent: 'center',
         background: 'linear-gradient(135deg, #f0f5ff 0%, #ffffff 60%)',
+        padding: 24,
       }}
     >
-      <Card style={{ width: 440, textAlign: 'center' }}>
-        <Typography.Title level={3} style={{ marginBottom: 8 }}>
-          HRMini 人力资源管理系统
+      <Card style={{ width: 420 }}>
+        <Typography.Title level={3} style={{ marginBottom: 4, textAlign: 'center' }}>
+          HRMini
         </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          校企培训项目 · Sprint 0 骨架环境
+        <Typography.Paragraph type="secondary" style={{ textAlign: 'center', marginBottom: 24 }}>
+          人力资源管理系统
         </Typography.Paragraph>
-        <Typography.Text type="secondary">
-          登录表单与 JWT 鉴权将在 Sprint 1 接入，当前可预览双端布局。
-        </Typography.Text>
-        <Space direction="vertical" size="middle" style={{ width: '100%', marginTop: 28 }}>
-          <Button type="primary" block onClick={() => history.push('/admin/workbench')}>
-            进入管理后台（预览）
-          </Button>
-          <Button block onClick={() => history.push('/portal/profile')}>
-            进入员工门户（预览）
-          </Button>
-        </Space>
+
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 20 }}
+          message="联调账号：13800000000 / Admin@12345"
+        />
+
+        <Form<LoginForm>
+          form={form}
+          layout="vertical"
+          onFinish={onFinish}
+          initialValues={{ remember: true }}
+        >
+          <Form.Item
+            name="username"
+            label="手机号"
+            rules={[
+              { required: true, message: '请输入手机号' },
+              { pattern: /^1\d{10}$/, message: '请输入 11 位手机号' },
+            ]}
+          >
+            <Input prefix={<MobileOutlined />} placeholder="登录账号（手机号）" maxLength={11} />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="密码"
+            rules={[{ required: true, message: '请输入密码' }]}
+          >
+            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
+          </Form.Item>
+          <Form.Item name="remember" valuePropName="checked">
+            <Checkbox>记住登录（7 天内免登录）</Checkbox>
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Button type="primary" htmlType="submit" block loading={submitting}>
+              登录
+            </Button>
+          </Form.Item>
+        </Form>
       </Card>
+
+      <ChangePasswordModal
+        open={changePwdOpen}
+        force
+        onSuccess={handlePasswordChanged}
+      />
     </div>
   );
-}
+};
+
+export default LoginPage;

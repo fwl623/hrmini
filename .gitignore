@@ -47,3 +47,6 @@ temp/
 
 # Docker volumes (local)
 config/docker/data/
+
+# 个人系分（仅本地，不上传 Gitee）
+李俊毅个人系分/

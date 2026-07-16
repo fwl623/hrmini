@@ -10,11 +10,16 @@
     </parent>
     <artifactId>hrms-auth</artifactId>
     <name>hrms-auth</name>
-    <description>认证授权 — 你：登录、JWT、RBAC</description>
+    <description>认证授权 — 登录、JWT、RBAC</description>
     <dependencies>
         <dependency>
             <groupId>com.company.hrms</groupId>
             <artifactId>hrms-common</artifactId>
+        </dependency>
+        <!-- BCrypt 密码哈希（不引入完整 Spring Security 过滤器链） -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
         </dependency>
     </dependencies>
 </project>

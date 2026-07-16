@@ -12,6 +12,8 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
 
+
+# 给运维/自己看的健康检查接口，比如服务是否活着
 management:
   endpoints:
     web:
@@ -29,6 +31,13 @@ hrms:
   jwt:
     secret: hrms-dev-secret-key-change-me-32bytes!!
     access-expire-seconds: 7200
+  # 模块间内部接口密钥（请求头 X-Internal-Token）；生产务必用环境变量覆盖
+  internal:
+    token: ${HRMS_INTERNAL_TOKEN:hrms-dev-internal-token-change-me}
+  # 短信：联调开启开发码；生产设 hrms.sms.dev-enabled=false
+  sms:
+    dev-enabled: true
+    dev-code: "123456"
   # Base64(UTF-8 "hrms-dev-aes-256-key-32bytes!!!!")；仅本地开发
   # 生产示例：export HRMS_AES_KEY=... 或 SPRING_APPLICATION_JSON 覆盖 hrms.crypto.aes-key
   crypto:
