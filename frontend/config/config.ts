@@ -47,8 +47,19 @@ export default defineConfig({
         // 薪资管理（SYS_ADMIN 不可见）
         { path: 'payroll/schemes', component: './admin/payroll/schemes', access: 'canViewPayroll' },
 
-        // 系统设置（Day 4 占位）
-        { path: 'system/users', component: './admin/workbench' },
+        // 系统设置（Day 4，仅 SYS_ADMIN）
+        { path: 'system/users', component: './admin/system/users', access: 'canManageSystem' },
+        { path: 'system/roles', component: './admin/system/roles', access: 'canManageSystem' },
+        {
+          path: 'system/operation-logs',
+          component: './admin/system/operation-logs',
+          access: 'canManageSystem',
+        },
+        {
+          path: 'system/login-logs',
+          component: './admin/system/login-logs',
+          access: 'canManageSystem',
+        },
       ],
     },
     {

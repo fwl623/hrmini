@@ -9,6 +9,9 @@ public interface SystemRoleService {
 
     List<RoleVO> listRoles();
 
+    /** 仅更新角色名称，编码不可改 */
+    void updateRole(Long roleId, String name);
+
     void updateRolePermissions(Long roleId, List<Long> permissionIds);
 
     List<SysPermission> listPermissions();

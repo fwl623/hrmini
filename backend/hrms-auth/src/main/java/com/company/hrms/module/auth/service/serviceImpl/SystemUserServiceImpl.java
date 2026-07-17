@@ -9,18 +9,19 @@ import com.company.hrms.common.exception.ForbiddenException;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
-import com.company.hrms.module.auth.constant.AuthRedisKeys;
+import com.company.hrms.module.auth.config.PermissionCacheManager;
 import com.company.hrms.module.auth.dto.CreateUserRequest;
 import com.company.hrms.module.auth.dto.UpdateUserRequest;
 import com.company.hrms.module.auth.dto.UserVO;
 import com.company.hrms.module.auth.entity.LoginLog;
+import com.company.hrms.module.auth.entity.OperationLog;
 import com.company.hrms.module.auth.entity.SysUser;
 import com.company.hrms.module.auth.mapper.LoginLogMapper;
+import com.company.hrms.module.auth.mapper.OperationLogMapper;
 import com.company.hrms.module.auth.mapper.SysUserMapper;
 import com.company.hrms.module.auth.mapper.SysUserRoleMapper;
 import com.company.hrms.module.auth.service.AuthService;
 import com.company.hrms.module.auth.service.SystemUserService;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,21 +38,24 @@ public class SystemUserServiceImpl implements SystemUserService {
     private final SysUserMapper sysUserMapper;
     private final SysUserRoleMapper sysUserRoleMapper;
     private final LoginLogMapper loginLogMapper;
+    private final OperationLogMapper operationLogMapper;
     private final PasswordEncoder passwordEncoder;
-    private final StringRedisTemplate redisTemplate;
+    private final PermissionCacheManager permissionCacheManager;
     private final AuthService authService;
 
     public SystemUserServiceImpl(SysUserMapper sysUserMapper,
                                  SysUserRoleMapper sysUserRoleMapper,
                                  LoginLogMapper loginLogMapper,
+                                 OperationLogMapper operationLogMapper,
                                  PasswordEncoder passwordEncoder,
-                                 StringRedisTemplate redisTemplate,
+                                 PermissionCacheManager permissionCacheManager,
                                  AuthService authService) {
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.loginLogMapper = loginLogMapper;
+        this.operationLogMapper = operationLogMapper;
         this.passwordEncoder = passwordEncoder;
-        this.redisTemplate = redisTemplate;
+        this.permissionCacheManager = permissionCacheManager;
         this.authService = authService;
     }
 
@@ -126,7 +130,7 @@ public class SystemUserServiceImpl implements SystemUserService {
             for (Long roleId : request.getRoleIds()) {
                 sysUserRoleMapper.insert(id, roleId);
             }
-            redisTemplate.delete(AuthRedisKeys.permissions(id));
+            permissionCacheManager.evict(id);
         }
     }
 
@@ -136,6 +140,15 @@ public class SystemUserServiceImpl implements SystemUserService {
         Page<LoginLog> page = loginLogMapper.selectPage(
                 new Page<>(pageParam.getPage(), pageParam.getPageSize()),
                 new LambdaQueryWrapper<LoginLog>().orderByDesc(LoginLog::getLoginTime));
+        return PageResult.of(page.getRecords(), page.getTotal(), pageParam);
+    }
+
+    @Override
+    public PageResult<OperationLog> pageOperationLogs(PageParam pageParam) {
+        requireSysAdmin();
+        Page<OperationLog> page = operationLogMapper.selectPage(
+                new Page<>(pageParam.getPage(), pageParam.getPageSize()),
+                new LambdaQueryWrapper<OperationLog>().orderByDesc(OperationLog::getCreatedAt));
         return PageResult.of(page.getRecords(), page.getTotal(), pageParam);
     }
 

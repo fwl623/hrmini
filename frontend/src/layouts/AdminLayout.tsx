@@ -83,7 +83,12 @@ const AdminLayout: React.FC = () => {
         key: '/admin/system',
         label: '系统设置',
         accessKey: 'system',
-        children: [{ key: '/admin/system/users', label: '用户管理' }],
+        children: [
+          { key: '/admin/system/users', label: '用户管理' },
+          { key: '/admin/system/roles', label: '角色管理' },
+          { key: '/admin/system/operation-logs', label: '操作日志' },
+          { key: '/admin/system/login-logs', label: '登录日志' },
+        ],
       },
     ];
     return filterMenu(raw, menuAccess);

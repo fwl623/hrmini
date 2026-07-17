@@ -6,6 +6,7 @@ import com.company.hrms.module.auth.dto.CreateUserRequest;
 import com.company.hrms.module.auth.dto.UpdateUserRequest;
 import com.company.hrms.module.auth.dto.UserVO;
 import com.company.hrms.module.auth.entity.LoginLog;
+import com.company.hrms.module.auth.entity.OperationLog;
 
 public interface SystemUserService {
 
@@ -16,4 +17,6 @@ public interface SystemUserService {
     void updateUser(Long id, UpdateUserRequest request);
 
     PageResult<LoginLog> pageLoginLogs(PageParam pageParam);
+
+    PageResult<OperationLog> pageOperationLogs(PageParam pageParam);
 }

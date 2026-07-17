@@ -9,6 +9,7 @@ import com.company.hrms.common.exception.UnauthorizedException;
 import com.company.hrms.common.security.JwtTokenProvider;
 import com.company.hrms.common.security.LoginUser;
 import com.company.hrms.common.security.SecurityUtils;
+import com.company.hrms.module.auth.config.PermissionCacheManager;
 import com.company.hrms.module.auth.constant.AuthRedisKeys;
 import com.company.hrms.module.auth.dto.ChangePasswordRequest;
 import com.company.hrms.module.auth.dto.LoginRequest;
@@ -53,19 +54,22 @@ public class AuthServiceImpl implements AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final StringRedisTemplate redisTemplate;
     private final HrmsSecurityProperties securityProperties;
+    private final PermissionCacheManager permissionCacheManager;
 
     public AuthServiceImpl(SysUserMapper sysUserMapper,
                            LoginLogMapper loginLogMapper,
                            PasswordEncoder passwordEncoder,
                            JwtTokenProvider jwtTokenProvider,
                            StringRedisTemplate redisTemplate,
-                           HrmsSecurityProperties securityProperties) {
+                           HrmsSecurityProperties securityProperties,
+                           PermissionCacheManager permissionCacheManager) {
         this.sysUserMapper = sysUserMapper;
         this.loginLogMapper = loginLogMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.redisTemplate = redisTemplate;
         this.securityProperties = securityProperties;
+        this.permissionCacheManager = permissionCacheManager;
     }
 
     @Override
@@ -345,7 +349,7 @@ public class AuthServiceImpl implements AuthService {
         }
         clearRefreshToken(userId);
         redisTemplate.delete(AuthRedisKeys.lastActive(userId));
-        redisTemplate.delete(AuthRedisKeys.permissions(userId));
+        permissionCacheManager.evict(userId);
         redisTemplate.delete(AuthRedisKeys.payslipVerified(userId));
     }
 
@@ -417,7 +421,7 @@ public class AuthServiceImpl implements AuthService {
 
     private void cachePermissions(Long userId, java.util.Set<String> permissions) {
         String key = AuthRedisKeys.permissions(userId);
-        redisTemplate.delete(key);
+        permissionCacheManager.evict(userId);
         if (permissions != null && !permissions.isEmpty()) {
             redisTemplate.opsForSet().add(key, permissions.toArray(new String[0]));
             // 系分：权限缓存 TTL 10min，变更时主动 DEL
