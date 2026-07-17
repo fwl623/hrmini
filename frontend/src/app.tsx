@@ -86,11 +86,11 @@ export const request: RequestConfig = {
         return;
       }
 
-      // 重复打卡检测：匹配错误码 40005 或错误消息含"重复打卡"
+      // 重复打卡检测：匹配错误码 40005 或错误消息含"重复操作"（"您已打卡，请勿重复操作"）
       const msg = getRequestErrorMessage(error);
       const isDupPunch = error.info?.code === 40005
         || (error.response?.data?.code as number) === 40005
-        || msg?.includes('重复打卡');
+        || msg?.includes('重复操作');
 
       if (isDupPunch) {
         Modal.warning({
