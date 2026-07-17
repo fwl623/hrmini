@@ -31,7 +31,7 @@ import java.util.List;
  * 权限：HR_STAFF 全部 / DEPT_MANAGER 本部门 / EMPLOYEE 仅 SELF
  */
 @RestController
-@RequestMapping("/api/v1/employees")
+@RequestMapping("/employees")
 @RequiredArgsConstructor
 public class EmployeeController {
 

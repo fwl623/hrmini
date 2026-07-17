@@ -27,7 +27,7 @@ import static com.company.hrms.common.enums.DataScopeType.SELF;
  * 全部接口强制 @DataScope(SELF)
  */
 @RestController
-@RequestMapping("/api/v1/profile")
+@RequestMapping("/profile")
 @RequiredArgsConstructor
 @DataScope(SELF)
 public class ProfileController {
