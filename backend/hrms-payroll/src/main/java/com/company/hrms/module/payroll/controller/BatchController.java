@@ -1,0 +1,83 @@
+package com.company.hrms.module.payroll.controller;
+
+import com.company.hrms.common.security.SecurityUtils;
+import com.company.hrms.common.web.PageParam;
+import com.company.hrms.common.web.PageResult;
+import com.company.hrms.common.web.Result;
+import com.company.hrms.module.payroll.dto.*;
+import com.company.hrms.module.payroll.service.CalculateService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/payroll/batches")
+@RequiredArgsConstructor
+public class BatchController {
+
+    private final CalculateService calculateService;
+
+    @PostMapping
+    public Result<Map<String, Object>> create(@RequestBody BatchCreateDTO dto) {
+        Long operatorId = SecurityUtils.getCurrentUser().getEmployeeId();
+        var batch = calculateService.createBatch(dto.getPeriod(), operatorId);
+        return Result.success(Map.of("id", batch.getId(), "status", batch.getStatus()));
+    }
+
+    @GetMapping
+    public Result<Object> list(PageParam pageParam,
+                               @RequestParam(required = false) String period) {
+        var page = calculateService.pageBatches(pageParam, period);
+        return Result.success(Map.of("list", page.getRecords(), "total", page.getTotal()));
+    }
+
+    @GetMapping("/{id}")
+    public Result<Object> detail(@PathVariable Long id) {
+        var batch = calculateService.getBatch(id);
+        return Result.success(Map.of(
+                "id", batch.getId(), "period", batch.getPeriod(),
+                "status", batch.getStatus(), "totalCount", batch.getTotalCount(),
+                "successCount", batch.getSuccessCount(), "anomalyCount", batch.getAnomalyCount(),
+                "progress", "DISTRIBUTED".equals(batch.getStatus()) ? 100 :
+                           "PENDING_CONFIRM".equals(batch.getStatus()) ? 100 :
+                           "DRAFT".equals(batch.getStatus()) ? 0 : 60
+        ));
+    }
+
+    @PostMapping("/{id}/calculate")
+    public Result<java.util.Map<String, String>> calculate(@PathVariable Long id) {
+        calculateService.calculate(id);
+        return Result.success(java.util.Map.of("message", "计算任务已提交"));
+    }
+
+    @GetMapping("/{id}/details")
+    public Result<PageResult<PayrollDetailVO>> details(@PathVariable Long id, PageParam pageParam) {
+        return Result.success(calculateService.getDetails(id, pageParam));
+    }
+
+    @GetMapping("/{id}/chart-data")
+    public Result<ChartDataVO> chartData(@PathVariable Long id) {
+        return Result.success(calculateService.getChartData(id));
+    }
+
+    @PutMapping("/{id}/details/{detailId}")
+    public Result<java.util.Map<String, String>> adjust(@PathVariable Long id, @PathVariable Long detailId,
+                               @RequestBody AdjustmentDTO dto) {
+        Long operatorId = SecurityUtils.getCurrentUser().getEmployeeId();
+        calculateService.adjust(id, detailId, dto, operatorId);
+        return Result.success(Map.of("manualAdjusted", "true"));
+    }
+
+    @PostMapping("/{id}/submit")
+    public Result<Map<String, String>> submit(@PathVariable Long id) {
+        calculateService.submit(id);
+        return Result.success(Map.of("status", "APPROVING"));
+    }
+
+    @PostMapping("/{id}/distribute")
+    public Result<Map<String, String>> distribute(@PathVariable Long id) {
+        calculateService.distribute(id);
+        return Result.success(Map.of("status", "DISTRIBUTED"));
+    }
+}

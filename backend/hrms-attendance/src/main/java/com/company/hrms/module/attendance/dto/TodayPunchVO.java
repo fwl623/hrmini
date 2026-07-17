@@ -5,6 +5,7 @@ import lombok.Data;
 
 /**
  * 今日打卡状态 VO
+ * <p>统计当前员工当日的打卡情况：已打卡次数、应打卡次数、迟到/早退/缺卡数量。</p>
  */
 @Data
 @AllArgsConstructor

@@ -12,11 +12,14 @@ public interface AuthService {
 
     void logout(String accessToken);
 
-    LoginResponse refresh(String refreshToken);
+    LoginResponse refresh(String refreshToken, String oldAccessToken);
 
     ProfileResponse profile();
 
     void changePassword(ChangePasswordRequest request, String accessToken);
+
+    /** 禁用账号等场景：清 refresh / last-active / 权限缓存 */
+    void invalidateUserSessions(Long userId);
 
     void bindMobile(String mobile, String smsCode);
 

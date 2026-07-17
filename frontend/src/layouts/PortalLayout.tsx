@@ -1,13 +1,13 @@
 import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
-import { Outlet, history, useLocation, useModel } from '@umijs/max';
+import { Outlet, history, useAccess, useLocation, useModel } from '@umijs/max';
 import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { forceLogout } from '@/utils/authSession';
 
 const { Header, Sider, Content } = Layout;
 
-const portalMenuItems: MenuProps['items'] = [
+const ALL_PORTAL_MENU: MenuProps['items'] = [
   { key: '/portal/profile', label: '我的档案' },
   { key: '/portal/attendance', label: '考勤打卡' },
   { key: '/portal/leave', label: '我的请假' },
@@ -20,7 +20,20 @@ const portalMenuItems: MenuProps['items'] = [
 const PortalLayout: React.FC = () => {
   const location = useLocation();
   const { initialState } = useModel('@@initialState');
+  const access = useAccess();
   const username = initialState?.currentUser?.username ?? '员工';
+
+  const portalMenuItems = useMemo(
+    () =>
+      (ALL_PORTAL_MENU ?? []).filter((item) => {
+        if (!item || typeof item !== 'object' || !('key' in item)) return false;
+        if (item.key === '/portal/payslips') {
+          return access.canViewPayroll;
+        }
+        return true;
+      }),
+    [access.canViewPayroll],
+  );
 
   const handleLogout = async () => {
     await forceLogout();

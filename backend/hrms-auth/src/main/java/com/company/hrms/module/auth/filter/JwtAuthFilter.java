@@ -47,14 +47,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private static final List<String> WHITE_LIST = List.of(
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
-            "/api/v1/auth/verify",
-            "/api/v1/attendance/**",
-            "/api/v1/leaves/**",
-            "/api/v1/overtime/**",
+            // 无 Token / Token 过期也可登出（由 AuthService 尽力拉黑）
+            "/api/v1/auth/logout",
             "/swagger-ui/**",
             "/v3/api-docs/**",
             "/actuator/**",
             "/error"
+    );
+
+    /** 强制改密期间仅允许的接口 */
+    private static final List<String> MUST_CHANGE_PASSWORD_ALLOWED = List.of(
+            "/api/v1/auth/profile",
+            "/api/v1/auth/password",
+            "/api/v1/auth/logout"
     );
 
     /** 管理端薪资全量（账套/核算/他人工资条等） */
@@ -105,16 +110,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
         if (isWhitelisted(path)) {
-            // 开发期白名单路径设置默认用户（便于 Swagger 调试）
-            if (path.contains("/attendance/") || path.contains("/leaves/") || path.contains("/overtime/")) {
-                LoginUser devUser = new LoginUser();
-                devUser.setUserId(1L);
-                devUser.setEmployeeId(101L);
-                devUser.setUsername("dev");
-                devUser.setDataScope("ALL");
-                devUser.setRoles(List.of("HR_STAFF"));
-                SecurityUtils.setLoginUser(devUser);
-            }
             filterChain.doFilter(request, response);
             return;
         }
@@ -145,6 +140,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
 
             LoginUser loginUser = authService.buildLoginUser(user);
+            if (authService.requiresPasswordChange(user) && !isMustChangePasswordAllowed(path)) {
+                writeForbidden(response, "请先修改密码后再访问系统");
+                return;
+            }
             if (!canAccessPayrollRelated(path, loginUser)) {
                 writeForbidden(response, "无薪资数据访问权限");
                 return;
@@ -182,12 +181,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         return false;
     }
 
+    private boolean isMustChangePasswordAllowed(String path) {
+        return matchesAny(path, MUST_CHANGE_PASSWORD_ALLOWED);
+    }
+
     /**
      * @return true 允许继续；false 应返回 403
      */
     private boolean canAccessPayrollRelated(String path, LoginUser user) {
         if (matchesAny(path, PAYROLL_ADMIN_PATHS)) {
-            // 管理端薪资：仅 HR / 财务；SYS_ADMIN、EMPLOYEE、DEPT_MANAGER 一律拒绝
+            // PRD：SYS_ADMIN 不可见薪资全量（含多角色叠加场景，须先排除）
+            if (user.hasRole(RoleCode.SYS_ADMIN.name())) {
+                return false;
+            }
             return user.hasRole(RoleCode.HR_STAFF.name()) || user.hasRole(RoleCode.FINANCE.name());
         }
         if (matchesAny(path, PAYSLIP_SELF_PATHS)) {
