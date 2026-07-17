@@ -51,6 +51,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             "/api/v1/attendance/**",
             "/api/v1/leaves/**",
             "/api/v1/overtime/**",
+            "/api/v1/payroll/**",
             "/swagger-ui/**",
             "/v3/api-docs/**",
             "/actuator/**",
@@ -106,7 +107,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
         if (isWhitelisted(path)) {
             // 开发期白名单路径设置默认用户（便于 Swagger 调试）
-            if (path.contains("/attendance/") || path.contains("/leaves/") || path.contains("/overtime/")) {
+            if (path.contains("/attendance/") || path.contains("/leaves/") || path.contains("/overtime/") || path.contains("/payroll/")) {
                 LoginUser devUser = new LoginUser();
                 devUser.setUserId(1L);
                 devUser.setEmployeeId(101L);
