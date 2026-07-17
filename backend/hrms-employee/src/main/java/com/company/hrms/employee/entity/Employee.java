@@ -68,6 +68,9 @@ public class Employee {
     /** 试用薪资比例 0.80~1.00 */
     private BigDecimal probationPayRatio;
 
+    /** 试用期结束日 */
+    private LocalDate probationEndDate;
+
     /** 逻辑删除：0=否 1=是 */
     private Integer deleted;
 

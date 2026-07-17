@@ -8,5 +8,7 @@ public enum ApprovalAction {
     APPROVE,
     REJECT,
     FORWARD,
-    WITHDRAW
+    WITHDRAW,
+    /** 业务侧「放弃入职」等，区别于审批驳回 REJECT */
+    ABANDON
 }

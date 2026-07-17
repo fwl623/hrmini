@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.employee.mapper.EmployeeContractMapper">
+
+    <select id="selectByEmployeeId" resultType="com.company.hrms.employee.entity.EmployeeContract">
+        SELECT id, employee_id AS employeeId, contract_type AS contractType,
+               contract_expire_date AS contractExpireDate,
+               probation_salary_ratio AS probationSalaryRatio,
+               scheme_id AS schemeId, base_salary AS baseSalary,
+               created_at AS createdAt, updated_at AS updatedAt
+        FROM employee_contract WHERE employee_id = #{employeeId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO employee_contract (employee_id, contract_type, contract_expire_date,
+            probation_salary_ratio, scheme_id, base_salary)
+        VALUES (#{employeeId}, #{contractType}, #{contractExpireDate},
+            #{probationSalaryRatio}, #{schemeId}, #{baseSalary})
+    </insert>
+
+    <update id="updateById">
+        UPDATE employee_contract
+        <set>
+            <if test="contractType != null">contract_type = #{contractType},</if>
+            <if test="contractExpireDate != null">contract_expire_date = #{contractExpireDate},</if>
+            <if test="probationSalaryRatio != null">probation_salary_ratio = #{probationSalaryRatio},</if>
+            <if test="schemeId != null">scheme_id = #{schemeId},</if>
+            <if test="baseSalary != null">base_salary = #{baseSalary},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+</mapper>

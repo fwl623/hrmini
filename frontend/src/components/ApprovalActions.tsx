@@ -1,23 +1,26 @@
 import { Button, Input, Modal, Space, message } from 'antd';
 import { useState } from 'react';
 
-export type ApprovalActionType = 'APPROVE' | 'REJECT' | 'FORWARD' | 'WITHDRAW';
+export type ApprovalActionType = 'APPROVE' | 'REJECT' | 'FORWARD' | 'WITHDRAW' | 'REMIND';
 
 export interface ApprovalActionsProps {
-  /** 是否展示撤回（发起人 + 第一级） */
   canWithdraw?: boolean;
-  /** 是否当前审批人可操作 */
   canAct?: boolean;
+  canRemind?: boolean;
   loading?: boolean;
-  onAction?: (action: ApprovalActionType, payload: { comment?: string; targetUserId?: number }) => void | Promise<void>;
+  onAction?: (
+    action: ApprovalActionType,
+    payload: { comment?: string; targetUserId?: number },
+  ) => void | Promise<void>;
 }
 
 /**
- * 审批操作按钮组：同意 / 驳回 / 转交 / 撤回
+ * 审批操作：同意 / 驳回 / 转交 / 催办 / 撤回
  */
 export default function ApprovalActions({
   canWithdraw = false,
   canAct = true,
+  canRemind = false,
   loading = false,
   onAction,
 }: ApprovalActionsProps) {
@@ -26,10 +29,23 @@ export default function ApprovalActions({
   const [comment, setComment] = useState('');
   const [targetUserId, setTargetUserId] = useState<string>('');
 
-  const run = async (action: ApprovalActionType, payload: { comment?: string; targetUserId?: number } = {}) => {
+  const run = async (
+    action: ApprovalActionType,
+    payload: { comment?: string; targetUserId?: number } = {},
+  ) => {
     try {
       await onAction?.(action, payload);
-      message.success(`${action} 已提交（Mock）`);
+      const tip =
+        action === 'REMIND'
+          ? '已催办'
+          : action === 'WITHDRAW'
+            ? '已撤回'
+            : action === 'APPROVE'
+              ? '已同意'
+              : action === 'REJECT'
+                ? '已驳回'
+                : '已转交';
+      message.success(tip);
     } catch (e) {
       message.error((e as Error)?.message || '操作失败');
     }
@@ -52,6 +68,11 @@ export default function ApprovalActions({
         <Button disabled={!canAct} loading={loading} onClick={() => setForwardOpen(true)}>
           转交
         </Button>
+        {canRemind ? (
+          <Button loading={loading} onClick={() => run('REMIND')}>
+            催办
+          </Button>
+        ) : null}
         {canWithdraw ? (
           <Button
             loading={loading}
@@ -97,7 +118,7 @@ export default function ApprovalActions({
         onOk={async () => {
           const id = Number(targetUserId);
           if (!id) {
-            message.warning('请填写目标用户 ID（Mock）');
+            message.warning('请填写目标用户 ID');
             return;
           }
           await run('FORWARD', { comment, targetUserId: id });
@@ -106,7 +127,7 @@ export default function ApprovalActions({
         }}
       >
         <Input
-          placeholder="targetUserId（Mock 输入数字）"
+          placeholder="targetUserId"
           value={targetUserId}
           onChange={(e) => setTargetUserId(e.target.value)}
         />

@@ -20,6 +20,7 @@
         <result column="employment_status" property="employmentStatus"/>
         <result column="last_work_day" property="lastWorkDay"/>
         <result column="probation_pay_ratio" property="probationPayRatio"/>
+        <result column="probation_end_date" property="probationEndDate"/>
         <result column="deleted" property="deleted"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
@@ -29,7 +30,7 @@
         id, employee_no, user_id, name, gender, mobile, email,
         department_id, position_id, grade, manager_id, work_location,
         hire_date, employment_type, employment_status, last_work_day,
-        probation_pay_ratio, deleted, created_at, updated_at
+        probation_pay_ratio, probation_end_date, deleted, created_at, updated_at
     </sql>
 
     <select id="search" resultType="com.company.hrms.employee.entity.Employee">
@@ -112,15 +113,18 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO employee (employee_no, user_id, name, gender, mobile, email,
             department_id, position_id, grade, manager_id, work_location,
-            hire_date, employment_type, employment_status, last_work_day, probation_pay_ratio)
+            hire_date, employment_type, employment_status, last_work_day,
+            probation_pay_ratio, probation_end_date)
         VALUES (#{employeeNo}, #{userId}, #{name}, #{gender}, #{mobile}, #{email},
             #{departmentId}, #{positionId}, #{grade}, #{managerId}, #{workLocation},
-            #{hireDate}, #{employmentType}, #{employmentStatus}, #{lastWorkDay}, #{probationPayRatio})
+            #{hireDate}, #{employmentType}, #{employmentStatus}, #{lastWorkDay},
+            #{probationPayRatio}, #{probationEndDate})
     </insert>
 
     <update id="updateById">
         UPDATE employee
         <set>
+            <if test="userId != null">user_id = #{userId},</if>
             <if test="name != null">name = #{name},</if>
             <if test="gender != null">gender = #{gender},</if>
             <if test="mobile != null">mobile = #{mobile},</if>
@@ -132,8 +136,20 @@
             <if test="workLocation != null">work_location = #{workLocation},</if>
             <if test="employmentStatus != null">employment_status = #{employmentStatus},</if>
             <if test="lastWorkDay != null">last_work_day = #{lastWorkDay},</if>
+            <if test="probationEndDate != null">probation_end_date = #{probationEndDate},</if>
         </set>
         WHERE id = #{id}
     </update>
+
+    <select id="listPendingRegularization" resultMap="BaseMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM employee
+        WHERE deleted = 0
+          AND employment_status = 10
+          AND probation_end_date IS NOT NULL
+          AND probation_end_date &gt;= #{from}
+          AND probation_end_date &lt;= #{to}
+        ORDER BY probation_end_date ASC, id ASC
+    </select>
 
 </mapper>
