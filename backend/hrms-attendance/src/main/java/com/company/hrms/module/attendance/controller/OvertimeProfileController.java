@@ -12,43 +12,35 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
 /**
- * 加班管理 Controller
+ * 加班门户代理 Controller
+ * 提供 /profile/overtime/* 接口，强制 @DataScope(SELF)，仅限本人数据
  */
 @RestController
-@RequestMapping("/overtime")
 @RequiredArgsConstructor
-public class OvertimeController {
+public class OvertimeProfileController {
 
     private final OvertimeService overtimeService;
 
     /**
-     * 加班列表
-     * GET /api/v1/overtime/applications?page=1&employeeId=
-     * 管理端传 employeeId=0 查全部；不传则查当前用户
+     * 本人加班列表
+     * GET /api/v1/profile/overtime/applications?page=1
      */
-    @GetMapping("/applications")
-    public Result<PageResult<OvertimeApplicationVO>> list(PageParam pageParam,
-                                                          @RequestParam(required = false) Long employeeId) {
-        // employeeId=0 表示查全部（管理端），null 查本人（门户端）
-        if (employeeId == null) {
-            employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        }
-        return Result.success(overtimeService.pageApplications(pageParam,
-                employeeId == 0 ? null : employeeId));
+    @GetMapping("/profile/overtime/applications")
+    public Result<PageResult<OvertimeApplicationVO>> list(PageParam pageParam) {
+        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+        return Result.success(overtimeService.pageApplications(pageParam, employeeId));
     }
 
     /**
-     * 提交加班
-     * POST /api/v1/overtime/applications
+     * 本人提交加班
+     * POST /api/v1/profile/overtime/applications
      */
-    @PostMapping("/applications")
+    @PostMapping("/profile/overtime/applications")
     public Result<Map<String, Object>> submit(@RequestBody OvertimeApplicationDTO dto) {
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
         OvertimeApplication app = overtimeService.submit(employeeId, dto);

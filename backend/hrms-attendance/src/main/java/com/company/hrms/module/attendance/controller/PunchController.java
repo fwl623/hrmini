@@ -97,4 +97,5 @@ public class PunchController {
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
         return Result.success(punchService.getFixQuota(employeeId));
     }
+
 }

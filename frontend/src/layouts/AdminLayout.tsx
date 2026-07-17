@@ -71,7 +71,30 @@ const AdminLayout: React.FC = () => {
         key: '/admin/attendance',
         label: '考勤管理',
         accessKey: 'attendance',
-        children: [{ key: '/admin/attendance/groups', label: '考勤组管理' }],
+        children: [
+          { key: '/admin/attendance/groups', label: '考勤组管理' },
+          { key: '/admin/attendance/punch', label: '打卡中心' },
+          { key: '/admin/attendance/records', label: '打卡记录' },
+          { key: '/admin/attendance/holidays', label: '法定节假日' },
+          { key: '/admin/attendance/summary', label: '月考勤汇总' },
+          { key: '/admin/attendance/statistics', label: '考勤统计' },
+        ],
+      },
+      {
+        key: '/admin/leave',
+        label: '请假管理',
+        accessKey: 'attendance',
+        children: [
+          { key: '/admin/leave/list', label: '请假列表' },
+        ],
+      },
+      {
+        key: '/admin/overtime',
+        label: '加班管理',
+        accessKey: 'attendance',
+        children: [
+          { key: '/admin/overtime/list', label: '加班列表' },
+        ],
       },
       {
         key: '/admin/payroll',

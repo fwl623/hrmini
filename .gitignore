@@ -60,3 +60,6 @@ HRMS-Frontend-System-Design*.md
 人资管理系统-PRD.md
 前端系分模板.md
 后端系分模板.md
+
+# 开发环境配置（含服务器地址、密码等敏感信息）
+backend/hrms-app/src/main/resources/application-dev.yml

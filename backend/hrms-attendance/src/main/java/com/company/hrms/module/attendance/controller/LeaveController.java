@@ -44,17 +44,20 @@ public class LeaveController {
 
     /**
      * 请假申请列表
-     * GET /api/v1/leaves/applications?page=1&leaveType=&status=
+     * GET /api/v1/leaves/applications?page=1&leaveType=&status=&employeeId=
+     * 管理端传 employeeId=0 查全部；不传则查当前用户
      */
     @GetMapping("/leaves/applications")
     public Result<PageResult<LeaveApplicationVO>> list(PageParam pageParam,
                                                        @RequestParam(required = false) String leaveType,
                                                        @RequestParam(required = false) String status,
                                                        @RequestParam(required = false) Long employeeId) {
+        // employeeId=0 表示查全部（管理端），null 查本人（门户端）
         if (employeeId == null) {
             employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
         }
-        return Result.success(leaveService.pageApplications(pageParam, leaveType, status, employeeId));
+        return Result.success(leaveService.pageApplications(pageParam, leaveType, status,
+                employeeId == 0 ? null : employeeId));
     }
 
     /**

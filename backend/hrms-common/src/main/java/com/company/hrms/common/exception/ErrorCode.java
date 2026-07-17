@@ -42,6 +42,7 @@ public enum ErrorCode {
     MAKEUP_LIMIT_EXCEEDED(40002, "补卡次数超限（2次/月）", HttpStatus.UNPROCESSABLE_ENTITY),
     LEAVE_BALANCE_INSUFFICIENT(40003, "请假余额不足", HttpStatus.UNPROCESSABLE_ENTITY),
     PUNCH_OUT_OF_RANGE(40004, "不在打卡有效范围", HttpStatus.UNPROCESSABLE_ENTITY),
+    PUNCH_DUPLICATE(40005, "您已打卡，请勿重复操作", HttpStatus.BAD_REQUEST),
 
     PAYROLL_BATCH_EXISTS(50001, "算薪批次已存在", HttpStatus.CONFLICT),
     PAYROLL_IN_PROGRESS(50002, "算薪进行中，请勿重复操作", HttpStatus.CONFLICT),

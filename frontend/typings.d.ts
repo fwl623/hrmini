@@ -248,6 +248,32 @@ declare namespace API {
 
   // ========== 薪资 ==========
 
+  // ========== 考勤统计 ==========
+
+  interface PersonalStatisticsVO {
+    employeeId: number;
+    employeeName: string;
+    departmentName: string;
+    period: string;
+    shouldAttendDays: number;
+    actualAttendDays: number;
+    lateCount: number;
+    earlyLeaveCount: number;
+    absentDays: number;
+    leaveDays: number;
+    overtimeHours: number;
+    annualLeaveBalance: number;
+  }
+
+  interface DepartmentStatisticsVO {
+    departmentId: number;
+    departmentName: string;
+    period: string;
+    attendanceRate: number;
+    lateRate: number;
+    leaveRate: number;
+  }
+
   interface PayrollSchemeDTO {
     name: string;
     scope: { departmentIds?: number[]; positionIds?: number[]; jobLevels?: string[] };

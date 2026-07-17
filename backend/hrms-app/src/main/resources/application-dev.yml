@@ -10,9 +10,9 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
-      # 本机 Redis
-      host: localhost
-      port: 6379
+      # Redis 地址（默认本机，通过环境变量 HRMS_REDIS_HOST/HRMS_REDIS_PORT 覆盖）
+      host: ${HRMS_REDIS_HOST:localhost}
+      port: ${HRMS_REDIS_PORT:6379}
   flyway:
     enabled: true
 

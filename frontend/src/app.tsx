@@ -1,6 +1,6 @@
 import type { RequestConfig } from '@umijs/max';
 import { history, request as umiRequest } from '@umijs/max';
-import { message } from 'antd';
+import { message, Modal } from 'antd';
 import { getProfile, toCurrentUser } from '@/services/auth';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { useUserStore } from '@/stores/userStore';
@@ -67,7 +67,7 @@ export const request: RequestConfig = {
         throw error;
       }
     },
-    errorHandler: async (error: Error & { name?: string; info?: API.Result<unknown> }, opts: { skipErrorHandler?: boolean; url?: string; [key: string]: unknown }) => {
+    errorHandler: async (error: Error & { name?: string; info?: API.Result<unknown>; response?: { data?: Record<string, unknown> } }, opts: { skipErrorHandler?: boolean; url?: string; [key: string]: unknown }) => {
       if (opts?.skipErrorHandler) {
         throw error;
       }
@@ -86,8 +86,23 @@ export const request: RequestConfig = {
         return;
       }
 
+      // 重复打卡检测：匹配错误码 40005 或错误消息含"重复打卡"
+      const msg = getRequestErrorMessage(error);
+      const isDupPunch = error.info?.code === 40005
+        || (error.response?.data?.code as number) === 40005
+        || msg?.includes('重复打卡');
+
+      if (isDupPunch) {
+        Modal.warning({
+          title: '打卡提示',
+          content: '您已打卡，请勿重复操作',
+          okText: '知道了',
+        });
+        return;
+      }
+
       if (error.name === 'BizError') {
-        message.error(getRequestErrorMessage(error));
+        message.error(msg);
         return;
       }
 
