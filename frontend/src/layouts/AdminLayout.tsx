@@ -40,11 +40,13 @@ const AdminLayout: React.FC = () => {
   const { initialState } = useModel('@@initialState');
   const username = initialState?.currentUser?.username ?? '用户';
 
+  // 对齐 PRD §2.2：FINANCE 仅工作台+薪资；组织/花名册/审批/考勤均不可见
   const menuAccess: Record<string, boolean> = {
     workbench: true,
-    org: access.canManageOrg || access.canViewDept || access.canViewPosition,
+    org: access.canViewDept || access.canViewPosition,
     employee: access.canViewEmployee,
-    attendance: access.canManageAttendance || access.canHr,
+    workflow: access.canManageWorkflow || access.canApprove,
+    attendance: access.canManageAttendance,
     payroll: access.canViewPayroll,
     system: access.canManageSystem,
   };
@@ -70,6 +72,7 @@ const AdminLayout: React.FC = () => {
       {
         key: '/admin/workflow',
         label: '入转调离/审批',
+        accessKey: 'workflow',
         children: [
           { key: '/admin/onboarding', label: '入职管理' },
           { key: '/admin/regularization', label: '转正管理' },

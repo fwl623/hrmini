@@ -39,30 +39,62 @@ export default defineConfig({
         },
 
         // 员工管理（详情/编辑须在 list 之后；:id/edit 须在 :id 之前）
-        { path: 'employee/list', component: './admin/employee/list' },
-        { path: 'employee/mobile-change', component: './admin/employee/mobile-change' },
-        { path: 'employee/:id/edit', component: './admin/employee/edit' },
-        { path: 'employee/:id', component: './admin/employee/detail' },
+        { path: 'employee/list', component: './admin/employee/list', access: 'canViewEmployee' },
+        {
+          path: 'employee/mobile-change',
+          component: './admin/employee/mobile-change',
+          access: 'canViewEmployee',
+        },
+        { path: 'employee/:id/edit', component: './admin/employee/edit', access: 'canViewEmployee' },
+        { path: 'employee/:id', component: './admin/employee/detail', access: 'canViewEmployee' },
 
-        // 入转调离（成员 C）
-        { path: 'onboarding', component: './admin/onboarding' },
-        { path: 'regularization', component: './admin/regularization' },
-        { path: 'transfers', component: './admin/transfers' },
-        { path: 'resignation', component: './admin/resignation' },
-        { path: 'approval', component: './admin/approval' },
-        { path: 'delegation', component: './admin/delegation' },
+        // 入转调离（成员 C）；FINANCE 不可进
+        { path: 'onboarding', component: './admin/onboarding', access: 'canManageWorkflow' },
+        {
+          path: 'regularization',
+          component: './admin/regularization',
+          access: 'canManageWorkflow',
+        },
+        { path: 'transfers', component: './admin/transfers', access: 'canManageWorkflow' },
+        { path: 'resignation', component: './admin/resignation', access: 'canManageWorkflow' },
+        { path: 'approval', component: './admin/approval', access: 'canManageWorkflow' },
+        { path: 'delegation', component: './admin/delegation', access: 'canManageWorkflow' },
 
         // 考勤管理
-        { path: 'attendance/groups', component: './admin/attendance/groups' },
-        { path: 'attendance/punch', component: './admin/attendance/punch' },
-        { path: 'attendance/records', component: './admin/attendance/records' },
-        { path: 'attendance/holidays', component: './admin/attendance/holidays' },
-        { path: 'attendance/summary', component: './admin/attendance/summary' },
-        { path: 'attendance/statistics', component: './admin/attendance/statistics' },
+        {
+          path: 'attendance/groups',
+          component: './admin/attendance/groups',
+          access: 'canManageAttendance',
+        },
+        {
+          path: 'attendance/punch',
+          component: './admin/attendance/punch',
+          access: 'canManageAttendance',
+        },
+        {
+          path: 'attendance/records',
+          component: './admin/attendance/records',
+          access: 'canManageAttendance',
+        },
+        {
+          path: 'attendance/holidays',
+          component: './admin/attendance/holidays',
+          access: 'canManageAttendance',
+        },
+        {
+          path: 'attendance/summary',
+          component: './admin/attendance/summary',
+          access: 'canManageAttendance',
+        },
+        {
+          path: 'attendance/statistics',
+          component: './admin/attendance/statistics',
+          access: 'canManageAttendance',
+        },
 
         // 请假加班管理
-        { path: 'leave/list', component: './admin/leave' },
-        { path: 'overtime/list', component: './admin/overtime' },
+        { path: 'leave/list', component: './admin/leave', access: 'canManageAttendance' },
+        { path: 'overtime/list', component: './admin/overtime', access: 'canManageAttendance' },
 
         // 薪资管理（SYS_ADMIN 不可见）
         { path: 'payroll/schemes', component: './admin/payroll/schemes', access: 'canViewPayroll' },
