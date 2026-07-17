@@ -144,9 +144,9 @@ public class ApprovalEngine {
 
     public ApprovalDtos.TaskDetailVO getTaskDetail(long taskId, long userId) {
         ApprovalTask task = store.findTask(taskId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_INVALID, "任务不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在"));
         ApprovalInstance instance = store.findInstance(task.getInstanceId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_INVALID, "实例不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在"));
         WorkflowMemoryStore.InstanceMeta meta = store.getInstanceMeta(instance.getId());
 
         ApprovalDtos.TaskBriefVO taskVo = new ApprovalDtos.TaskBriefVO();
@@ -192,7 +192,7 @@ public class ApprovalEngine {
         }
 
         ApprovalTask task = store.findTask(taskId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_INVALID, "任务不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在"));
         if (!"pending".equalsIgnoreCase(task.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_ALREADY_HANDLED);
         }
@@ -201,7 +201,7 @@ public class ApprovalEngine {
         }
 
         ApprovalInstance instance = store.findInstance(task.getInstanceId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_INVALID, "实例不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在"));
         if (!"PENDING".equalsIgnoreCase(instance.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID);
         }
@@ -252,7 +252,7 @@ public class ApprovalEngine {
         store.saveTask(task);
 
         ApprovalProcessDef def = store.findProcessDef(instance.getProcessType())
-                .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_INVALID, "流程定义不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "流程定义不存在"));
         Map<String, Object> variables = loadVariables(instance);
         List<ProcessNodeDef> nodes = resolveActiveNodes(def, variables);
         ProcessNodeDef current = nodes.stream()
@@ -290,7 +290,7 @@ public class ApprovalEngine {
 
     public void remind(long taskId, long operatorId) {
         ApprovalTask task = store.findTask(taskId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_INVALID, "任务不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在"));
         if (!"pending".equalsIgnoreCase(task.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "仅待办可催办");
         }
@@ -307,7 +307,7 @@ public class ApprovalEngine {
 
     public void withdrawInstance(long instanceId, long operatorId) {
         ApprovalInstance instance = store.findInstance(instanceId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_INVALID, "实例不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在"));
         if (!Objects.equals(instance.getInitiatorId(), operatorId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅发起人可撤回");
         }

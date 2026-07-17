@@ -88,4 +88,26 @@ public final class ApprovalDtos {
         private String dueAt;
         private String status;
     }
+
+    @Data
+    public static class DelegationFormRequest {
+        private Long delegateUserId;
+        private java.time.LocalDate startDate;
+        private java.time.LocalDate endDate;
+        private String reason;
+    }
+
+    @Data
+    public static class DelegationVO {
+        private Long id;
+        private Long delegatorId;
+        private String delegatorName;
+        private Long delegateUserId;
+        private String delegateUserName;
+        private String startDate;
+        private String endDate;
+        private String reason;
+        private String status;
+        private String createdAt;
+    }
 }

@@ -145,6 +145,55 @@ export async function remindTask(taskId: number) {
   });
 }
 
+export interface DelegationItem {
+  id: number;
+  delegatorId: number;
+  delegatorName?: string;
+  delegateUserId: number;
+  delegateUserName?: string;
+  startDate: string;
+  endDate: string;
+  reason?: string;
+  status: string;
+  createdAt?: string;
+}
+
+export interface DelegationForm {
+  delegateUserId: number;
+  startDate: string;
+  endDate: string;
+  reason?: string;
+}
+
+/** GET /approvals/delegations */
+export async function fetchDelegations(params?: { page?: number; pageSize?: number }) {
+  const res = await request<
+    API.Result<{ list: DelegationItem[]; total: number; page: number; pageSize: number }>
+  >(`${APPROVAL_PREFIX}/delegations`, {
+    method: 'GET',
+    params,
+    headers: { 'X-User-Id': '1002' },
+  });
+  return res.data;
+}
+
+/** POST /approvals/delegations */
+export async function createDelegation(data: DelegationForm) {
+  return request<API.Result<DelegationItem>>(`${APPROVAL_PREFIX}/delegations`, {
+    method: 'POST',
+    data,
+    headers: { 'X-User-Id': '1002' },
+  });
+}
+
+/** DELETE /approvals/delegations/:id */
+export async function cancelDelegation(id: number) {
+  return request<API.Result<null>>(`${APPROVAL_PREFIX}/delegations/${id}`, {
+    method: 'DELETE',
+    headers: { 'X-User-Id': '1002' },
+  });
+}
+
 /** POST /approvals/instances/:id/withdraw */
 export async function withdrawInstance(instanceId: number) {
   return request<API.Result<null>>(`${APPROVAL_PREFIX}/instances/${instanceId}/withdraw`, {

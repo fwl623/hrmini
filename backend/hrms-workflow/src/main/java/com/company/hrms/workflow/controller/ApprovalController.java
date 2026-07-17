@@ -5,7 +5,9 @@ import com.company.hrms.common.web.Result;
 import com.company.hrms.workflow.dto.ApprovalDtos;
 import com.company.hrms.workflow.service.ApprovalEngine;
 import com.company.hrms.workflow.service.DbApprovalService;
+import com.company.hrms.workflow.service.DelegationService;
 import com.company.hrms.workflow.support.CurrentUserProvider;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,13 +26,16 @@ public class ApprovalController {
 
     private final ApprovalEngine approvalEngine;
     private final DbApprovalService dbApprovalService;
+    private final DelegationService delegationService;
     private final CurrentUserProvider currentUserProvider;
 
     public ApprovalController(ApprovalEngine approvalEngine,
                               DbApprovalService dbApprovalService,
+                              DelegationService delegationService,
                               CurrentUserProvider currentUserProvider) {
         this.approvalEngine = approvalEngine;
         this.dbApprovalService = dbApprovalService;
+        this.delegationService = delegationService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -99,7 +104,9 @@ public class ApprovalController {
     @PostMapping("/tasks/{id}/remind")
     public Result<Void> remind(@PathVariable("id") long id) {
         long userId = currentUserProvider.requireUserId();
-        if (!dbApprovalService.ownsTask(id)) {
+        if (dbApprovalService.ownsTask(id)) {
+            dbApprovalService.remind(id, userId);
+        } else {
             approvalEngine.remind(id, userId);
         }
         return Result.success();
@@ -135,5 +142,27 @@ public class ApprovalController {
         int from = Math.min((p - 1) * size, all.size());
         int to = Math.min(from + size, all.size());
         return Result.success(PageResult.of(all.subList(from, to), all.size(), p, size));
+    }
+
+    @GetMapping("/delegations")
+    public Result<PageResult<ApprovalDtos.DelegationVO>> listDelegations(
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "20") int pageSize) {
+        long userId = currentUserProvider.requireUserId();
+        return Result.success(delegationService.list(userId, page, pageSize));
+    }
+
+    @PostMapping("/delegations")
+    public Result<ApprovalDtos.DelegationVO> createDelegation(
+            @RequestBody ApprovalDtos.DelegationFormRequest body) {
+        long userId = currentUserProvider.requireUserId();
+        return Result.success(delegationService.create(userId, body));
+    }
+
+    @DeleteMapping("/delegations/{id}")
+    public Result<Void> cancelDelegation(@PathVariable("id") long id) {
+        long userId = currentUserProvider.requireUserId();
+        delegationService.cancel(id, userId);
+        return Result.success();
     }
 }

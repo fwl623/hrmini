@@ -52,7 +52,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             "/swagger-ui/**",
             "/v3/api-docs/**",
             "/actuator/**",
-            "/error"
+            "/error",
+            // Swagger / OpenAPI（本地联调）
+            "/swagger-ui.html",
+            "/swagger-ui/**",
+            "/v3/api-docs",
+            "/v3/api-docs/**"
     );
 
     /** 强制改密期间仅允许的接口 */

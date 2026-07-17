@@ -69,7 +69,7 @@ public class TransferService {
     public LifecycleDtos.TransferVO detail(Long id) {
         TransferApplication app = mapper.selectById(id);
         if (app == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "调岗申请不存在");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "调岗申请不存在");
         }
         return toVo(app, true);
     }
@@ -81,6 +81,15 @@ public class TransferService {
         }
         if (req.getEffectiveDate() == null || req.getEffectiveDate().isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "effectiveDate 必填");
+        }
+        LocalDate effectiveDate;
+        try {
+            effectiveDate = LocalDate.parse(req.getEffectiveDate());
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "effectiveDate 格式须为 YYYY-MM-DD");
+        }
+        if (effectiveDate.isBefore(LocalDate.now())) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "生效日期不能早于今天");
         }
         if (req.getReason() == null || req.getReason().isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "reason 必填");
@@ -105,7 +114,7 @@ public class TransferService {
         app.setNewJobLevel(req.getNewJobLevel());
         app.setNewManagerId(req.getNewManagerId());
         app.setSalaryAdjustment(req.getSalaryAdjustment());
-        app.setEffectiveDate(LocalDate.parse(req.getEffectiveDate()));
+        app.setEffectiveDate(effectiveDate);
         app.setReason(req.getReason());
         app.setCreatedBy(userId);
         app.setCreatedAt(LocalDateTime.now());

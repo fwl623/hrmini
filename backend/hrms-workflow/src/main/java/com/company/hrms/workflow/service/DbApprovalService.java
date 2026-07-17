@@ -149,11 +149,11 @@ public class DbApprovalService {
     public ApprovalDtos.TaskDetailVO getTaskDetail(long taskId, long userId) {
         ApprovalTask task = taskMapper.selectById(taskId);
         if (task == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "任务不存在");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
         ApprovalInstance instance = instanceMapper.selectById(task.getInstanceId());
         if (instance == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "实例不存在");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在");
         }
         InstanceDisplay display = displays.getOrDefault(instance.getId(), InstanceDisplay.fallback(instance));
         List<ProcessNodeDef> nodes = nodesOf(instance);
@@ -193,6 +193,19 @@ public class DbApprovalService {
     }
 
     @Transactional
+    public void remind(long taskId, long operatorId) {
+        ApprovalTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
+        }
+        if (!"PENDING".equalsIgnoreCase(task.getStatus())) {
+            throw new BusinessException(ErrorCode.APPROVAL_ALREADY_HANDLED, "仅待办可催办");
+        }
+        writeLog(task.getInstanceId(), taskId, operatorId, "REMIND", "催办通知已记录",
+                "PENDING", "PENDING", "催办");
+    }
+
+    @Transactional
     public void action(long taskId, long userId, ApprovalDtos.ActionRequest body) {
         if (body == null || body.getAction() == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "action 不能为空");
@@ -200,7 +213,7 @@ public class DbApprovalService {
         String action = body.getAction().trim().toUpperCase(Locale.ROOT);
         ApprovalTask task = taskMapper.selectById(taskId);
         if (task == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "任务不存在");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
         if (!"PENDING".equalsIgnoreCase(task.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_ALREADY_HANDLED);
@@ -264,7 +277,7 @@ public class DbApprovalService {
     public void withdrawInstance(long instanceId, long userId) {
         ApprovalInstance instance = instanceMapper.selectById(instanceId);
         if (instance == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "实例不存在");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在");
         }
         if (!instance.getInitiatorId().equals(userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅发起人可撤回");

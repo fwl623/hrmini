@@ -107,7 +107,7 @@ public class ResignationService {
 
         EmployeeResignationRequest request = requestMapper.selectById(req.getRequestId());
         if (request == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "员工离职申请不存在");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "员工离职申请不存在");
         }
         if (!"APPROVED".equalsIgnoreCase(request.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "须关联已批准的员工离职申请");
@@ -169,7 +169,7 @@ public class ResignationService {
     public LifecycleDtos.ResignationVO resignationDetail(Long id) {
         ResignationApplication app = resignationMapper.selectById(id);
         if (app == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "离职单不存在");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "离职单不存在");
         }
         return toResignVo(app);
     }

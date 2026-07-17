@@ -1,13 +1,16 @@
 import {
   Button,
   Card,
+  Col,
   DatePicker,
   Form,
   Input,
   InputNumber,
   Modal,
+  Row,
   Select,
   Space,
+  Statistic,
   Table,
   Tag,
   Typography,
@@ -20,6 +23,7 @@ import {
   abandonOnboardingApplication,
   confirmOnboardingApplication,
   createOnboardingApplication,
+  deleteOnboardingApplication,
   fetchOnboardingApplications,
   submitOnboardingApplication,
   withdrawOnboardingApplication,
@@ -49,9 +53,19 @@ const STATUS_COLOR: Record<string, string> = {
   abandoned: 'default',
 };
 
+/** 按钮显隐矩阵（简版） */
+function actionsForStatus(status: string) {
+  return {
+    submit: status === 'draft',
+    withdraw: status === 'pending',
+    confirm: status === 'approved_pending',
+    abandon: status === 'approved_pending',
+    remove: status === 'draft' || status === 'rejected',
+  };
+}
+
 /**
- * 入职管理全链路：草稿 → 提交 → 审批中心审批 → 确认入职建档
- * 审批人开发期用 X-User-Id=1002（见 services/workflow + 审批中心）
+ * 入职管理：StatCards + 状态按钮矩阵
  */
 export default function OnboardingPage() {
   const [list, setList] = useState<OnboardingRow[]>([]);
@@ -91,49 +105,50 @@ export default function OnboardingPage() {
     { title: '员工ID', dataIndex: 'employeeId', width: 90 },
     {
       title: '操作',
-      width: 280,
-      render: (_, row) => (
-        <Space wrap>
-          {row.status === 'draft' && (
-            <Button
-              type="link"
-              onClick={async () => {
-                try {
-                  await submitOnboardingApplication(row.id);
-                  message.success('已提交，请到审批中心用 X-User-Id=1002 审批');
-                  load();
-                } catch (e) {
-                  message.error((e as Error)?.message || '提交失败');
-                }
-              }}
-            >
-              提交审批
-            </Button>
-          )}
-          {row.status === 'pending' && (
-            <Button
-              type="link"
-              onClick={async () => {
-                try {
-                  await withdrawOnboardingApplication(row.id);
-                  message.success('已撤回');
-                  load();
-                } catch (e) {
-                  message.error((e as Error)?.message || '撤回失败');
-                }
-              }}
-            >
-              撤回
-            </Button>
-          )}
-          {row.status === 'approved_pending' && (
-            <>
+      width: 320,
+      render: (_, row) => {
+        const a = actionsForStatus(row.status);
+        return (
+          <Space wrap>
+            {a.submit && (
+              <Button
+                type="link"
+                onClick={async () => {
+                  try {
+                    await submitOnboardingApplication(row.id);
+                    message.success('已提交审批');
+                    load();
+                  } catch (e) {
+                    message.error((e as Error)?.message || '提交失败');
+                  }
+                }}
+              >
+                提交
+              </Button>
+            )}
+            {a.withdraw && (
+              <Button
+                type="link"
+                onClick={async () => {
+                  try {
+                    await withdrawOnboardingApplication(row.id);
+                    message.success('已撤回');
+                    load();
+                  } catch (e) {
+                    message.error((e as Error)?.message || '撤回失败');
+                  }
+                }}
+              >
+                撤回
+              </Button>
+            )}
+            {a.confirm && (
               <Button
                 type="link"
                 onClick={async () => {
                   try {
                     await confirmOnboardingApplication(row.id);
-                    message.success('已确认入职并建档');
+                    message.success('已确认入职');
                     load();
                   } catch (e) {
                     message.error((e as Error)?.message || '确认失败');
@@ -142,6 +157,8 @@ export default function OnboardingPage() {
               >
                 确认入职
               </Button>
+            )}
+            {a.abandon && (
               <Button
                 type="link"
                 danger
@@ -157,29 +174,49 @@ export default function OnboardingPage() {
               >
                 放弃
               </Button>
-            </>
-          )}
-        </Space>
-      ),
+            )}
+            {a.remove && (
+              <Button
+                type="link"
+                danger
+                onClick={async () => {
+                  try {
+                    await deleteOnboardingApplication(row.id);
+                    message.success('已删除');
+                    load();
+                  } catch (e) {
+                    message.error((e as Error)?.message || '删除失败');
+                  }
+                }}
+              >
+                删除
+              </Button>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-        <div>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            入职管理
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            草稿 {stats.draft ?? 0} · 审批中 {stats.pending ?? 0} · 待入职 {stats.approvedPending ?? 0} ·
-            已入职 {stats.onboarded ?? 0}
-          </Typography.Text>
-        </div>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          入职管理
+        </Typography.Title>
         <Button type="primary" onClick={() => { form.resetFields(); setOpen(true); }}>
           新建入职申请
         </Button>
       </Space>
+
+      <Row gutter={12}>
+        <Col span={4}><Card size="small"><Statistic title="草稿" value={stats.draft ?? 0} /></Card></Col>
+        <Col span={4}><Card size="small"><Statistic title="审批中" value={stats.pending ?? 0} /></Card></Col>
+        <Col span={4}><Card size="small"><Statistic title="待入职" value={stats.approvedPending ?? 0} /></Card></Col>
+        <Col span={4}><Card size="small"><Statistic title="已入职" value={stats.onboarded ?? 0} /></Card></Col>
+        <Col span={4}><Card size="small"><Statistic title="已驳回" value={stats.rejected ?? 0} /></Card></Col>
+        <Col span={4}><Card size="small"><Statistic title="已放弃" value={stats.abandoned ?? 0} /></Card></Col>
+      </Row>
 
       <Card loading={loading}>
         <Table rowKey="id" columns={columns} dataSource={list} pagination={false} />

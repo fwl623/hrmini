@@ -65,20 +65,23 @@ public final class ApprovalStateMachine {
     private static Map<ApprovalStatus.Onboarding, Map<ApprovalAction, ApprovalStatus.Onboarding>> onboardingGraph() {
         Map<ApprovalStatus.Onboarding, Map<ApprovalAction, ApprovalStatus.Onboarding>> g = new EnumMap<>(ApprovalStatus.Onboarding.class);
         g.put(ApprovalStatus.Onboarding.DRAFT, Map.of(
-                ApprovalAction.SUBMIT, ApprovalStatus.Onboarding.PENDING
+                ApprovalAction.SUBMIT, ApprovalStatus.Onboarding.PENDING,
+                ApprovalAction.ABANDON, ApprovalStatus.Onboarding.ABANDONED
         ));
         g.put(ApprovalStatus.Onboarding.PENDING, Map.of(
                 ApprovalAction.APPROVE, ApprovalStatus.Onboarding.APPROVED_PENDING,
                 ApprovalAction.REJECT, ApprovalStatus.Onboarding.REJECTED,
                 ApprovalAction.WITHDRAW, ApprovalStatus.Onboarding.DRAFT,
-                ApprovalAction.FORWARD, ApprovalStatus.Onboarding.PENDING
+                ApprovalAction.FORWARD, ApprovalStatus.Onboarding.PENDING,
+                ApprovalAction.ABANDON, ApprovalStatus.Onboarding.ABANDONED
         ));
         g.put(ApprovalStatus.Onboarding.APPROVED_PENDING, Map.of(
                 ApprovalAction.APPROVE, ApprovalStatus.Onboarding.ONBOARDED, // confirm 语义
-                ApprovalAction.REJECT, ApprovalStatus.Onboarding.ABANDONED   // abandon 语义
+                ApprovalAction.ABANDON, ApprovalStatus.Onboarding.ABANDONED
         ));
         g.put(ApprovalStatus.Onboarding.REJECTED, Map.of(
-                ApprovalAction.SUBMIT, ApprovalStatus.Onboarding.PENDING
+                ApprovalAction.SUBMIT, ApprovalStatus.Onboarding.PENDING,
+                ApprovalAction.ABANDON, ApprovalStatus.Onboarding.ABANDONED
         ));
         // terminal: ONBOARDED / ABANDONED
         g.put(ApprovalStatus.Onboarding.ONBOARDED, Map.of());

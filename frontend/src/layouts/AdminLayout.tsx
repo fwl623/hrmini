@@ -68,16 +68,36 @@ const AdminLayout: React.FC = () => {
         children: [{ key: '/admin/employee/list', label: '花名册' }],
       },
       {
+        key: '/admin/workflow',
+        label: '入转调离/审批',
+        children: [
+          { key: '/admin/onboarding', label: '入职管理' },
+          { key: '/admin/regularization', label: '转正管理' },
+          { key: '/admin/transfers', label: '调岗管理' },
+          { key: '/admin/resignation', label: '离职管理' },
+          { key: '/admin/approval', label: '审批中心' },
+          { key: '/admin/delegation', label: '审批委托' },
+        ],
+      },
+      {
         key: '/admin/attendance',
         label: '考勤管理',
         accessKey: 'attendance',
-        children: [{ key: '/admin/attendance/groups', label: '考勤组管理' }],
+        children: [
+          { key: '/admin/attendance/groups', label: '考勤组管理' },
+          { key: '/admin/attendance/summary', label: '月汇总' },
+        ],
       },
       {
         key: '/admin/payroll',
         label: '薪资管理',
         accessKey: 'payroll',
-        children: [{ key: '/admin/payroll/schemes', label: '账套管理' }],
+        children: [
+          { key: '/admin/payroll/schemes', label: '账套管理' },
+          { key: '/admin/payroll/batches', label: '核算批次' },
+          { key: '/admin/payroll/payslips', label: '工资条' },
+          { key: '/admin/payroll/cost-report', label: '成本报表' },
+        ],
       },
       {
         key: '/admin/system',
