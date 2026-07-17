@@ -38,8 +38,11 @@ export default defineConfig({
           access: 'canViewPosition',
         },
 
-        // 员工管理
+        // 员工管理（详情/编辑须在 list 之后；:id/edit 须在 :id 之前）
         { path: 'employee/list', component: './admin/employee/list' },
+        { path: 'employee/mobile-change', component: './admin/employee/mobile-change' },
+        { path: 'employee/:id/edit', component: './admin/employee/edit' },
+        { path: 'employee/:id', component: './admin/employee/detail' },
 
         // 入转调离（成员 C）
         { path: 'onboarding', component: './admin/onboarding' },
