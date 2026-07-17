@@ -98,7 +98,7 @@ public class PunchService {
         Boolean success = stringRedisTemplate.opsForValue()
                 .setIfAbsent(idempKey, "1", getSecondsUntilEndOfDay(punchDate), TimeUnit.SECONDS);
         if (Boolean.FALSE.equals(success)) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "您已打卡，请勿重复操作");
+            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
         }
 
         try {

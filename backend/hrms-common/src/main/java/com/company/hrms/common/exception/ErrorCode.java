@@ -20,6 +20,8 @@ public enum ErrorCode {
     FIELD_FORBIDDEN(20003, "字段权限不足", HttpStatus.FORBIDDEN),
 
     RESOURCE_CONFLICT(40901, "资源已存在", HttpStatus.CONFLICT),
+    /** 资源不存在（入职单/任务/委托/部门等）；HTTP 404，业务码 40401 */
+    RESOURCE_NOT_FOUND(40401, "资源不存在", HttpStatus.NOT_FOUND),
     ACCOUNT_LOCKED(42201, "账号已锁定，请 15 分钟后再试", HttpStatus.UNPROCESSABLE_ENTITY),
 
     DEPT_LEVEL_EXCEEDED(30001, "部门层级超过 5 层", HttpStatus.UNPROCESSABLE_ENTITY),
@@ -42,6 +44,7 @@ public enum ErrorCode {
     MAKEUP_LIMIT_EXCEEDED(40002, "补卡次数超限（2次/月）", HttpStatus.UNPROCESSABLE_ENTITY),
     LEAVE_BALANCE_INSUFFICIENT(40003, "请假余额不足", HttpStatus.UNPROCESSABLE_ENTITY),
     PUNCH_OUT_OF_RANGE(40004, "不在打卡有效范围", HttpStatus.UNPROCESSABLE_ENTITY),
+    PUNCH_DUPLICATE(40005, "您已打卡，请勿重复操作", HttpStatus.BAD_REQUEST),
 
     PAYROLL_BATCH_EXISTS(50001, "算薪批次已存在", HttpStatus.CONFLICT),
     PAYROLL_IN_PROGRESS(50002, "算薪进行中，请勿重复操作", HttpStatus.CONFLICT),

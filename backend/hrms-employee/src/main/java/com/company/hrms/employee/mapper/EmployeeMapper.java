@@ -52,4 +52,7 @@ public interface EmployeeMapper {
 
     /** 按主键更新（仅更新非 null 字段） */
     int updateById(Employee employee);
+
+    /** 试用期结束日在 [from, to] 内的试用员工 */
+    List<Employee> listPendingRegularization(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

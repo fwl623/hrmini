@@ -14,6 +14,8 @@ import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
+import com.company.hrms.module.attendance.dto.AttendanceCalendarDay;
+import com.company.hrms.module.attendance.dto.AttendanceCalendarVO;
 import com.company.hrms.module.attendance.dto.DepartmentStatisticsVO;
 import com.company.hrms.module.attendance.dto.MonthlySummaryItem;
 import com.company.hrms.module.attendance.dto.MonthlySummaryVO;
@@ -294,5 +296,52 @@ public class SummaryService {
         } else {
             monthlySummaryMapper.updateById(monthly);
         }
+    }
+
+    // ========== 考勤日历（门户） ==========
+
+    /**
+     * 获取员工指定月份的考勤日历
+     *
+     * @param employeeId 员工 ID
+     * @param period     月份 yyyy-MM
+     * @return 考勤日历，包含当月每日状态
+     */
+    public AttendanceCalendarVO getCalendar(Long employeeId, String period) {
+        LocalDate start = LocalDate.parse(period + "-01");
+        LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
+
+        List<AttendanceDailySummary> dailyList = dailySummaryMapper.selectByEmployeeAndPeriod(
+                employeeId, start, end);
+
+        // 构建日期 → 状态映射
+        java.util.Map<LocalDate, AttendanceDailySummary> summaryMap = new java.util.HashMap<>();
+        for (AttendanceDailySummary ds : dailyList) {
+            summaryMap.put(ds.getSummaryDate(), ds);
+        }
+
+        List<AttendanceCalendarDay> days = new ArrayList<>();
+        LocalDate current = start;
+        while (!current.isAfter(end)) {
+            AttendanceDailySummary ds = summaryMap.get(current);
+            AttendanceCalendarDay day = new AttendanceCalendarDay();
+            day.setDate(current.toString());
+
+            if (ds != null) {
+                day.setDayStatus(ds.getDayStatus());
+                day.setClockInTime(ds.getClockInTime() != null
+                        ? ds.getClockInTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
+                day.setClockOutTime(ds.getClockOutTime() != null
+                        ? ds.getClockOutTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
+            } else {
+                // 无汇总记录 → 非工作日或尚未生成汇总
+                day.setDayStatus("--");
+            }
+
+            days.add(day);
+            current = current.plusDays(1);
+        }
+
+        return new AttendanceCalendarVO(start.getYear(), start.getMonthValue(), days);
     }
 }

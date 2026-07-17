@@ -201,7 +201,7 @@ export async function deleteHoliday(id: number) {
  * @param data.longitude - 打卡地点的经度（可选），用于地理位置校验
  * @returns 返回打卡状态标识，如 "NORMAL"（正常）、"LATE"（迟到）、"EARLY"（早退）等
  */
-export async function punch(data: { type: 'in' | 'out'; punchTime?: string; latitude?: number; longitude?: number }) {
+export async function punch(data: { type: 'in' | 'out'; punchTime?: string; latitude?: number; longitude?: number; employeeId?: number }) {
   return request<API.Result<{ punchStatus: string }>>(`${API_PREFIX}/punch`, {
     method: 'POST',
     data,
@@ -253,7 +253,7 @@ export async function getPunchRecords(params: { page?: number; size?: number; ke
  * @param data.reason - 补卡原因说明
  * @returns 返回补卡申请记录 id 及当前审批状态
  */
-export async function applyPunchFix(data: { punchDate: string; type: 'in' | 'out'; punchTime: string; reason: string }) {
+export async function applyPunchFix(data: { punchDate: string; type: 'in' | 'out'; punchTime: string; reason: string; employeeId?: number }) {
   return request<API.Result<{ id: number; status: string }>>(`${API_PREFIX}/punch-fix`, {
     method: 'POST',
     data,
@@ -409,6 +409,42 @@ export async function updateMonthlySummaryLock(data: { period: string; locked: b
   return request<API.Result<null>>(`/api/v1/attendance/monthly-summary`, {
     method: 'PUT',
     data,
+  });
+}
+
+// ========== 考勤统计 ==========
+
+/**
+ * 个人考勤统计
+ *
+ * 获取指定员工在指定月份的考勤汇总指标。
+ *
+ * @param params - 查询参数
+ * @param params.employeeId - 员工唯一标识
+ * @param params.period - 统计月份，格式 "YYYY-MM"，如 "2026-07"
+ * @returns 返回个人考勤 8 项指标：应出勤/实际出勤/迟到/早退/旷工/请假/加班/年假余额
+ */
+export async function getPersonalStatistics(params: { employeeId: number; period: string }) {
+  return request<API.Result<API.PersonalStatisticsVO>>(`${API_PREFIX}/statistics/personal`, {
+    method: 'GET',
+    params,
+  });
+}
+
+/**
+ * 部门考勤统计
+ *
+ * 获取指定部门在指定月份的考勤率指标。
+ *
+ * @param params - 查询参数
+ * @param params.departmentId - 部门唯一标识
+ * @param params.period - 统计月份，格式 "YYYY-MM"，如 "2026-07"
+ * @returns 返回部门考勤 3 项率：出勤率/迟到率/请假率
+ */
+export async function getDepartmentStatistics(params: { departmentId: number; period: string }) {
+  return request<API.Result<API.DepartmentStatisticsVO>>(`${API_PREFIX}/statistics/department`, {
+    method: 'GET',
+    params,
   });
 }
 

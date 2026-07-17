@@ -41,11 +41,31 @@ export default defineConfig({
         // 员工管理
         { path: 'employee/list', component: './admin/employee/list' },
 
+        // 入转调离（成员 C）
+        { path: 'onboarding', component: './admin/onboarding' },
+        { path: 'regularization', component: './admin/regularization' },
+        { path: 'transfers', component: './admin/transfers' },
+        { path: 'resignation', component: './admin/resignation' },
+        { path: 'approval', component: './admin/approval' },
+        { path: 'delegation', component: './admin/delegation' },
+
         // 考勤管理
         { path: 'attendance/groups', component: './admin/attendance/groups' },
+        { path: 'attendance/punch', component: './admin/attendance/punch' },
+        { path: 'attendance/records', component: './admin/attendance/records' },
+        { path: 'attendance/holidays', component: './admin/attendance/holidays' },
+        { path: 'attendance/summary', component: './admin/attendance/summary' },
+        { path: 'attendance/statistics', component: './admin/attendance/statistics' },
+
+        // 请假加班管理
+        { path: 'leave/list', component: './admin/leave' },
+        { path: 'overtime/list', component: './admin/overtime' },
 
         // 薪资管理（SYS_ADMIN 不可见）
         { path: 'payroll/schemes', component: './admin/payroll/schemes', access: 'canViewPayroll' },
+        { path: 'payroll/batches', component: './admin/payroll/batches', access: 'canViewPayroll' },
+        { path: 'payroll/payslips', component: './admin/payroll/payslips', access: 'canViewPayroll' },
+        { path: 'payroll/cost-report', component: './admin/payroll/cost-report', access: 'canViewPayroll' },
 
         // 系统设置（Day 4 占位）
         { path: 'system/users', component: './admin/workbench' },
@@ -59,11 +79,11 @@ export default defineConfig({
         { path: '', redirect: '/portal/profile' },
         { path: 'profile', component: './portal/profile' },
         { path: 'attendance', component: './portal/attendance' },
-        { path: 'leave', component: './portal/profile' },
-        { path: 'overtime', component: './portal/profile' },
-        { path: 'payslips', component: './portal/profile', access: 'canViewPayroll' },
-        { path: 'resignation', component: './portal/profile' },
-        { path: 'security', component: './portal/profile' },
+        { path: 'leave', component: './portal/leave' },
+        { path: 'overtime', component: './portal/overtime' },
+        { path: 'payslips', component: './portal/payslips', access: 'canViewPayroll' },
+        { path: 'resignation', component: './portal/resignation' },
+        { path: 'security', component: './portal/security' },
       ],
     },
   ],

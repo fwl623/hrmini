@@ -2,11 +2,17 @@ package com.company.hrms.workflow.service;
 
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
+import com.company.hrms.employee.dto.OnboardingArchiveCommand;
+import com.company.hrms.employee.entity.Employee;
+import com.company.hrms.employee.mapper.EmployeeMapper;
+import com.company.hrms.workflow.client.AuthAccountClient;
+import com.company.hrms.workflow.client.EmployeeArchiveClient;
 import com.company.hrms.workflow.core.ApprovalStateMachine;
 import com.company.hrms.workflow.dto.OnboardingDtos;
 import com.company.hrms.workflow.entity.OnboardingApplication;
 import com.company.hrms.workflow.enums.ApprovalAction;
 import com.company.hrms.workflow.enums.ApprovalStatus;
+import com.company.hrms.workflow.mapper.OrgLookupMapper;
 import com.company.hrms.workflow.store.WorkflowMemoryStore;
 import com.company.hrms.workflow.support.CurrentUserProvider;
 import org.springframework.stereotype.Service;
@@ -21,7 +27,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Service
+@Service("workflowOnboardingService")
 public class OnboardingService {
 
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -30,13 +36,25 @@ public class OnboardingService {
     private final WorkflowMemoryStore store;
     private final ApprovalEngine approvalEngine;
     private final CurrentUserProvider currentUserProvider;
+    private final EmployeeArchiveClient employeeArchiveClient;
+    private final AuthAccountClient authAccountClient;
+    private final EmployeeMapper employeeMapper;
+    private final OrgLookupMapper orgLookupMapper;
 
     public OnboardingService(WorkflowMemoryStore store,
                              ApprovalEngine approvalEngine,
-                             CurrentUserProvider currentUserProvider) {
+                             CurrentUserProvider currentUserProvider,
+                             EmployeeArchiveClient employeeArchiveClient,
+                             AuthAccountClient authAccountClient,
+                             EmployeeMapper employeeMapper,
+                             OrgLookupMapper orgLookupMapper) {
         this.store = store;
         this.approvalEngine = approvalEngine;
         this.currentUserProvider = currentUserProvider;
+        this.employeeArchiveClient = employeeArchiveClient;
+        this.authAccountClient = authAccountClient;
+        this.employeeMapper = employeeMapper;
+        this.orgLookupMapper = orgLookupMapper;
     }
 
     public OnboardingDtos.OnboardingListResponse list(int page, int pageSize, String status) {
@@ -116,8 +134,13 @@ public class OnboardingService {
 
     public OnboardingDtos.OnboardingVO submit(long id, long userId) {
         OnboardingApplication app = require(id);
-        String next = ApprovalStateMachine.transit(
-                ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.SUBMIT);
+        String next;
+        try {
+            next = ApprovalStateMachine.transit(
+                    ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.SUBMIT);
+        } catch (IllegalStateException | IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, ex.getMessage());
+        }
         app.setStatus(next);
 
         boolean second = needSecondApproval(app);
@@ -165,11 +188,40 @@ public class OnboardingService {
 
     public OnboardingDtos.OnboardingVO confirm(long id) {
         OnboardingApplication app = require(id);
-        String next = ApprovalStateMachine.transit(
-                ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.APPROVE);
-        app.setStatus(next);
-        app.setActualOnboardDate(LocalDate.now());
-        // TODO: 调员工建档 / auth 建号
+        if (!ApprovalStatus.Onboarding.APPROVED_PENDING.code().equalsIgnoreCase(app.getStatus())) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "仅「审批通过待入职」可确认入职");
+        }
+        LocalDate actual = LocalDate.now();
+        OnboardingArchiveCommand cmd = new OnboardingArchiveCommand();
+        cmd.setApplicationId(app.getId());
+        cmd.setActualOnboardDate(actual);
+        cmd.setName(app.getName());
+        cmd.setGender(app.getGender());
+        cmd.setMobile(app.getMobile());
+        cmd.setEmail(app.getEmail());
+        cmd.setIdNumber(app.getIdNumberEnc());
+        cmd.setDepartmentId(app.getDepartmentId());
+        cmd.setPositionId(app.getPositionId());
+        cmd.setEmploymentType(app.getEmploymentType());
+        cmd.setProbationMonths(app.getProbationMonths());
+        cmd.setProbationSalaryRatio(app.getProbationSalaryRatio());
+        cmd.setBaseSalary(app.getBaseSalary());
+        cmd.setManagerId(app.getManagerId());
+        cmd.setExpectedOnboardDate(app.getExpectedOnboardDate());
+
+        Long employeeId = employeeArchiveClient.archive(cmd);
+        // A 组建号 Feign：Mock 返回假 userId；真实模式由建档内 InternalUserService 完成，此处对齐调用点
+        authAccountClient.createAccount(new AuthAccountClient.CreateAccountRequest(
+                app.getMobile(), employeeId, app.getName()));
+
+        try {
+            app.setStatus(ApprovalStateMachine.transit(
+                    ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.APPROVE));
+        } catch (IllegalStateException | IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, ex.getMessage());
+        }
+        app.setActualOnboardDate(actual);
+        app.setEmployeeId(employeeId);
         app.setUpdatedAt(LocalDateTime.now());
         store.saveOnboarding(app);
         return toVo(app);
@@ -177,8 +229,13 @@ public class OnboardingService {
 
     public OnboardingDtos.OnboardingVO abandon(long id) {
         OnboardingApplication app = require(id);
-        String next = ApprovalStateMachine.transit(
-                ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.REJECT);
+        String next;
+        try {
+            next = ApprovalStateMachine.transit(
+                    ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.ABANDON);
+        } catch (IllegalStateException | IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "当前状态不可放弃: " + app.getStatus());
+        }
         app.setStatus(next);
         app.setUpdatedAt(LocalDateTime.now());
         store.saveOnboarding(app);
@@ -195,13 +252,19 @@ public class OnboardingService {
             return;
         }
         if (approved) {
-            String next = ApprovalStateMachine.transit(
-                    ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.APPROVE);
-            app.setStatus(next);
+            try {
+                app.setStatus(ApprovalStateMachine.transit(
+                        ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.APPROVE));
+            } catch (IllegalStateException | IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, ex.getMessage());
+            }
         } else {
-            String next = ApprovalStateMachine.transit(
-                    ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.REJECT);
-            app.setStatus(next);
+            try {
+                app.setStatus(ApprovalStateMachine.transit(
+                        ApprovalStateMachine.ProcessType.ONBOARDING, app.getStatus(), ApprovalAction.REJECT));
+            } catch (IllegalStateException | IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, ex.getMessage());
+            }
         }
         app.setUpdatedAt(LocalDateTime.now());
         store.saveOnboarding(app);
@@ -251,12 +314,29 @@ public class OnboardingService {
 
     private OnboardingApplication require(long id) {
         return store.findOnboarding(id)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_INVALID, "入职申请不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "入职申请不存在"));
     }
 
     private void ensureMobileUnique(String mobile, Long excludeId) {
         if (store.existsMobile(mobile, excludeId)) {
             throw new BusinessException(ErrorCode.MOBILE_DUPLICATE);
+        }
+        Employee existing = employeeMapper.selectByMobile(mobile);
+        if (existing != null && (existing.getDeleted() == null || existing.getDeleted() == 0)) {
+            throw new BusinessException(ErrorCode.MOBILE_DUPLICATE);
+        }
+    }
+
+    private void ensureOrgExists(Long departmentId, Long positionId) {
+        if (departmentId != null && orgLookupMapper.countDepartment(departmentId) <= 0) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "部门不存在");
+        }
+        Long lookupPositionId = positionId;
+        if (lookupPositionId != null && lookupPositionId >= 9000) {
+            lookupPositionId = lookupPositionId - 9000;
+        }
+        if (lookupPositionId != null && orgLookupMapper.countPosition(lookupPositionId) <= 0) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "职位不存在");
         }
     }
 
@@ -279,6 +359,9 @@ public class OnboardingService {
             if (req.getBaseSalary() == null) {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, "baseSalary 必填");
             }
+            ensureOrgExists(req.getDepartmentId(), req.getPositionId());
+        } else if (req.getDepartmentId() != null || req.getPositionId() != null) {
+            ensureOrgExists(req.getDepartmentId(), req.getPositionId());
         }
         if (req.getMobile() != null && !req.getMobile().matches("^1\\d{10}$")) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "手机号格式不正确");

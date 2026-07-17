@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.employee.mapper.EmployeePersonalMapper">
+
+    <select id="selectById" resultType="com.company.hrms.employee.entity.EmployeePersonal">
+        SELECT employee_id AS employeeId, id_number_enc AS idNumberEnc, id_number_hash AS idNumberHash,
+               birthday, household_address AS householdAddress, residence_address AS residenceAddress,
+               emergency_contact AS emergencyContact, emergency_phone AS emergencyPhone,
+               created_at AS createdAt, updated_at AS updatedAt
+        FROM employee_personal WHERE employee_id = #{employeeId}
+    </select>
+
+    <insert id="insert">
+        INSERT INTO employee_personal (employee_id, id_number_enc, id_number_hash, birthday,
+            household_address, residence_address, emergency_contact, emergency_phone)
+        VALUES (#{employeeId}, #{idNumberEnc}, #{idNumberHash}, #{birthday},
+            #{householdAddress}, #{residenceAddress}, #{emergencyContact}, #{emergencyPhone})
+    </insert>
+
+    <update id="updateById">
+        UPDATE employee_personal
+        <set>
+            <if test="idNumberEnc != null">id_number_enc = #{idNumberEnc},</if>
+            <if test="idNumberHash != null">id_number_hash = #{idNumberHash},</if>
+            <if test="birthday != null">birthday = #{birthday},</if>
+            <if test="householdAddress != null">household_address = #{householdAddress},</if>
+            <if test="residenceAddress != null">residence_address = #{residenceAddress},</if>
+            <if test="emergencyContact != null">emergency_contact = #{emergencyContact},</if>
+            <if test="emergencyPhone != null">emergency_phone = #{emergencyPhone},</if>
+        </set>
+        WHERE employee_id = #{employeeId}
+    </update>
+</mapper>

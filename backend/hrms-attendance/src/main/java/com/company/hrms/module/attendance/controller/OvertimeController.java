@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -29,12 +30,18 @@ public class OvertimeController {
 
     /**
      * 加班列表
-     * GET /api/v1/overtime/applications?page=1
+     * GET /api/v1/overtime/applications?page=1&employeeId=
+     * 管理端传 employeeId=0 查全部；不传则查当前用户
      */
     @GetMapping("/applications")
-    public Result<PageResult<OvertimeApplicationVO>> list(PageParam pageParam) {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        return Result.success(overtimeService.pageApplications(pageParam, employeeId));
+    public Result<PageResult<OvertimeApplicationVO>> list(PageParam pageParam,
+                                                          @RequestParam(required = false) Long employeeId) {
+        // employeeId=0 表示查全部（管理端），null 查本人（门户端）
+        if (employeeId == null) {
+            employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+        }
+        return Result.success(overtimeService.pageApplications(pageParam,
+                employeeId == 0 ? null : employeeId));
     }
 
     /**

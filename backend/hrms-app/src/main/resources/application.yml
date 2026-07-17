@@ -12,6 +12,9 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+      # Redis：登录/鉴权已依赖 StringRedisTemplate，勿再排除 RedisAutoConfiguration
+      # - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      # - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 
 springdoc:
   api-docs:
@@ -51,6 +54,12 @@ hrms:
   # 模块间内部接口密钥（请求头 X-Internal-Token）；生产务必用环境变量覆盖
   internal:
     token: ${HRMS_INTERNAL_TOKEN:hrms-dev-internal-token-change-me}
+  # Day4：Feign 默认 Mock；联调日设 false 走本地真实建档/建号
+  feign:
+    mock-enabled: true
+  # Day4：RabbitMQ 催办默认关闭（骨架 + OverdueCheckJob）；启用见 RabbitConfig 注释
+  rabbitmq:
+    enabled: false
   # 短信：联调开启开发码；生产设 hrms.sms.dev-enabled=false
   sms:
     dev-enabled: true
