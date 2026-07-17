@@ -75,6 +75,23 @@ public class JwtTokenProvider {
         }
     }
 
+    /**
+     * 解析 JWT；签名无效仍拒绝，已过期则返回 claims（用于 logout / refresh 拉黑旧 jti）。
+     */
+    public Claims parseClaimsAllowExpired(String token) {
+        try {
+            return Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+        } catch (ExpiredJwtException ex) {
+            return ex.getClaims();
+        } catch (MalformedJwtException | SecurityException | IllegalArgumentException ex) {
+            throw new UnauthorizedException("Token 无效或已过期");
+        }
+    }
+
     @SuppressWarnings("unchecked")
     public LoginUser toLoginUser(Claims claims) {
         LoginUser user = new LoginUser();

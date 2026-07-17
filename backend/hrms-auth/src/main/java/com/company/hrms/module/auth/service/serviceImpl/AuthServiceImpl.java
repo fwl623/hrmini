@@ -118,7 +118,7 @@ public class AuthServiceImpl implements AuthService {
             return;
         }
         try {
-            Claims claims = jwtTokenProvider.parseClaims(accessToken);
+            Claims claims = jwtTokenProvider.parseClaimsAllowExpired(accessToken);
             blacklistAccessToken(claims.getId());
             Long userId = Long.valueOf(claims.getSubject());
             clearRefreshToken(userId);
@@ -131,7 +131,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public LoginResponse refresh(String refreshToken) {
+    public LoginResponse refresh(String refreshToken, String oldAccessToken) {
         String userIdStr = redisTemplate.opsForValue().get(AuthRedisKeys.refreshByToken(refreshToken));
         if (!StringUtils.hasText(userIdStr)) {
             throw new UnauthorizedException("Refresh Token 无效或已过期");
@@ -146,6 +146,17 @@ public class AuthServiceImpl implements AuthService {
         if (user == null || user.getStatus() == null || user.getStatus() != 1) {
             clearRefreshToken(userId);
             throw new UnauthorizedException("账号不存在或已禁用");
+        }
+
+        if (StringUtils.hasText(oldAccessToken)) {
+            try {
+                Claims oldClaims = jwtTokenProvider.parseClaimsAllowExpired(oldAccessToken);
+                if (userId.equals(Long.valueOf(oldClaims.getSubject()))) {
+                    blacklistAccessToken(oldClaims.getId());
+                }
+            } catch (UnauthorizedException ignored) {
+                // 旧 access 无效则跳过拉黑
+            }
         }
 
         clearRefreshToken(userId);
@@ -307,7 +318,7 @@ public class AuthServiceImpl implements AuthService {
 
     public LoginUser buildLoginUser(SysUser user) {
         List<String> roles = sysUserMapper.selectRoleCodesByUserId(user.getId());
-        List<String> perms = sysUserMapper.selectPermissionCodesByUserId(user.getId());
+        java.util.Set<String> perms = loadPermissions(user.getId());
         String dataScope = sysUserMapper.selectPrimaryDataScope(user.getId());
         LoginUser loginUser = new LoginUser();
         loginUser.setUserId(user.getId());
@@ -317,9 +328,37 @@ public class AuthServiceImpl implements AuthService {
             loginUser.setDeptId(sysUserMapper.selectDeptIdByEmployeeId(user.getEmployeeId()));
         }
         loginUser.setRoles(roles);
-        loginUser.setPermissions(new HashSet<>(perms));
+        loginUser.setPermissions(perms);
         loginUser.setDataScope(dataScope);
         return loginUser;
+    }
+
+    /** 供 Filter 判断强制改密 */
+    public boolean requiresPasswordChange(SysUser user) {
+        return mustChangePassword(user);
+    }
+
+    @Override
+    public void invalidateUserSessions(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        clearRefreshToken(userId);
+        redisTemplate.delete(AuthRedisKeys.lastActive(userId));
+        redisTemplate.delete(AuthRedisKeys.permissions(userId));
+        redisTemplate.delete(AuthRedisKeys.payslipVerified(userId));
+    }
+
+    private java.util.Set<String> loadPermissions(Long userId) {
+        String key = AuthRedisKeys.permissions(userId);
+        java.util.Set<String> cached = redisTemplate.opsForSet().members(key);
+        if (cached != null && !cached.isEmpty()) {
+            return new HashSet<>(cached);
+        }
+        List<String> perms = sysUserMapper.selectPermissionCodesByUserId(userId);
+        java.util.Set<String> set = new HashSet<>(perms);
+        cachePermissions(userId, set);
+        return set;
     }
 
     private void blacklistAccessToken(String jti) {
@@ -381,7 +420,8 @@ public class AuthServiceImpl implements AuthService {
         redisTemplate.delete(key);
         if (permissions != null && !permissions.isEmpty()) {
             redisTemplate.opsForSet().add(key, permissions.toArray(new String[0]));
-            redisTemplate.expire(key, 2, TimeUnit.HOURS);
+            // 系分：权限缓存 TTL 10min，变更时主动 DEL
+            redisTemplate.expire(key, 10, TimeUnit.MINUTES);
         }
     }
 

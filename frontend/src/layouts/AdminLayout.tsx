@@ -7,23 +7,30 @@ import { forceLogout } from '@/utils/authSession';
 
 const { Header, Sider, Content } = Layout;
 
-type MenuItem = Required<MenuProps>['items'][number];
+type MenuItem = NonNullable<Required<MenuProps>['items']>[number];
 
-function filterMenu(items: MenuItem[], accessMap: Record<string, boolean>): MenuItem[] {
+/** 扩展 Antd Menu：自定义 accessKey 做权限过滤（非 Antd 标准字段） */
+type AccessMenuItem = MenuItem & {
+  accessKey?: string;
+  children?: AccessMenuItem[];
+};
+
+function filterMenu(items: AccessMenuItem[], accessMap: Record<string, boolean>): MenuItem[] {
   return items
     .filter((item) => {
       if (!item || typeof item !== 'object') return false;
-      const key = (item as { accessKey?: string }).accessKey;
+      const key = item.accessKey;
       if (!key) return true;
       return accessMap[key] !== false;
     })
     .map((item) => {
       if (!item || typeof item !== 'object') return item;
-      const children = (item as { children?: MenuItem[] }).children;
-      if (children?.length) {
-        return { ...item, children: filterMenu(children, accessMap) };
+      if (item.children?.length) {
+        const { accessKey: _omit, ...rest } = item;
+        return { ...rest, children: filterMenu(item.children, accessMap) } as MenuItem;
       }
-      return item;
+      const { accessKey: _omit, ...rest } = item;
+      return rest as MenuItem;
     });
 }
 
@@ -35,56 +42,52 @@ const AdminLayout: React.FC = () => {
 
   const menuAccess: Record<string, boolean> = {
     workbench: true,
-    org: access.canManageOrg,
+    org: access.canManageOrg || access.canViewDept || access.canViewPosition,
     employee: access.canViewEmployee,
     attendance: access.canManageAttendance || access.canHr,
     payroll: access.canViewPayroll,
     system: access.canManageSystem,
   };
 
-  const menuItems: MenuItem[] = useMemo(
-    () =>
-      filterMenu(
-        [
-          { key: '/admin/workbench', label: '工作台', accessKey: 'workbench' },
-          {
-            key: '/admin/org',
-            label: '组织管理',
-            accessKey: 'org',
-            children: [
-              { key: '/admin/org/departments', label: '部门管理' },
-              { key: '/admin/org/positions', label: '职位管理' },
-            ],
-          },
-          {
-            key: '/admin/employee',
-            label: '员工管理',
-            accessKey: 'employee',
-            children: [{ key: '/admin/employee/list', label: '花名册' }],
-          },
-          {
-            key: '/admin/attendance',
-            label: '考勤管理',
-            accessKey: 'attendance',
-            children: [{ key: '/admin/attendance/groups', label: '考勤组管理' }],
-          },
-          {
-            key: '/admin/payroll',
-            label: '薪资管理',
-            accessKey: 'payroll',
-            children: [{ key: '/admin/payroll/schemes', label: '账套管理' }],
-          },
-          {
-            key: '/admin/system',
-            label: '系统设置',
-            accessKey: 'system',
-            children: [{ key: '/admin/system/users', label: '用户管理' }],
-          },
-        ] as MenuItem[],
-        menuAccess,
-      ),
-    [access],
-  );
+  const menuItems: MenuItem[] = useMemo(() => {
+    const raw: AccessMenuItem[] = [
+      { key: '/admin/workbench', label: '工作台', accessKey: 'workbench' },
+      {
+        key: '/admin/org',
+        label: '组织管理',
+        accessKey: 'org',
+        children: [
+          { key: '/admin/org/departments', label: '部门管理' },
+          { key: '/admin/org/positions', label: '职位管理' },
+        ],
+      },
+      {
+        key: '/admin/employee',
+        label: '员工管理',
+        accessKey: 'employee',
+        children: [{ key: '/admin/employee/list', label: '花名册' }],
+      },
+      {
+        key: '/admin/attendance',
+        label: '考勤管理',
+        accessKey: 'attendance',
+        children: [{ key: '/admin/attendance/groups', label: '考勤组管理' }],
+      },
+      {
+        key: '/admin/payroll',
+        label: '薪资管理',
+        accessKey: 'payroll',
+        children: [{ key: '/admin/payroll/schemes', label: '账套管理' }],
+      },
+      {
+        key: '/admin/system',
+        label: '系统设置',
+        accessKey: 'system',
+        children: [{ key: '/admin/system/users', label: '用户管理' }],
+      },
+    ];
+    return filterMenu(raw, menuAccess);
+  }, [access]);
 
   const openKeys = useMemo(() => {
     const parts = location.pathname.split('/').filter(Boolean);

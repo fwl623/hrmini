@@ -1,0 +1,20 @@
+# 复制本文件为 application-dev-local.yml（已 gitignore），填入钉钉群联调信息后本地生效。
+# Spring Boot 需额外激活：--spring.profiles.active=dev,dev-local
+# 或仅用环境变量：HRMS_DB_HOST / HRMS_DB_PASSWORD / HRMS_REDIS_HOST / HRMS_INTERNAL_TOKEN
+
+spring:
+  config:
+    activate:
+      on-profile: dev-local
+  datasource:
+    url: jdbc:mysql://${HRMS_DB_HOST:YOUR_HOST}:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${HRMS_DB_USERNAME:root}
+    password: ${HRMS_DB_PASSWORD:YOUR_PASSWORD}
+  data:
+    redis:
+      host: ${HRMS_REDIS_HOST:YOUR_HOST}
+      port: ${HRMS_REDIS_PORT:6379}
+
+hrms:
+  internal:
+    token: ${HRMS_INTERNAL_TOKEN:change-me}
