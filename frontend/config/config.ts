@@ -5,6 +5,7 @@ import { defineConfig } from '@umijs/max';
  * - 管理端 /admin/*
  * - 员工门户 /portal/*
  * - API 代理 /api → 后端
+ * 子路由须用相对 path，不可再写绝对 `/admin/...`（否则 RR6 白屏）
  */
 export default defineConfig({
   title: 'HRMS',
@@ -22,31 +23,44 @@ export default defineConfig({
       component: '@/layouts/AdminLayout',
       wrappers: ['@/wrappers/auth'],
       routes: [
-        { path: '/admin', redirect: '/admin/workbench' },
-        { path: '/admin/workbench', component: './admin/workbench' },
+        { path: '', redirect: '/admin/workbench' },
+        { path: 'workbench', component: './admin/workbench' },
 
         // 组织管理（Day 3）
-        { path: '/admin/org/departments', component: './admin/workbench' },
-        { path: '/admin/org/positions', component: './admin/workbench' },
+        {
+          path: 'org/departments',
+          component: './admin/org/departments',
+          access: 'canViewDept',
+        },
+        {
+          path: 'org/positions',
+          component: './admin/org/positions',
+          access: 'canViewPosition',
+        },
 
         // 员工管理
-        { path: '/admin/employee/list', component: './admin/employee/list' },
+        { path: 'employee/list', component: './admin/employee/list' },
 
-        // 入转调离
-        { path: '/admin/onboarding', component: './admin/onboarding' },
-        { path: '/admin/regularization', component: './admin/regularization' },
-        { path: '/admin/transfers', component: './admin/transfers' },
-        { path: '/admin/resignation', component: './admin/resignation' },
-        { path: '/admin/approval', component: './admin/approval' },
+        // 入转调离（成员 C）
+        { path: 'onboarding', component: './admin/onboarding' },
+        { path: 'regularization', component: './admin/regularization' },
+        { path: 'transfers', component: './admin/transfers' },
+        { path: 'resignation', component: './admin/resignation' },
+        { path: 'approval', component: './admin/approval' },
+        { path: 'delegation', component: './admin/delegation' },
 
         // 考勤管理
-        { path: '/admin/attendance/groups', component: './admin/attendance/groups' },
+        { path: 'attendance/groups', component: './admin/attendance/groups' },
+        { path: 'attendance/summary', component: './admin/attendance/summary' },
 
-        // 薪资管理
-        { path: '/admin/payroll/schemes', component: './admin/payroll/schemes' },
+        // 薪资管理（SYS_ADMIN 不可见）
+        { path: 'payroll/schemes', component: './admin/payroll/schemes', access: 'canViewPayroll' },
+        { path: 'payroll/batches', component: './admin/payroll/batches', access: 'canViewPayroll' },
+        { path: 'payroll/payslips', component: './admin/payroll/payslips', access: 'canViewPayroll' },
+        { path: 'payroll/cost-report', component: './admin/payroll/cost-report', access: 'canViewPayroll' },
 
         // 系统设置（Day 4 占位）
-        { path: '/admin/system/users', component: './admin/workbench' },
+        { path: 'system/users', component: './admin/workbench' },
       ],
     },
     {
@@ -54,14 +68,14 @@ export default defineConfig({
       component: '@/layouts/PortalLayout',
       wrappers: ['@/wrappers/auth'],
       routes: [
-        { path: '/portal', redirect: '/portal/profile' },
-        { path: '/portal/profile', component: './portal/profile' },
-        { path: '/portal/attendance', component: './portal/attendance' },
-        { path: '/portal/leave', component: './portal/profile' },
-        { path: '/portal/overtime', component: './portal/profile' },
-        { path: '/portal/payslips', component: './portal/profile' },
-        { path: '/portal/resignation', component: './portal/resignation' },
-        { path: '/portal/security', component: './portal/security' },
+        { path: '', redirect: '/portal/profile' },
+        { path: 'profile', component: './portal/profile' },
+        { path: 'attendance', component: './portal/attendance' },
+        { path: 'leave', component: './portal/leave' },
+        { path: 'overtime', component: './portal/overtime' },
+        { path: 'payslips', component: './portal/payslips', access: 'canViewPayroll' },
+        { path: 'resignation', component: './portal/resignation' },
+        { path: 'security', component: './portal/security' },
       ],
     },
   ],

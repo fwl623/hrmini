@@ -74,13 +74,17 @@ public class FieldPermissionFilter {
         if (user.hasRole(RoleCode.HR_STAFF.name())) {
             return true;
         }
-        if (user.hasRole(RoleCode.DEPT_MANAGER.name())) {
-            return false;
-        }
         if (user.hasRole(RoleCode.SYS_ADMIN.name())) {
             return true;
         }
-        return isSelf(user, recordEmployeeId);
+        // DEPT_MANAGER 不可看下属身份证，但本人档案可看
+        if (isSelf(user, recordEmployeeId)) {
+            return true;
+        }
+        if (user.hasRole(RoleCode.DEPT_MANAGER.name())) {
+            return false;
+        }
+        return false;
     }
 
     static boolean canViewSalary(LoginUser user, Long recordEmployeeId) {

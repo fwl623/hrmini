@@ -2,25 +2,31 @@ package com.company.hrms.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
-import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.media.StringSchema;
+import io.swagger.v3.oas.models.parameters.Parameter;
 import org.springdoc.core.customizers.OperationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Swagger / OpenAPI（springdoc）：http://localhost:8080/swagger-ui.html
+ * SpringDoc OpenAPI 配置
+ *
+ * 访问 Swagger UI：http://localhost:8080/swagger-ui/index.html
+ * 访问 OpenAPI JSON：http://localhost:8080/v3/api-docs
  */
 @Configuration
 public class OpenApiConfig {
 
     @Bean
-    public OpenAPI hrmsOpenAPI() {
+    public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("HRMS API")
-                        .description("人资管理系统接口（含审批中心 / 入职申请）")
-                        .version("0.1.0"));
+                        .title("HRMS 人资管理系统 API")
+                        .version("v1.0.0")
+                        .description("考勤、请假、加班、薪资一体化管理接口")
+                        .contact(new Contact()
+                                .name("HRMS Team")));
     }
 
     /** 开发期：在 Swagger 中统一露出 X-User-Id，便于模拟当前用户 */

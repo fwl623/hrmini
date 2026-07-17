@@ -18,6 +18,7 @@ import com.company.hrms.module.auth.entity.SysUser;
 import com.company.hrms.module.auth.mapper.LoginLogMapper;
 import com.company.hrms.module.auth.mapper.SysUserMapper;
 import com.company.hrms.module.auth.mapper.SysUserRoleMapper;
+import com.company.hrms.module.auth.service.AuthService;
 import com.company.hrms.module.auth.service.SystemUserService;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,17 +39,20 @@ public class SystemUserServiceImpl implements SystemUserService {
     private final LoginLogMapper loginLogMapper;
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redisTemplate;
+    private final AuthService authService;
 
     public SystemUserServiceImpl(SysUserMapper sysUserMapper,
                                  SysUserRoleMapper sysUserRoleMapper,
                                  LoginLogMapper loginLogMapper,
                                  PasswordEncoder passwordEncoder,
-                                 StringRedisTemplate redisTemplate) {
+                                 StringRedisTemplate redisTemplate,
+                                 AuthService authService) {
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.loginLogMapper = loginLogMapper;
         this.passwordEncoder = passwordEncoder;
         this.redisTemplate = redisTemplate;
+        this.authService = authService;
     }
 
     @Override
@@ -109,9 +113,13 @@ public class SystemUserServiceImpl implements SystemUserService {
             throw new BusinessException(ErrorCode.PARAM_INVALID.getCode(), "用户不存在");
         }
         if (request.getStatus() != null) {
+            Integer oldStatus = user.getStatus();
             user.setStatus(request.getStatus());
             user.setUpdatedAt(LocalDateTime.now());
             sysUserMapper.updateById(user);
+            if (request.getStatus() != 1 && (oldStatus == null || oldStatus == 1)) {
+                authService.invalidateUserSessions(id);
+            }
         }
         if (request.getRoleIds() != null) {
             sysUserRoleMapper.deleteByUserId(id);

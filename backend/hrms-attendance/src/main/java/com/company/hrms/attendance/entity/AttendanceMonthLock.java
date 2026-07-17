@@ -28,7 +28,7 @@ public class AttendanceMonthLock {
      * 格式：YYYY-MM，例如 2025-07 表示 2025 年 7 月
      * 用于标识该锁定记录对应的考勤月份
      */
-    @TableField("year_month")
+    @TableField("`year_month`")
     private String yearMonth;
 
     /**

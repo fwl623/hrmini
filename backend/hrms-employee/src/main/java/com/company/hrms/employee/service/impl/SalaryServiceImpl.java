@@ -21,9 +21,11 @@ import java.time.LocalDate;
 
 /**
  * 薪资档案服务实现
- *
- * SYS_ADMIN 对薪资接口双拦截（权限拦截器返回 20002），
- * 本服务不重复校验角色。
+ * <p>
+ * 提供薪资档案的查询和更新功能。
+ * 更新时自动比较新旧值，若基本工资变更则写入调薪历史表。
+ * SYS_ADMIN 角色对薪资接口的拦截由权限层统一处理，本服务不重复校验。
+ * </p>
  */
 @Slf4j
 @Service
@@ -36,13 +38,16 @@ public class SalaryServiceImpl implements SalaryService {
 
     @Override
     public SalaryProfileVO getProfile(Long employeeId) {
-        employeeMapper.selectById(employeeId); // 校验员工存在
+        // 校验员工存在
+        employeeMapper.selectById(employeeId);
 
+        // 查询薪资档案
         EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(employeeId);
         if (profile == null) {
             throw new BusinessException(ErrorCode.SALARY_PROFILE_MISSING);
         }
 
+        // 组装 VO 返回
         SalaryProfileVO vo = new SalaryProfileVO();
         vo.setId(profile.getId());
         vo.setEmployeeId(profile.getEmployeeId());
@@ -59,17 +64,19 @@ public class SalaryServiceImpl implements SalaryService {
     @Override
     @Transactional
     public void updateProfile(Long employeeId, SalaryProfileUpdateDTO dto) {
+        // 校验员工存在
         Employee emp = employeeMapper.selectById(employeeId);
         if (emp == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "员工不存在");
         }
 
+        // 查询现有薪资档案
         EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(employeeId);
         if (profile == null) {
             throw new BusinessException(ErrorCode.SALARY_PROFILE_MISSING);
         }
 
-        // 记录调薪历史
+        // 记录调薪历史（仅 baseSalary 变更时记录）
         if (dto.getBaseSalary() != null && !dto.getBaseSalary().equals(profile.getBaseSalary())) {
             EmployeeSalaryHistory history = new EmployeeSalaryHistory();
             history.setEmployeeId(employeeId);
@@ -82,7 +89,7 @@ public class SalaryServiceImpl implements SalaryService {
             salaryHistoryMapper.insert(history);
         }
 
-        // 更新
+        // 更新薪资档案字段
         profile.setSchemeId(dto.getSchemeId());
         profile.setBaseSalary(dto.getBaseSalary());
         profile.setAllowanceBaseJson(dto.getAllowanceBaseJson());

@@ -81,7 +81,7 @@ const LoginPage: React.FC = () => {
     const currentUser = toCurrentUser(profileRes.data);
     useUserStore.getState().setCurrentUser(currentUser);
     usePermissionStore.getState().setPermissions(currentUser.permissions);
-    await setInitialState((s) => ({ ...s, currentUser }));
+    await setInitialState((s: API.InitialState | undefined) => ({ ...s, currentUser }));
     startTokenRefresher();
     startIdleDetector();
 

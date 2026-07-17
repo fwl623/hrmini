@@ -8,6 +8,9 @@ import java.util.List;
 
 /**
  * 调岗历史 Mapper
+ * <p>
+ * 对应表 employee_transfer_history，记录员工调岗记录（时间倒序）。
+ * </p>
  */
 @Mapper
 public interface EmployeeTransferHistoryMapper {

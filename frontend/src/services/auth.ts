@@ -1,5 +1,6 @@
 import { request } from '@umijs/max';
 import { API_BASE, resolvePrimaryRole } from '@/constants/roles';
+import { getAccessToken } from '@/utils/token';
 
 export async function login(data: API.LoginRequest) {
   return request<API.Result<API.LoginResponse>>(`${API_BASE}/auth/login`, {
@@ -16,10 +17,12 @@ export async function logout() {
 }
 
 export async function refreshToken(data: API.RefreshTokenRequest) {
+  const oldAccess = getAccessToken();
   const res = await request<API.Result<API.LoginResponse>>(`${API_BASE}/auth/refresh`, {
     method: 'POST',
     data,
     skipErrorHandler: true,
+    headers: oldAccess ? { Authorization: `Bearer ${oldAccess}` } : undefined,
   });
   if (res.code !== 0 || !res.data) {
     const error = new Error(res.message || '刷新 Token 失败') as Error & { info?: API.Result<unknown> };
