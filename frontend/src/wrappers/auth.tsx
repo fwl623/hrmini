@@ -29,7 +29,7 @@ const AuthWrapper: React.FC = () => {
 
   const roles = initialState.currentUser.roles ?? [];
   const isAdminRoute = location.pathname.startsWith('/admin');
-  const hasAdminRole = roles.some((role) => ADMIN_ROLES.includes(role as RoleCode));
+  const hasAdminRole = roles.some((role: string) => ADMIN_ROLES.includes(role as RoleCode));
 
   if (isAdminRoute && !hasAdminRole) {
     if (roles.includes(ROLES.EMPLOYEE)) {

@@ -55,7 +55,7 @@ export function onRouteChange({ location }: { location: { pathname: string } }) 
 export const request: RequestConfig = {
   timeout: 30000,
   errorConfig: {
-    errorThrower(res) {
+    errorThrower(res: unknown) {
       const data = res as API.Result<unknown>;
       if (data && typeof data.code === 'number' && data.code !== 0) {
         const error = new Error(data.message || '请求失败') as Error & {
@@ -67,12 +67,12 @@ export const request: RequestConfig = {
         throw error;
       }
     },
-    errorHandler: async (error: any, opts: any) => {
+    errorHandler: async (error: Error & { name?: string; info?: API.Result<unknown> }, opts: { skipErrorHandler?: boolean; url?: string; [key: string]: unknown }) => {
       if (opts?.skipErrorHandler) {
         throw error;
       }
 
-      const url = opts?.url as string | undefined;
+      const url = opts?.url;
 
       if (isUnauthorizedError(error) && !isAuthEndpoint(url)) {
         const refreshed = await refreshAccessToken();
