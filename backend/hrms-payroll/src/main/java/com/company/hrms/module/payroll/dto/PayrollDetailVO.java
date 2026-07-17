@@ -4,6 +4,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.util.List;
 
+/* PayrollDetailVO */
 @Data
 public class PayrollDetailVO {
     private Long employeeId;

@@ -4,6 +4,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.util.List;
 
+/* BatchDetailVO */
 @Data
 public class BatchDetailVO {
     private Long id;

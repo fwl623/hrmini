@@ -2,6 +2,7 @@ package com.company.hrms.module.payroll.dto;
 
 import lombok.Data;
 
+/* PayrollTrendVO */
 @Data
 public class PayrollTrendVO {
     private String period;

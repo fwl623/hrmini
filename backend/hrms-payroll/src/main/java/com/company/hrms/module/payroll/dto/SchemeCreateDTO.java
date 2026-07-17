@@ -3,6 +3,7 @@ package com.company.hrms.module.payroll.dto;
 import lombok.Data;
 import java.util.List;
 
+/* SchemeCreateDTO */
 @Data
 public class SchemeCreateDTO {
     private String name;

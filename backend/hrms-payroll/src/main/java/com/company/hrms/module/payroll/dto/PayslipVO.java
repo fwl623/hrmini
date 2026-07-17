@@ -2,6 +2,7 @@ package com.company.hrms.module.payroll.dto;
 
 import lombok.Data;
 
+/* PayslipVO */
 @Data
 public class PayslipVO {
     private Long employeeId;

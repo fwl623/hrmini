@@ -3,6 +3,7 @@ package com.company.hrms.module.payroll.dto;
 import lombok.Data;
 import java.math.BigDecimal;
 
+/* SchemeItemDTO */
 @Data
 public class SchemeItemDTO {
     private String itemCode;

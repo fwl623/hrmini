@@ -4,6 +4,7 @@ import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 
+/* ChartDataVO */
 @Data
 public class ChartDataVO {
     private List<CostTrendItem> costTrend = new ArrayList<>();

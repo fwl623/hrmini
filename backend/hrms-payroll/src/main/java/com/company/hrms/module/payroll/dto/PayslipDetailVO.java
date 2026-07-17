@@ -3,6 +3,7 @@ package com.company.hrms.module.payroll.dto;
 import lombok.Data;
 import java.util.List;
 
+/* PayslipDetailVO */
 @Data
 public class PayslipDetailVO {
     private String period;
