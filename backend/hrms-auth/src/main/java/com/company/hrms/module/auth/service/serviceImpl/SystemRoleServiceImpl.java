@@ -6,7 +6,7 @@ import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.exception.ForbiddenException;
 import com.company.hrms.common.security.SecurityUtils;
-import com.company.hrms.module.auth.constant.AuthRedisKeys;
+import com.company.hrms.module.auth.config.PermissionCacheManager;
 import com.company.hrms.module.auth.dto.RoleVO;
 import com.company.hrms.module.auth.entity.SysPermission;
 import com.company.hrms.module.auth.entity.SysRole;
@@ -15,11 +15,11 @@ import com.company.hrms.module.auth.mapper.SysRoleMapper;
 import com.company.hrms.module.auth.mapper.SysRolePermissionMapper;
 import com.company.hrms.module.auth.mapper.SysUserRoleMapper;
 import com.company.hrms.module.auth.service.SystemRoleService;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -30,18 +30,18 @@ public class SystemRoleServiceImpl implements SystemRoleService {
     private final SysPermissionMapper sysPermissionMapper;
     private final SysRolePermissionMapper sysRolePermissionMapper;
     private final SysUserRoleMapper sysUserRoleMapper;
-    private final StringRedisTemplate redisTemplate;
+    private final PermissionCacheManager permissionCacheManager;
 
     public SystemRoleServiceImpl(SysRoleMapper sysRoleMapper,
                                  SysPermissionMapper sysPermissionMapper,
                                  SysRolePermissionMapper sysRolePermissionMapper,
                                  SysUserRoleMapper sysUserRoleMapper,
-                                 StringRedisTemplate redisTemplate) {
+                                 PermissionCacheManager permissionCacheManager) {
         this.sysRoleMapper = sysRoleMapper;
         this.sysPermissionMapper = sysPermissionMapper;
         this.sysRolePermissionMapper = sysRolePermissionMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
-        this.redisTemplate = redisTemplate;
+        this.permissionCacheManager = permissionCacheManager;
     }
 
     @Override
@@ -61,6 +61,22 @@ public class SystemRoleServiceImpl implements SystemRoleService {
 
     @Override
     @Transactional
+    public void updateRole(Long roleId, String name) {
+        requireSysAdmin();
+        SysRole role = sysRoleMapper.selectById(roleId);
+        if (role == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID.getCode(), "角色不存在");
+        }
+        if (!StringUtils.hasText(name)) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID.getCode(), "角色名称不能为空");
+        }
+        role.setName(name.trim());
+        role.setUpdatedAt(LocalDateTime.now());
+        sysRoleMapper.updateById(role);
+    }
+
+    @Override
+    @Transactional
     public void updateRolePermissions(Long roleId, List<Long> permissionIds) {
         requireSysAdmin();
         SysRole role = sysRoleMapper.selectById(roleId);
@@ -73,12 +89,7 @@ public class SystemRoleServiceImpl implements SystemRoleService {
                 sysRolePermissionMapper.insert(roleId, pid);
             }
         }
-        List<Long> userIds = sysUserRoleMapper.selectUserIdsByRoleId(roleId);
-        if (!CollectionUtils.isEmpty(userIds)) {
-            for (Long userId : userIds) {
-                redisTemplate.delete(AuthRedisKeys.permissions(userId));
-            }
-        }
+        permissionCacheManager.evictAll(sysUserRoleMapper.selectUserIdsByRoleId(roleId));
     }
 
     @Override

@@ -6,9 +6,11 @@ import com.company.hrms.common.web.Result;
 import com.company.hrms.module.auth.dto.CreateUserRequest;
 import com.company.hrms.module.auth.dto.RoleVO;
 import com.company.hrms.module.auth.dto.UpdateRolePermissionsRequest;
+import com.company.hrms.module.auth.dto.UpdateRoleRequest;
 import com.company.hrms.module.auth.dto.UpdateUserRequest;
 import com.company.hrms.module.auth.dto.UserVO;
 import com.company.hrms.module.auth.entity.LoginLog;
+import com.company.hrms.module.auth.entity.OperationLog;
 import com.company.hrms.module.auth.entity.SysPermission;
 import com.company.hrms.module.auth.service.SystemRoleService;
 import com.company.hrms.module.auth.service.SystemUserService;
@@ -61,6 +63,12 @@ public class SystemController {
         return Result.success(systemRoleService.listRoles());
     }
 
+    @PutMapping("/roles/{id}")
+    public Result<Void> updateRole(@PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
+        systemRoleService.updateRole(id, request.getName());
+        return Result.success();
+    }
+
     @PutMapping("/roles/{id}/permissions")
     public Result<Void> updateRolePermissions(
             @PathVariable Long id,
@@ -77,5 +85,10 @@ public class SystemController {
     @GetMapping("/login-logs")
     public Result<PageResult<LoginLog>> loginLogs(@Valid PageParam pageParam) {
         return Result.success(systemUserService.pageLoginLogs(pageParam));
+    }
+
+    @GetMapping("/operation-logs")
+    public Result<PageResult<OperationLog>> operationLogs(@Valid PageParam pageParam) {
+        return Result.success(systemUserService.pageOperationLogs(pageParam));
     }
 }

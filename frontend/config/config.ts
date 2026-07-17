@@ -67,8 +67,19 @@ export default defineConfig({
         { path: 'payroll/payslips', component: './admin/payroll/payslips', access: 'canViewPayroll' },
         { path: 'payroll/cost-report', component: './admin/payroll/cost-report', access: 'canViewPayroll' },
 
-        // 系统设置（Day 4 占位）
-        { path: 'system/users', component: './admin/workbench' },
+        // 系统设置（Day 4，仅 SYS_ADMIN）
+        { path: 'system/users', component: './admin/system/users', access: 'canManageSystem' },
+        { path: 'system/roles', component: './admin/system/roles', access: 'canManageSystem' },
+        {
+          path: 'system/operation-logs',
+          component: './admin/system/operation-logs',
+          access: 'canManageSystem',
+        },
+        {
+          path: 'system/login-logs',
+          component: './admin/system/login-logs',
+          access: 'canManageSystem',
+        },
       ],
     },
     {

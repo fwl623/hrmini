@@ -4,8 +4,7 @@
 |-------------|------|
 | `docker/` | MySQL、Redis、RabbitMQ（`docker compose up -d`） |
 | `env/.env.example` | 环境变量模板（含联调服务器注释） |
-| `env/application-dev-local.yml.example` | 本地 IDEA 数据库连接 |
-| `env/application-dev-server.yml.example` | ECS 联调（`39.101.67.167`，127.0.0.1 连 Docker） |
+| `env/application-dev-server.yml.example` | ECS 上部署用（本机连 Docker：127.0.0.1） |
 | `nginx/nginx.conf.example` | 演示服务器 Nginx（80 → 前端静态 + /api 反代） |
 
 ## 环境对照

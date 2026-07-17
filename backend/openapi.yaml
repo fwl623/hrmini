@@ -7,6 +7,131 @@ servers:
   - url: http://localhost:8080/api/v1
   - url: http://39.101.67.167:8080/api/v1
 paths:
+  /workbench/summary:
+    get:
+      tags: [Workbench]
+      summary: 工作台 KPI 汇总（总人数/本月入职/待审批/考勤异常等）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 成功；单项统计失败时降级为 0/空列表
+  /system/users:
+    get:
+      tags: [System]
+      summary: 用户分页
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: 成功
+    post:
+      tags: [System]
+      summary: 新增用户
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 成功，data.userId
+  /system/users/{id}:
+    put:
+      tags: [System]
+      summary: 更新用户状态/角色
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: 成功
+  /system/roles:
+    get:
+      tags: [System]
+      summary: 角色列表（预置，不可新增删除）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 成功
+  /system/roles/{id}:
+    put:
+      tags: [System]
+      summary: 编辑角色名称（编码只读）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: 成功
+  /system/roles/{id}/permissions:
+    put:
+      tags: [System]
+      summary: 分配角色权限（变更后失效权限缓存）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: 成功
+  /system/permissions:
+    get:
+      tags: [System]
+      summary: 权限码列表
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 成功
+  /system/login-logs:
+    get:
+      tags: [System]
+      summary: 登录日志分页
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 成功
+  /system/operation-logs:
+    get:
+      tags: [System]
+      summary: 操作审计日志分页
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 成功
   /departments/tree:
     get:
       tags: [Org]
