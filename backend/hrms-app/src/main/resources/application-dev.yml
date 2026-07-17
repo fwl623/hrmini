@@ -3,23 +3,15 @@ spring:
     activate:
       on-profile: dev
   datasource:
-    # 云服务器 MySQL（本机暂无法装 Redis/本地库时用此联调）
-    url: jdbc:mysql://39.101.67.167:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: root
-    password: root
+    # 默认本机；云联调请设环境变量或复制 application-dev-local.yml.example → application-dev-local.yml（已 gitignore）
+    url: jdbc:mysql://${HRMS_DB_HOST:127.0.0.1}:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${HRMS_DB_USERNAME:root}
+    password: ${HRMS_DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
-    # 本机 MySQL 示例：
-    # url: jdbc:mysql://localhost:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    # username: root
-    # password: 123456
   data:
     redis:
-      # 云服务器 Redis
-      host: 39.101.67.167
-      port: 6379
-      # 本机 Redis 示例：
-      # host: localhost
-      # port: 6379
+      host: ${HRMS_REDIS_HOST:127.0.0.1}
+      port: ${HRMS_REDIS_PORT:6379}
   flyway:
     enabled: true
 
@@ -27,17 +19,20 @@ spring:
   # 启用步骤：1) 取消下方注释  2) application.yml 去掉 RabbitAutoConfiguration exclude
   #  3) 确认已引入 spring-boot-starter-amqp（见 hrms-app/pom.xml 注释块）
   # rabbitmq:
-  #   host: 39.101.67.167
+  #   host: ${HRMS_MQ_HOST:127.0.0.1}
   #   port: 5672
   #   username: hrms
-  #   password: hrms123
+  #   password: ${HRMS_MQ_PASSWORD:}
 
 hrms:
   cors:
     allowed-origins: http://localhost:8000,http://127.0.0.1:8000,http://39.101.67.167:8000
+  jwt:
+    secret: ${HRMS_JWT_SECRET:hrms-dev-secret-key-change-me-32bytes!!}
   internal:
     token: ${HRMS_INTERNAL_TOKEN:hrms-dev-internal-token-change-me}
   sms:
+    # 生产务必 false；联调开发码勿用于生产
     dev-enabled: true
     dev-code: "123456"
 

@@ -23,9 +23,18 @@ public enum ErrorCode {
     ACCOUNT_LOCKED(42201, "账号已锁定，请 15 分钟后再试", HttpStatus.UNPROCESSABLE_ENTITY),
 
     DEPT_LEVEL_EXCEEDED(30001, "部门层级超过 5 层", HttpStatus.UNPROCESSABLE_ENTITY),
+    /**
+     * 附录 K 保留码。当前合并实现为直接转移员工，org 模块已不再抛出；
+     * 删除非空请用 {@link #DEPT_NOT_EMPTY}。
+     */
+    @Deprecated
     DEPT_MERGE_HAS_EMPLOYEE(30002, "部门合并前尚有员工", HttpStatus.UNPROCESSABLE_ENTITY),
     EMPLOYEE_STATUS_INVALID(30003, "员工状态不允许此操作", HttpStatus.UNPROCESSABLE_ENTITY),
     TRANSFER_DEPT_UNCHANGED(30004, "调岗部门未变更", HttpStatus.UNPROCESSABLE_ENTITY),
+    /** 删除部门时仍有子部门/员工/职位 */
+    DEPT_NOT_EMPTY(30005, "部门下仍有子部门、员工或职位，无法删除", HttpStatus.UNPROCESSABLE_ENTITY),
+    /** 部门编码变更会影响工号规则 */
+    DEPT_CODE_LOCKED(30006, "部门下仍有员工时不允许修改编码", HttpStatus.UNPROCESSABLE_ENTITY),
 
     ATTENDANCE_MONTH_LOCKED(40001, "考勤月已锁定", HttpStatus.UNPROCESSABLE_ENTITY),
     MAKEUP_LIMIT_EXCEEDED(40002, "补卡次数超限（2次/月）", HttpStatus.UNPROCESSABLE_ENTITY),

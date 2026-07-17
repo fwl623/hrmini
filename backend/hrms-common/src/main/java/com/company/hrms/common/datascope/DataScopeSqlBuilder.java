@@ -31,24 +31,43 @@ public final class DataScopeSqlBuilder {
         if (employeeId == null || employeeId <= 0) {
             return " AND 1=0";
         }
-        return " AND " + qualify(empAlias, empColumn) + " = " + employeeId;
+        String col = qualify(empAlias, empColumn);
+        if (col == null) {
+            return " AND 1=0";
+        }
+        return " AND " + col + " = " + employeeId;
     }
 
     private static String buildDeptTree(Long deptId, String empAlias, String deptColumn) {
         if (deptId == null || deptId <= 0) {
             return " AND 1=0";
         }
+        String col = qualify(empAlias, deptColumn);
+        if (col == null) {
+            return " AND 1=0";
+        }
         // path 子树；deptId 已为数字，无注入风险
-        return " AND " + qualify(empAlias, deptColumn) + " IN ("
+        return " AND " + col + " IN ("
                 + "SELECT id FROM department WHERE deleted = 0 "
                 + "AND path LIKE CONCAT((SELECT path FROM department WHERE id = " + deptId + "), '%')"
                 + ")";
     }
 
+    /** @return 安全限定名，非法标识符返回 null */
     private static String qualify(String alias, String column) {
+        if (!isSafeSqlIdent(column)) {
+            return null;
+        }
         if (alias == null || alias.isBlank()) {
             return column;
         }
+        if (!isSafeSqlIdent(alias)) {
+            return null;
+        }
         return alias + "." + column;
+    }
+
+    private static boolean isSafeSqlIdent(String ident) {
+        return ident != null && ident.matches("^[a-zA-Z_][a-zA-Z0-9_]*$");
     }
 }

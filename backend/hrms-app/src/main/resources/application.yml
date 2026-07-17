@@ -5,7 +5,8 @@ spring:
   application:
     name: hrms-app
   profiles:
-    active: dev
+    # dev-local 可选：本地 application-dev-local.yml（gitignore）覆盖云库等敏感配置
+    active: dev,dev-local
   # RabbitMQ 未启用前排除自动配置，避免启动去连默认 localhost:5672。
   # 启用 MQ：取消本 exclude，并在 application-dev.yml 取消 rabbitmq 注释。
   autoconfigure:
@@ -29,7 +30,7 @@ management:
 #
 hrms:
   jwt:
-    secret: hrms-dev-secret-key-change-me-32bytes!!
+    secret: ${HRMS_JWT_SECRET:hrms-dev-secret-key-change-me-32bytes!!}
     access-expire-seconds: 7200
   # 模块间内部接口密钥（请求头 X-Internal-Token）；生产务必用环境变量覆盖
   internal:

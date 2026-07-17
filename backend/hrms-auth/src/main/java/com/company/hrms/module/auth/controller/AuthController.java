@@ -43,8 +43,9 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public Result<LoginResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
-        return Result.success(authService.refresh(request.getRefreshToken()));
+    public Result<LoginResponse> refresh(@Valid @RequestBody RefreshTokenRequest request,
+                                         HttpServletRequest httpRequest) {
+        return Result.success(authService.refresh(request.getRefreshToken(), extractBearer(httpRequest)));
     }
 
     @GetMapping("/profile")
