@@ -12,19 +12,11 @@ import { useNavigate } from '@umijs/max';
 import { getEmployeeList } from '@/services/employee';
 import type { EmployeeItem } from '@/services/employee';
 
-/** 在职状态 → Tag 颜色映射（蓝/绿/黄/灰） */
-const STATUS_COLOR: Record<string, string> = {
-  probation: 'blue',
-  regular: 'green',
-  pending_resign: 'orange',
-  resigned: 'default',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  probation: '试用期',
-  regular: '正式',
-  pending_resign: '待离职',
-  resigned: '已离职',
+const STATUS_ENUM: Record<string, { text: string; status: string }> = {
+  probation:     { text: '试用期', status: 'Processing' },
+  regular:       { text: '正式',   status: 'Success' },
+  pending_resign:{ text: '待离职', status: 'Warning' },
+  resigned:      { text: '已离职', status: 'Default' },
 };
 
 const EmployeeListPage: React.FC = () => {
@@ -78,18 +70,31 @@ const EmployeeListPage: React.FC = () => {
       title: '在职状态',
       dataIndex: 'employmentStatus',
       width: 100,
-      search: false,
-      render: (status) => (
-        <Tag color={STATUS_COLOR[status as string] || 'default'}>
-          {STATUS_LABEL[status as string] || status}
-        </Tag>
-      ),
+      valueType: 'select',
+      valueEnum: STATUS_ENUM,
+      render: (status) => {
+        const item = STATUS_ENUM[status as string];
+        return <Tag>{item?.text || status}</Tag>;
+      },
+    },
+    {
+      title: '入职日期',
+      dataIndex: 'hireDateRange',
+      width: 120,
+      valueType: 'dateRange',
+      hideInTable: true,
+      search: { transform: (value) => {
+        if (value && Array.isArray(value) && value.length === 2) {
+          return { hireDateFrom: value[0], hireDateTo: value[1] };
+        }
+        return {};
+      }},
     },
     {
       title: '入职日期',
       dataIndex: 'hireDate',
       width: 120,
-      valueType: 'date',
+      copyable: true,
       search: false,
     },
     {
@@ -122,10 +127,16 @@ const EmployeeListPage: React.FC = () => {
       request={async (params) => {
         const { current, pageSize, ...formValues } = params;
         const keyword = formValues?.keyword as string || '';
+        const employmentStatus = formValues?.employmentStatus as string || '';
+        const hireDateFrom = (formValues as any)?.hireDateFrom as string || '';
+        const hireDateTo = (formValues as any)?.hireDateTo as string || '';
         const res = await getEmployeeList({
           page: current,
           pageSize,
           keyword,
+          employmentStatus,
+          hireDateFrom,
+          hireDateTo,
         });
         return {
           data: res.data?.list || [],

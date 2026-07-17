@@ -1,26 +1,62 @@
 /**
  * 账号安全（员工门户）
  * 对接：PUT /profile/security/password
- *       POST /profile/security/mobile/bind
+ *       POST /profile/security/mobile/bind（仅首次绑定）
  *       GET /profile/security/login-logs
+ *       GET /profile/me（判断是否已绑定手机）
  *
- * 依赖 A 组 (hrms-auth) 登录功能：需先登录获取 Token
- * 当前为 Sprint 1，登录模块未完成，页面可预览骨架
+ * 已绑定手机号：只读展示 + 申请变更（MOBILE_CHANGE），不可直接改绑。
  */
-import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, message, Table, Typography, Space, Divider, Tag, Modal } from 'antd';
-import { changePassword, bindMobile, getMyLoginLogs } from '@/services/employee';
-import type { LoginLogVO } from '@/services/employee';
-import { history } from '@umijs/max';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Card, Form, Input, Button, message, Table, Typography, Tag, Descriptions, Space } from 'antd';
+import {
+  changePassword,
+  bindMobile,
+  getMyLoginLogs,
+  getMyProfile,
+} from '@/services/employee';
+import type { LoginLogVO, ProfileVO } from '@/services/employee';
+import MobileChangeModal from '@/components/MobileChangeModal';
 
 const SecurityPage: React.FC = () => {
   const [pwdForm] = Form.useForm();
   const [mobileForm] = Form.useForm();
   const [loginLogs, setLoginLogs] = useState<LoginLogVO[]>([]);
   const [logLoading, setLogLoading] = useState(false);
+  const [profile, setProfile] = useState<ProfileVO | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [bindSubmitting, setBindSubmitting] = useState(false);
+  const [mobileModalOpen, setMobileModalOpen] = useState(false);
 
-  // 修改密码
-  const handleChangePassword = async (values: any) => {
+  const loadProfile = useCallback(() => {
+    setProfileLoading(true);
+    getMyProfile()
+      .then((res) => {
+        if (res.code === 0) setProfile(res.data);
+      })
+      .finally(() => setProfileLoading(false));
+  }, []);
+
+  const loadLoginLogs = useCallback(async () => {
+    setLogLoading(true);
+    try {
+      const res = await getMyLoginLogs();
+      if (res.code === 0) setLoginLogs(res.data || []);
+    } finally {
+      setLogLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProfile();
+    loadLoginLogs();
+  }, [loadProfile, loadLoginLogs]);
+
+  const handleChangePassword = async (values: {
+    oldPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }) => {
     if (values.newPassword !== values.confirmPassword) {
       message.warning('两次输入的密码不一致');
       return;
@@ -38,33 +74,28 @@ const SecurityPage: React.FC = () => {
     }
   };
 
-  // 绑定手机
-  const handleBindMobile = async (values: any) => {
+  const handleBindMobile = async (values: { mobile: string; smsCode: string }) => {
+    setBindSubmitting(true);
     try {
       const res = await bindMobile(values);
       if (res.code === 0) {
         message.success('手机绑定成功');
         mobileForm.resetFields();
+        loadProfile();
       } else {
         message.error(res.message);
       }
-    } catch {
-      message.error('绑定失败');
-    }
-  };
-
-  // 加载登录日志
-  const loadLoginLogs = async () => {
-    setLogLoading(true);
-    try {
-      const res = await getMyLoginLogs();
-      if (res.code === 0) setLoginLogs(res.data || []);
+    } catch (e) {
+      message.error((e as Error)?.message || '绑定失败');
     } finally {
-      setLogLoading(false);
+      setBindSubmitting(false);
     }
   };
 
-  useEffect(() => { loadLoginLogs(); }, []);
+  // 已有手机号（含脱敏展示）即视为已绑定；变更只能走申请，不可再出绑定表单
+  const mobileBound =
+    profile?.mobileBound === true ||
+    (typeof profile?.mobile === 'string' && profile.mobile.trim().length > 0);
 
   const logColumns = [
     { title: '登录时间', dataIndex: 'loginTime', width: 180 },
@@ -72,8 +103,10 @@ const SecurityPage: React.FC = () => {
     { title: '设备', dataIndex: 'device', width: 120 },
     { title: '地点', dataIndex: 'location', width: 120 },
     {
-      title: '结果', dataIndex: 'success', width: 80,
-      render: (s: boolean) => s ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag>,
+      title: '结果',
+      dataIndex: 'success',
+      width: 80,
+      render: (s: boolean) => (s ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag>),
     },
   ];
 
@@ -81,10 +114,9 @@ const SecurityPage: React.FC = () => {
     <>
       <Typography.Title level={4}>账号安全</Typography.Title>
       <Typography.Paragraph type="secondary">
-        登录功能由 A 组（hrms-auth）提供，当前页面为骨架预览，联调时需先登录获取 Token。
+        账号安全：改密、手机号与登录日志。手机号规则与「我的档案」一致——仅未绑定时可首次绑定；已绑定后只能申请变更。
       </Typography.Paragraph>
 
-      {/* 修改密码 */}
       <Card title="修改密码" style={{ marginBottom: 16 }}>
         <Form form={pwdForm} layout="vertical" onFinish={handleChangePassword} style={{ maxWidth: 400 }}>
           <Form.Item name="oldPassword" label="当前密码" rules={[{ required: true, message: '请输入当前密码' }]}>
@@ -97,37 +129,79 @@ const SecurityPage: React.FC = () => {
             <Input.Password placeholder="再次输入新密码" />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit">修改密码</Button>
+            <Button type="primary" htmlType="submit">
+              修改密码
+            </Button>
           </Form.Item>
         </Form>
       </Card>
 
-      {/* 绑定手机 */}
-      <Card title="绑定手机号" style={{ marginBottom: 16 }}>
-        <Form form={mobileForm} layout="vertical" onFinish={handleBindMobile} style={{ maxWidth: 400 }}>
-          <Form.Item name="mobile" label="手机号" rules={[{ required: true, message: '请输入手机号' }]}>
-            <Input placeholder="11位手机号" />
-          </Form.Item>
-          <Form.Item name="smsCode" label="验证码" rules={[{ required: true, message: '请输入验证码' }]}>
-            <Input placeholder="短信验证码" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit">绑定手机</Button>
-          </Form.Item>
-        </Form>
+      <Card
+        title="手机号"
+        loading={profileLoading}
+        style={{ marginBottom: 16 }}
+        extra={
+          mobileBound ? (
+            <Button type="link" size="small" onClick={() => setMobileModalOpen(true)}>
+              申请变更手机号
+            </Button>
+          ) : null
+        }
+      >
+        {mobileBound ? (
+          <Descriptions column={1} size="small">
+            <Descriptions.Item label="当前手机号">{profile?.mobile || '-'}</Descriptions.Item>
+            <Descriptions.Item label="说明">
+              已绑定。更换请点右上角「申请变更手机号」（须 HR 审批），此处不能直接改绑。
+            </Descriptions.Item>
+          </Descriptions>
+        ) : profileLoading ? null : (
+          <>
+            <Typography.Paragraph type="secondary">
+              当前账号尚未绑定手机号，仅此时可做首次绑定；绑定后如需更换必须走变更申请。
+            </Typography.Paragraph>
+            <Form form={mobileForm} layout="vertical" onFinish={handleBindMobile} style={{ maxWidth: 400 }}>
+              <Form.Item
+                name="mobile"
+                label="手机号"
+                rules={[
+                  { required: true, message: '请输入手机号' },
+                  { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' },
+                ]}
+              >
+                <Input placeholder="11位手机号" maxLength={11} />
+              </Form.Item>
+              <Form.Item name="smsCode" label="验证码" rules={[{ required: true, message: '请输入验证码' }]}>
+                <Input placeholder="短信验证码（联调可用 123456）" maxLength={6} />
+              </Form.Item>
+              <Form.Item>
+                <Space>
+                  <Button type="primary" htmlType="submit" loading={bindSubmitting}>
+                    首次绑定
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </>
+        )}
       </Card>
 
-      {/* 登录日志 */}
       <Card title="登录日志">
         <Table
           dataSource={loginLogs}
           columns={logColumns}
-          rowKey="loginTime"
+          rowKey={(r) => `${r.loginTime}-${r.ip}`}
           loading={logLoading}
           size="small"
           pagination={{ pageSize: 10 }}
         />
       </Card>
+
+      <MobileChangeModal
+        open={mobileModalOpen}
+        onClose={() => setMobileModalOpen(false)}
+        onSuccess={loadProfile}
+      />
     </>
   );
 };

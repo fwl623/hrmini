@@ -30,8 +30,13 @@ public interface EmployeeService {
     /** 门户-编辑本人档案（仅白名单字段） */
     void updateMyProfile(Long employeeId, ProfileUpdateDTO dto);
 
-    // ===== 以下委托至 hrms-auth 模块 =====
+    // ===== 账号安全 =====
     void changePassword(Long userId, PasswordChangeDTO dto);
-    void bindMobile(Long userId, MobileBindDTO dto);
+
+    /**
+     * 首次绑定手机号；已有手机号须走 MOBILE_CHANGE 审批，不可直接绑定。
+     */
+    void bindMobile(Long employeeId, Long userId, MobileBindDTO dto);
+
     List<LoginLogVO> listLoginLogs(Long userId);
 }

@@ -1,5 +1,6 @@
 package com.company.hrms.employee.service.impl;
 
+import com.company.hrms.common.config.HrmsSecurityProperties;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.security.SecurityUtils;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
@@ -44,6 +46,7 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     private final EmployeeMapper employeeMapper;
     private final EmployeePersonalMapper employeePersonalMapper;
+    private final HrmsSecurityProperties securityProperties;
 
     // ==================== 花名册分页 ====================
 
@@ -141,7 +144,9 @@ public class EmployeeServiceImpl implements EmployeeService {
         vo.setEmployeeId(emp.getId());
         vo.setEmpNo(emp.getEmployeeNo());
         vo.setName(emp.getName());
-        vo.setMobile(maskMobile(emp.getMobile()));
+        boolean bound = isBoundMobile(emp.getMobile());
+        vo.setMobileBound(bound);
+        vo.setMobile(bound ? maskMobile(emp.getMobile()) : null);
         vo.setEmail(emp.getEmail());
         vo.setGrade(emp.getGrade());
         vo.setHireDate(emp.getHireDate() != null ? emp.getHireDate().toString() : null);
@@ -177,8 +182,35 @@ public class EmployeeServiceImpl implements EmployeeService {
     }
 
     @Override
-    public void bindMobile(Long userId, MobileBindDTO dto) {
-        log.info("绑定手机: userId={}, mobile={}", userId, dto.getMobile());
+    @Transactional
+    public void bindMobile(Long employeeId, Long userId, MobileBindDTO dto) {
+        if (dto == null || !StringUtils.hasText(dto.getMobile()) || !StringUtils.hasText(dto.getSmsCode())) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "手机号与验证码必填");
+        }
+        String mobile = dto.getMobile().trim();
+        if (!mobile.matches("^1\\d{10}$")) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "手机号格式不正确");
+        }
+        assertDevSmsCode(dto.getSmsCode());
+
+        Employee emp = findEmployee(employeeId);
+        // PRD：已有手机号不可直接改，须走 MOBILE_CHANGE 审批
+        if (isBoundMobile(emp.getMobile())) {
+            throw new BusinessException(ErrorCode.FIELD_FORBIDDEN,
+                    "手机号已绑定，变更请提交手机号变更申请，不可直接绑定");
+        }
+        Employee occupied = employeeMapper.selectByMobile(mobile);
+        if (occupied != null && !occupied.getId().equals(employeeId)) {
+            throw new BusinessException(ErrorCode.MOBILE_DUPLICATE);
+        }
+
+        Employee update = new Employee();
+        update.setId(employeeId);
+        update.setMobile(mobile);
+        employeeMapper.updateById(update);
+
+        // 登录账号同步依赖 A 组 internal username 接口；联调启用时在此调用 AuthInternalFeignClient
+        log.info("首次绑定手机: employeeId={}, userId={}, mobile={}", employeeId, userId, mobile);
     }
 
     @Override
@@ -240,6 +272,20 @@ public class EmployeeServiceImpl implements EmployeeService {
     private String maskMobile(String mobile) {
         if (mobile == null || mobile.length() < 7) return mobile;
         return mobile.substring(0, 3) + "****" + mobile.substring(7);
+    }
+
+    /** 已绑定：11 位手机号；占位/空视为未绑定 */
+    private boolean isBoundMobile(String mobile) {
+        return StringUtils.hasText(mobile) && mobile.trim().matches("^1\\d{10}$");
+    }
+
+    private void assertDevSmsCode(String smsCode) {
+        HrmsSecurityProperties.Sms sms = securityProperties.getSms();
+        if (!(sms.isDevEnabled()
+                && StringUtils.hasText(sms.getDevCode())
+                && sms.getDevCode().equals(smsCode))) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "短信验证码错误");
+        }
     }
 
     private List<Long> parseCommaLongs(String str) {

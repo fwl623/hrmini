@@ -83,9 +83,12 @@ public class ProfileController {
         return Result.success();
     }
 
+    /**
+     * 首次绑定手机号。已绑定则拒绝，请走 POST /profile/mobile-change-applications。
+     */
     @PostMapping("/security/mobile/bind")
     public Result<Void> bindMobile(@Valid @RequestBody MobileBindDTO dto) {
-        employeeService.bindMobile(SecurityUtils.getUserId(), dto);
+        employeeService.bindMobile(SecurityUtils.getEmployeeId(), SecurityUtils.getUserId(), dto);
         return Result.success();
     }
 

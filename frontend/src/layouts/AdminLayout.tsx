@@ -67,7 +67,10 @@ const AdminLayout: React.FC = () => {
         key: '/admin/employee',
         label: '员工管理',
         accessKey: 'employee',
-        children: [{ key: '/admin/employee/list', label: '花名册' }],
+        children: [
+          { key: '/admin/employee/list', label: '花名册' },
+          { key: '/admin/employee/mobile-change', label: '手机号变更' },
+        ],
       },
       {
         key: '/admin/workflow',

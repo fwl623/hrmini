@@ -125,6 +125,8 @@ export interface ProfileVO {
   empNo: string;
   name: string;
   mobile: string;
+  /** 已绑定则不可直接 bind，须走变更申请 */
+  mobileBound?: boolean;
   email: string;
   department?: string;
   position?: string;

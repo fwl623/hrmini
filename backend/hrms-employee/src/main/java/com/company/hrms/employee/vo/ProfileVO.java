@@ -24,8 +24,11 @@ public class ProfileVO {
     /** 姓名 */
     private String name;
 
-    /** 手机号（脱敏：138****1234） */
+    /** 手机号（脱敏：138****1234）；未绑定时为空 */
     private String mobile;
+
+    /** 是否已绑定手机号（已绑定则不可走 /security/mobile/bind，须走变更申请） */
+    private Boolean mobileBound;
 
     /** 邮箱 */
     private String email;
