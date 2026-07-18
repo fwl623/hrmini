@@ -4,16 +4,18 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.company.hrms.workflow.entity.ApprovalTask;
 import com.company.hrms.workflow.mapper.ApprovalTaskMapper;
 import com.company.hrms.workflow.notify.ApprovalNotifyPublisher;
+import com.company.hrms.workflow.service.DelegationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 扫描超时待办：sla_deadline &lt; now 且 overdue=0 → overdue=1，并对新逾期任务催办（MQ 关闭时为日志）。
+ * 扫描超时待办：sla_deadline &lt; now 且 overdue=0 → overdue=1，并对新逾期任务催办；顺带清理过期委托。
  */
 @Slf4j
 @Component
@@ -22,10 +24,15 @@ public class OverdueCheckJob {
 
     private final ApprovalTaskMapper taskMapper;
     private final ApprovalNotifyPublisher notifyPublisher;
+    private final DelegationService delegationService;
 
     /** 每 15 分钟扫一次 */
     @Scheduled(cron = "0 */15 * * * ?")
     public void markOverdue() {
+        int expiredDelegations = delegationService.expireOverdue(LocalDate.now());
+        if (expiredDelegations > 0) {
+            log.info("OverdueCheckJob expired delegations={}", expiredDelegations);
+        }
         int updated = runOnce();
         if (updated > 0) {
             log.info("OverdueCheckJob marked overdue={}", updated);
@@ -44,12 +51,13 @@ public class OverdueCheckJob {
             task.setOverdue(1);
             taskMapper.updateById(task);
             updated++;
-            if (task.getAssigneeId() != null) {
+            Long assigneeId = task.getActualAssigneeId() != null ? task.getActualAssigneeId() : task.getAssigneeId();
+            if (assigneeId != null) {
                 try {
-                    notifyPublisher.publishImmediateRemind(task.getId(), task.getAssigneeId());
+                    notifyPublisher.publishImmediateRemind(task.getId(), assigneeId);
                 } catch (Exception e) {
                     log.warn("催办失败 taskId={} assigneeId={}: {}",
-                            task.getId(), task.getAssigneeId(), e.getMessage());
+                            task.getId(), assigneeId, e.getMessage());
                 }
             }
         }

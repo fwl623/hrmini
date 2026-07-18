@@ -128,6 +128,7 @@ public class RegularizationService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "APPROVING", "PENDING");
         String result = app.getApprovalResult();
         if ("PASS".equalsIgnoreCase(result)) {
             employeeLifecycleService.regularizePass(app.getEmployeeId());
@@ -146,8 +147,22 @@ public class RegularizationService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "APPROVING", "PENDING");
         app.setStatus("REJECTED");
         mapper.updateById(app);
+    }
+
+    private static void requireStatus(String current, String... allowed) {
+        if (current == null || current.isBlank()) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "申请状态为空，无法流转");
+        }
+        for (String a : allowed) {
+            if (a.equalsIgnoreCase(current)) {
+                return;
+            }
+        }
+        throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID,
+                "非法状态转换: current=" + current + ", allowed=" + String.join("/", allowed));
     }
 
     private LifecycleDtos.RegularizationVO toVo(RegularizationApplication app) {

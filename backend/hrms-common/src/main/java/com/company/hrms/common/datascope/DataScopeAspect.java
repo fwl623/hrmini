@@ -34,6 +34,7 @@ public class DataScopeAspect {
         LoginUser user = SecurityUtils.getLoginUser();
         DataScopeType resolved = DataScopeInterceptor.resolve(ann.value(), user);
         String fragment = DataScopeSqlBuilder.build(resolved, user, ann);
+        // SELF/DEPT_TREE → AND ...；ALL/PAYROLL/NONE_PAYROLL → ""（明确不过滤）
         DataScopeContext.set(fragment);
         try {
             return pjp.proceed();

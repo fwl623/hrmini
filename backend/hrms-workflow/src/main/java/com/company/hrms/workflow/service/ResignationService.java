@@ -203,6 +203,7 @@ public class ResignationService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "PENDING", "APPROVING");
         app.setStatus("APPROVED");
         app.setUpdatedAt(LocalDateTime.now());
         requestMapper.updateById(app);
@@ -214,6 +215,7 @@ public class ResignationService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "PENDING", "APPROVING");
         app.setStatus(withdrawn ? "CANCELLED" : "REJECTED");
         app.setUpdatedAt(LocalDateTime.now());
         requestMapper.updateById(app);
@@ -225,6 +227,7 @@ public class ResignationService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "PENDING", "APPROVING");
         employeeLifecycleService.markPendingResign(app.getEmployeeId(), app.getResignationDate());
         app.setStatus("PENDING_RESIGN");
         resignationMapper.updateById(app);
@@ -236,6 +239,7 @@ public class ResignationService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "PENDING", "APPROVING");
         app.setStatus(withdrawn ? "CANCELLED" : "REJECTED");
         resignationMapper.updateById(app);
     }
@@ -260,6 +264,19 @@ public class ResignationService {
             }
         }
         return count;
+    }
+
+    private static void requireStatus(String current, String... allowed) {
+        if (current == null || current.isBlank()) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "申请状态为空，无法流转");
+        }
+        for (String a : allowed) {
+            if (a.equalsIgnoreCase(current)) {
+                return;
+            }
+        }
+        throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID,
+                "非法状态转换: current=" + current + ", allowed=" + String.join("/", allowed));
     }
 
     private LifecycleDtos.ResignationRequestVO createRequest(Long employeeId, LifecycleDtos.ResignationRequestCreate req) {

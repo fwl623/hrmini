@@ -41,6 +41,9 @@ public interface EmployeeMapper {
     /** 按主键查询 */
     Employee selectById(@Param("id") Long id);
 
+    /** 按主键查询（带 DataScope 行级过滤，别名 e） */
+    Employee selectByIdScoped(@Param("id") Long id, @Param("dataScope") String dataScope);
+
     /** 按工号查询 */
     Employee selectByEmployeeNo(@Param("employeeNo") String employeeNo);
 

@@ -33,6 +33,7 @@ public class DataScopeInterceptor implements Interceptor {
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
         String fragment = DataScopeContext.get();
+        // null/blank：无片段可追加（"" 表示明确不过滤）
         if (fragment == null || fragment.isBlank()) {
             return invocation.proceed();
         }

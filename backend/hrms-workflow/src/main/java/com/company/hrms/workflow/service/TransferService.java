@@ -142,6 +142,7 @@ public class TransferService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "APPROVING", "PENDING");
         TransferEffectDTO dto = new TransferEffectDTO();
         dto.setTransferAppId(app.getId());
         dto.setNewDepartmentId(app.getNewDepartmentId());
@@ -161,8 +162,22 @@ public class TransferService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "APPROVING", "PENDING");
         app.setStatus(withdrawn ? "CANCELLED" : "REJECTED");
         mapper.updateById(app);
+    }
+
+    private static void requireStatus(String current, String... allowed) {
+        if (current == null || current.isBlank()) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "申请状态为空，无法流转");
+        }
+        for (String a : allowed) {
+            if (a.equalsIgnoreCase(current)) {
+                return;
+            }
+        }
+        throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID,
+                "非法状态转换: current=" + current + ", allowed=" + String.join("/", allowed));
     }
 
     private LifecycleDtos.TransferVO toVo(TransferApplication app, boolean withNodes) {

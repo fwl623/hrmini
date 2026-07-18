@@ -1,8 +1,11 @@
 package com.company.hrms.employee.service.impl;
 
 import com.company.hrms.common.config.HrmsSecurityProperties;
+import com.company.hrms.common.datascope.DataScopeContext;
+import com.company.hrms.common.datascope.DataScopeSqlBuilder;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
+import com.company.hrms.common.security.LoginUser;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.employee.dto.*;
@@ -58,7 +61,8 @@ public class EmployeeServiceImpl implements EmployeeService {
         List<Long> positionIds = parseCommaLongs(query.getPositionIds());
         List<Integer> statusList = parseStatuses(query.getEmploymentStatus());
         List<String> gradeList = parseCommaStrings(query.getGradeLevels());
-        String dataScope = "";
+        // Aspect 有则用；否则按 LoginUser 直接拼装（防止空串导致全表越权）
+        String dataScope = resolveEmployeeDataScope();
 
         long total = Optional.ofNullable(employeeMapper.countSearch(
                 query.getKeyword(), deptIds, positionIds, statusList, gradeList,
@@ -80,7 +84,7 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     public EmployeeDetailVO getDetail(Long employeeId) {
-        Employee emp = findEmployee(employeeId);
+        Employee emp = findEmployeeAccessible(employeeId);
         EmployeeDetailVO vo = new EmployeeDetailVO();
         vo.setEmployeeId(emp.getId());
         vo.setEmpNo(emp.getEmployeeNo());
@@ -115,7 +119,7 @@ public class EmployeeServiceImpl implements EmployeeService {
     @Override
     @Transactional
     public void update(Long employeeId, EmployeeUpdateDTO dto) {
-        Employee emp = findEmployee(employeeId);
+        Employee emp = findEmployeeAccessible(employeeId);
         if (emp.getEmploymentStatus() != null && emp.getEmploymentStatus() >= 40) {
             throw new BusinessException(ErrorCode.EMPLOYEE_STATUS_INVALID);
         }
@@ -224,6 +228,37 @@ public class EmployeeServiceImpl implements EmployeeService {
         Employee emp = employeeMapper.selectById(id);
         if (emp == null) throw new BusinessException(ErrorCode.PARAM_INVALID, "员工不存在");
         return emp;
+    }
+
+    /** 管理端读/写：按当前用户 DataScope 过滤，越权返回 20002 */
+    private Employee findEmployeeAccessible(Long id) {
+        Employee emp = employeeMapper.selectByIdScoped(id, resolveEmployeeDataScope());
+        if (emp != null) {
+            return emp;
+        }
+        if (employeeMapper.selectById(id) == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "员工不存在");
+        }
+        throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该员工");
+    }
+
+    private String resolveEmployeeDataScope() {
+        // 以 LoginUser 为准拼装；Context 仅在有非空片段时复用（避免 "" 被误当成「不过滤」）
+        String fromCtx = DataScopeContext.get();
+        if (fromCtx != null && !fromCtx.isBlank()) {
+            return fromCtx;
+        }
+        LoginUser user = SecurityUtils.getLoginUser();
+        String built = DataScopeSqlBuilder.buildForEmployeeAlias(user);
+        if (built == null || built.isBlank()) {
+            // ALL/PAYROLL/NONE_PAYROLL → 不过滤；但 EMPLOYEE 等 SELF 绝不应落到这里却为空串误放行
+            if (user != null && user.getDataScope() == com.company.hrms.common.enums.DataScopeType.SELF) {
+                log.error("SELF dataScope built empty, force deny. userId={} empId={}",
+                        user.getUserId(), user.getEmployeeId());
+                return " AND 1=0";
+            }
+        }
+        return built == null ? " AND 1=0" : built;
     }
 
     private void rejectFlowFields(Object dto, Set<String> allowed) {
