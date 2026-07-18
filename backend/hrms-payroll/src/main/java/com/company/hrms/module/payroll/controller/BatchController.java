@@ -1,11 +1,15 @@
 package com.company.hrms.module.payroll.controller;
 
+import com.company.hrms.common.exception.BusinessException;
+import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.common.web.Result;
 import com.company.hrms.module.payroll.dto.*;
+import com.company.hrms.module.payroll.job.PayrollEventPublisher;
 import com.company.hrms.module.payroll.service.CalculateService;
+import com.company.hrms.payroll.entity.PayrollBatch;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,6 +21,7 @@ import java.util.Map;
 public class BatchController {
 
     private final CalculateService calculateService;
+    private final PayrollEventPublisher payrollEventPublisher;
 
     @PostMapping
     public Result<Map<String, Object>> create(@RequestBody BatchCreateDTO dto) {
@@ -46,9 +51,14 @@ public class BatchController {
     }
 
     @PostMapping("/{id}/calculate")
-    public Result<java.util.Map<String, String>> calculate(@PathVariable Long id) {
-        calculateService.calculate(id);
-        return Result.success(java.util.Map.of("message", "计算任务已提交"));
+    public Result<Map<String, String>> calculate(@PathVariable Long id) {
+        PayrollBatch batch = calculateService.getBatch(id);
+        if (!"DRAFT".equals(batch.getStatus())) {
+            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "仅草稿状态可开始计算");
+        }
+        // 发 MQ 异步核算，状态由 CalculateService.calculate() 内部处理
+        payrollEventPublisher.sendCalculate(id, batch.getPeriod());
+        return Result.success(Map.of("message", "计算任务已提交"));
     }
 
     @GetMapping("/{id}/details")

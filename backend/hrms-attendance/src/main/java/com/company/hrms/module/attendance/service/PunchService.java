@@ -265,11 +265,17 @@ public class PunchService {
         if (usedStr != null) {
             usedQuota = Integer.parseInt(usedStr);
         } else {
-            // Redis 无缓存，从 DB 查询
-            usedQuota = attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
-            // 写入 Redis 缓存
-            stringRedisTemplate.opsForValue().set(quotaKey, String.valueOf(usedQuota),
-                     getSecondsUntilEndOfMonth(fixDate), TimeUnit.SECONDS);
+            // Redis 无缓存，从 DB 查询并写入 Redis（加锁避免并发）
+            synchronized (this) {
+                usedStr = stringRedisTemplate.opsForValue().get(quotaKey);
+                if (usedStr == null) { // 双重检查
+                    usedQuota = attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
+                    stringRedisTemplate.opsForValue().set(quotaKey, String.valueOf(usedQuota),
+                            getSecondsUntilEndOfMonth(fixDate), TimeUnit.SECONDS);
+                } else {
+                    usedQuota = Integer.parseInt(usedStr);
+                }
+            }
         }
 
         if (usedQuota >= MAX_SUPPLEMENT_QUOTA) {
@@ -343,6 +349,49 @@ public class PunchService {
             return "NORMAL";
         }
 
+        // 根据班次类型分发
+        String shiftType = group.getShiftType();
+        if ("FLEXIBLE".equals(shiftType)) {
+            return judgeFlexiblePunch(group, punchTime, type);
+        }
+
+        // SCHEDULE（排班制）暂等同于 FIXED 处理
+        // FIXED：固定班次判定逻辑
+        return judgeFixedPunch(group, punchTime, type);
+    }
+
+    /**
+     * 弹性班次（FLEXIBLE）打卡判定
+     * 上班：在弹性范围内打卡即 NORMAL，早于 earliest 或晚于 latest 标记异常
+     * 下班：沿用固定班次的下班判定逻辑
+     */
+    private String judgeFlexiblePunch(AttendanceGroup group, LocalTime punchTime, String type) {
+        if ("IN".equals(type)) {
+            LocalTime earliest = group.getFlexStartEarliest();
+            LocalTime latest = group.getFlexStartLatest();
+            if (earliest != null && latest != null) {
+                // 在弹性范围内打卡即 NORMAL
+                if (!punchTime.isBefore(earliest) && !punchTime.isAfter(latest)) {
+                    return "NORMAL";
+                }
+                // 早于 earliest 或晚于 latest 标记异常
+                return "LATE";
+            }
+            // 未配置弹性范围，按固定班次逻辑
+            return judgeFixedPunch(group, punchTime, type);
+        } else if ("OUT".equals(type)) {
+            // 下班沿用固定班次逻辑
+            return judgeFixedPunch(group, punchTime, type);
+        }
+        return "NORMAL";
+    }
+
+    /**
+     * 固定班次（FIXED）打卡判定
+     * 上班：准时或早到 NORMAL，迟到阈值内 LATE，超过 ABSENT_HALF
+     * 下班：准时或加班 NORMAL，早退阈值内 EARLY_LEAVE，超过 ABSENT_HALF
+     */
+    private String judgeFixedPunch(AttendanceGroup group, LocalTime punchTime, String type) {
         if ("IN".equals(type)) {
             LocalTime onDuty = group.getWorkStartTime();
             int lateThreshold = group.getLateThresholdMinutes() != null ? group.getLateThresholdMinutes() : 15;
@@ -423,7 +472,8 @@ public class PunchService {
      */
     private long getSecondsUntilEndOfDay(LocalDate date) {
         LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        return Duration.between(LocalDateTime.now(), endOfDay).getSeconds();
+        long seconds = Duration.between(LocalDateTime.now(), endOfDay).getSeconds();
+        return Math.max(seconds, 60); // 至少保留 60 秒，避免跨天或午夜后精度问题
     }
 
     /**
@@ -432,6 +482,7 @@ public class PunchService {
     private long getSecondsUntilEndOfMonth(LocalDate date) {
         LocalDate lastDay = date.withDayOfMonth(date.lengthOfMonth());
         LocalDateTime endOfMonth = lastDay.atTime(LocalTime.MAX);
-        return Duration.between(LocalDateTime.now(), endOfMonth).getSeconds();
+        long seconds = Duration.between(LocalDateTime.now(), endOfMonth).getSeconds();
+        return Math.max(seconds, 60); // 至少保留 60 秒，避免跨天或午夜后精度问题
     }
 }

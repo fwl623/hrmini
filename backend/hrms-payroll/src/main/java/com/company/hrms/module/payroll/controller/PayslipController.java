@@ -22,12 +22,14 @@ import com.company.hrms.payroll.mapper.PayslipViewLogMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequiredArgsConstructor
@@ -41,6 +43,7 @@ public class PayslipController {
     private final DepartmentMapper departmentMapper;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
+    private final StringRedisTemplate stringRedisTemplate;
 
     // ==================== HR 端 ====================
 
@@ -138,10 +141,18 @@ public class PayslipController {
      * 员工端详情
      * GET /profile/payslips/{period}
      * 查本人某期明细（需批次状态为 APPROVED 或 DISTRIBUTED）
+     * 需要二次验证通过（Redis 中 30min 内已验证）
      */
     @GetMapping("/profile/payslips/{period}")
     public Result<PayslipDetailVO> portalDetail(@PathVariable String period) {
         Long empId = SecurityUtils.getCurrentUser().getEmployeeId();
+        Long userId = SecurityUtils.getUserId();
+
+        // 检查二次验证（30min 免验证）
+        String verified = stringRedisTemplate.opsForValue().get("hrms:payslip:verified:" + userId);
+        if (verified == null) {
+            throw new BusinessException(ErrorCode.PAYSLIP_VERIFY_FAILED, "请先完成二次验证");
+        }
 
         PayrollBatch batch = batchMapper.selectByPeriod(period);
         if (batch == null) {
@@ -169,6 +180,7 @@ public class PayslipController {
     /**
      * 二次验证（密码）
      * POST /profile/payslips/verify
+     * 验证通过后写入 Redis TTL 30 分钟，后续查看详情时免验证
      */
     @PostMapping("/profile/payslips/verify")
     public Result<VerifyVO> verify(@RequestBody VerifyDTO dto) {
@@ -178,6 +190,14 @@ public class PayslipController {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "用户不存在");
         }
         boolean verified = passwordEncoder.matches(dto.getPassword(), user.getPasswordHash());
+        if (verified) {
+            stringRedisTemplate.opsForValue().set(
+                    "hrms:payslip:verified:" + userId,
+                    "1",
+                    30,
+                    TimeUnit.MINUTES
+            );
+        }
         VerifyVO vo = new VerifyVO();
         vo.setVerified(verified);
         return Result.success(vo);

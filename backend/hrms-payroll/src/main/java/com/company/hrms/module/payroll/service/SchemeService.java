@@ -17,9 +17,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -56,20 +59,49 @@ public class SchemeService {
 
         Long schemeId = scheme.getId();
 
-        // 插入工资项目
-        if (dto.getItems() != null) {
-            for (SchemeItemDTO item : dto.getItems()) {
-                PayrollSchemeItem entity = new PayrollSchemeItem();
-                entity.setSchemeId(schemeId);
-                entity.setItemCode(item.getItemCode());
-                entity.setItemName(item.getItemName());
-                entity.setItemType(item.getItemType() != null ? item.getItemType().toUpperCase() : "FIXED");
-                entity.setCalcRule(item.getCalcRule());
-                entity.setBaseField(item.getBaseField());
-                entity.setRatio(item.getRatio());
-                entity.setSortOrder(item.getSortOrder() != null ? item.getSortOrder() : 0);
-                schemeItemMapper.insert(entity);
+        // 校验并插入工资项目
+        if (dto.getItems() == null || dto.getItems().isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "工资项目至少需要1项");
+        }
+        // 校验 itemCode 在账套内唯一
+        Set<String> itemCodes = new HashSet<>();
+        for (SchemeItemDTO item : dto.getItems()) {
+            if (!itemCodes.add(item.getItemCode())) {
+                throw new BusinessException(ErrorCode.PARAM_INVALID,
+                        "工资项目编码重复: " + item.getItemCode());
             }
+            String type = item.getItemType() != null ? item.getItemType().toUpperCase() : "FIXED";
+            switch (type) {
+                case "VARIABLE":
+                    if (item.getCalcRule() == null || item.getCalcRule().isBlank()) {
+                        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                                "变动项目(" + item.getItemCode() + ")必须填写计算规则(calcRule)");
+                    }
+                    break;
+                case "SS_DEDUCT":
+                case "HF_DEDUCT":
+                    if (item.getBaseField() == null || item.getBaseField().isBlank()) {
+                        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                                "社保/公积金项目(" + item.getItemCode() + ")必须填写基数类型(baseField)");
+                    }
+                    if (item.getRatio() == null || item.getRatio().compareTo(BigDecimal.ZERO) <= 0) {
+                        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                                "社保/公积金项目(" + item.getItemCode() + ")必须填写比例(ratio)");
+                    }
+                    break;
+            }
+        }
+        for (SchemeItemDTO item : dto.getItems()) {
+            PayrollSchemeItem entity = new PayrollSchemeItem();
+            entity.setSchemeId(schemeId);
+            entity.setItemCode(item.getItemCode());
+            entity.setItemName(item.getItemName());
+            entity.setItemType(item.getItemType() != null ? item.getItemType().toUpperCase() : "FIXED");
+            entity.setCalcRule(item.getCalcRule());
+            entity.setBaseField(item.getBaseField());
+            entity.setRatio(item.getRatio());
+            entity.setSortOrder(item.getSortOrder() != null ? item.getSortOrder() : 0);
+            schemeItemMapper.insert(entity);
         }
 
         // 插入适用范围
@@ -93,10 +125,40 @@ public class SchemeService {
         scheme.setStatus(dto.getStatus() != null ? dto.getStatus().toLowerCase() : "enabled");
         schemeMapper.updateById(scheme);
 
-        // 先删后插工资项目
+        // 校验并先删后插工资项目
+        if (dto.getItems() == null || dto.getItems().isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "工资项目至少需要1项");
+        }
+        // 校验 itemCode 在账套内唯一
+        Set<String> itemCodes = new HashSet<>();
+        for (SchemeItemDTO item : dto.getItems()) {
+            if (!itemCodes.add(item.getItemCode())) {
+                throw new BusinessException(ErrorCode.PARAM_INVALID,
+                        "工资项目编码重复: " + item.getItemCode());
+            }
+            String type = item.getItemType() != null ? item.getItemType().toUpperCase() : "FIXED";
+            switch (type) {
+                case "VARIABLE":
+                    if (item.getCalcRule() == null || item.getCalcRule().isBlank()) {
+                        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                                "变动项目(" + item.getItemCode() + ")必须填写计算规则(calcRule)");
+                    }
+                    break;
+                case "SS_DEDUCT":
+                case "HF_DEDUCT":
+                    if (item.getBaseField() == null || item.getBaseField().isBlank()) {
+                        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                                "社保/公积金项目(" + item.getItemCode() + ")必须填写基数类型(baseField)");
+                    }
+                    if (item.getRatio() == null || item.getRatio().compareTo(BigDecimal.ZERO) <= 0) {
+                        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                                "社保/公积金项目(" + item.getItemCode() + ")必须填写比例(ratio)");
+                    }
+                    break;
+            }
+        }
         schemeItemMapper.delete(new LambdaQueryWrapper<PayrollSchemeItem>().eq(PayrollSchemeItem::getSchemeId, id));
-        if (dto.getItems() != null) {
-            for (SchemeItemDTO item : dto.getItems()) {
+        for (SchemeItemDTO item : dto.getItems()) {
                 PayrollSchemeItem entity = new PayrollSchemeItem();
                 entity.setSchemeId(id);
                 entity.setItemCode(item.getItemCode());
@@ -108,7 +170,6 @@ public class SchemeService {
                 entity.setSortOrder(item.getSortOrder() != null ? item.getSortOrder() : 0);
                 schemeItemMapper.insert(entity);
             }
-        }
 
         // 先删后插适用范围
         schemeScopeMapper.delete(new LambdaQueryWrapper<PayrollSchemeScope>().eq(PayrollSchemeScope::getSchemeId, id));

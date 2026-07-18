@@ -6,11 +6,11 @@ spring:
     name: hrms-app
   profiles:
     active: dev
-  # RabbitMQ 未启用前排除自动配置，避免启动去连默认 localhost:5672。
-  # 启用 MQ：取消本 exclude，并在 application-dev.yml 取消 rabbitmq 注释。
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+  # RabbitMQ 已启用（连接服务器 39.101.67.167:5672）
+  # 如需回退：取消本 exclude 注释，再注释 application-dev.yml 中 rabbitmq 配置
+  # autoconfigure:
+  #   exclude:
+  #     - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
       # Redis：登录/鉴权已依赖 StringRedisTemplate，勿再排除 RedisAutoConfiguration
       # - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       # - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration

@@ -20,6 +20,7 @@ import com.company.hrms.payroll.entity.*;
 import com.company.hrms.payroll.mapper.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +29,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -69,6 +73,19 @@ public class CalculateService {
         private String itemName;
         private BigDecimal amount;
         private String type; // EARNING / DEDUCTION
+        private List<PaySegment> segments; // 分段信息（仅 BASE_PAY 等分段项目有值）
+    }
+
+    /**
+     * 分段计薪区间
+     */
+    @Data
+    @AllArgsConstructor
+    private static class PaySegment {
+        private LocalDate startDate;
+        private LocalDate endDate;
+        private BigDecimal ratio; // 该段计薪比例（入职前=0，试用期=probationRatio，转正后=1）
+        private String reason;    // 分段原因：入职前/试用期/转正后/全月在职
     }
 
     // ==================== 批次管理 ====================
@@ -291,12 +308,15 @@ public class CalculateService {
         BigDecimal ssBase = opt(profile.getSsBase());
         BigDecimal hfBase = opt(profile.getHfBase());
         BigDecimal performanceBase = opt(profile.getPerformanceBase());
-        boolean isProbation = employee.getEmploymentStatus() != null && employee.getEmploymentStatus() == 10;
         BigDecimal probationRatio = opt(profile.getProbationRatio());
         if (probationRatio.compareTo(BigDecimal.ZERO) <= 0) {
             probationRatio = BigDecimal.ONE;
         }
         Map<String, BigDecimal> allowanceMap = parseAllowanceJson(profile.getAllowanceBaseJson());
+
+        // 构建分段区间
+        List<PaySegment> segments = buildSegments(period, employee.getHireDate(),
+                employee.getProbationEndDate(), probationRatio);
 
         List<DetailItem> detailItems = new ArrayList<>();
         boolean hasTaxItem = false;
@@ -307,7 +327,7 @@ public class CalculateService {
                 continue; // 个税单独计算
             }
             DetailItem di = calcItem(item, baseSalary, ssBase, hfBase, performanceBase,
-                    allowanceMap, lateCount, leaveDays, overtimeHours, isProbation, probationRatio);
+                    allowanceMap, lateCount, leaveDays, overtimeHours, segments, period);
             detailItems.add(di);
         }
 
@@ -378,13 +398,128 @@ public class CalculateService {
         return detail;
     }
 
+    // ==================== 分段计薪 ====================
+
+    /**
+     * 根据员工入职日期、转正日期构建分段区间
+     * <p>支持：全月在职(1段)、月中入职(2段)、月中转正(2段)、入职+转正同月(3段)</p>
+     *
+     * @param period          账期 如 "2026-07"
+     * @param hireDate        入职日期
+     * @param probationEndDate 转正日期
+     * @param probationRatio  试用期待遇比例
+     * @return 分段列表
+     */
+    private List<PaySegment> buildSegments(String period, LocalDate hireDate,
+                                            LocalDate probationEndDate, BigDecimal probationRatio) {
+        YearMonth ym = YearMonth.parse(period);
+        LocalDate periodStart = ym.atDay(1);
+        LocalDate periodEnd = ym.atEndOfMonth();
+
+        // 无入职日期 → 全月在职 1 段
+        if (hireDate == null) {
+            return List.of(new PaySegment(periodStart, periodEnd, BigDecimal.ONE, "全月在职"));
+        }
+
+        // 收集时间切分点（每个切分点表示一段的起始）
+        Set<LocalDate> points = new TreeSet<>();
+        points.add(periodStart);
+        points.add(periodEnd.plusDays(1)); // 末段终点（独占）
+
+        // 入职日作为切分点（只在入职日在账期内时）
+        if (!hireDate.isBefore(periodStart) && !hireDate.isAfter(periodEnd)) {
+            points.add(hireDate);
+        }
+
+        // 转正次日作为切分点（只在转正日在账期内时）
+        if (probationEndDate != null
+                && !probationEndDate.isBefore(periodStart)
+                && probationEndDate.isBefore(periodEnd)) {
+            points.add(probationEndDate.plusDays(1));
+        }
+
+        // 生成分段
+        List<LocalDate> sortedPoints = new ArrayList<>(points);
+        List<PaySegment> segments = new ArrayList<>();
+
+        for (int i = 0; i < sortedPoints.size() - 1; i++) {
+            LocalDate segStart = sortedPoints.get(i);
+            LocalDate segEnd = sortedPoints.get(i + 1).minusDays(1);
+
+            BigDecimal ratio;
+            String reason;
+
+            if (segEnd.isBefore(hireDate)) {
+                // 入职前：不计薪
+                ratio = BigDecimal.ZERO;
+                reason = "入职前";
+            } else if (probationEndDate != null && !segEnd.isAfter(probationEndDate)) {
+                // 试用期
+                ratio = probationRatio;
+                reason = "试用期";
+            } else {
+                // 转正后 / 入职后无试用
+                ratio = BigDecimal.ONE;
+                if (hireDate != null && segStart.equals(hireDate)) {
+                    reason = "入职后";
+                } else if (probationEndDate != null
+                        && segStart.equals(probationEndDate.plusDays(1))) {
+                    reason = "转正后";
+                } else {
+                    reason = "全月在职";
+                }
+            }
+
+            segments.add(new PaySegment(segStart, segEnd, ratio, reason));
+        }
+
+        return segments;
+    }
+
+    /**
+     * 基于分段计算基本工资
+     */
+    private BigDecimal calcBasePayWithSegments(BigDecimal baseSalary,
+                                                List<PaySegment> segments, String period) {
+        if (segments == null || segments.isEmpty()) {
+            return baseSalary;
+        }
+
+        YearMonth ym = YearMonth.parse(period);
+        long totalDays = ym.lengthOfMonth();
+
+        // 全月在职且比例=1 → 直接返回 baseSalary
+        if (segments.size() == 1) {
+            PaySegment seg = segments.get(0);
+            long segDays = ChronoUnit.DAYS.between(seg.getStartDate(), seg.getEndDate()) + 1;
+            if (segDays == totalDays && seg.getRatio().compareTo(BigDecimal.ONE) >= 0) {
+                return baseSalary;
+            }
+            if (seg.getRatio().compareTo(BigDecimal.ZERO) == 0) {
+                return BigDecimal.ZERO;
+            }
+        }
+
+        // 按日历天数比例计算
+        BigDecimal dailySalary = baseSalary.divide(BigDecimal.valueOf(totalDays),
+                10, RoundingMode.HALF_UP);
+        BigDecimal total = BigDecimal.ZERO;
+        for (PaySegment seg : segments) {
+            long segDays = ChronoUnit.DAYS.between(seg.getStartDate(), seg.getEndDate()) + 1;
+            total = total.add(dailySalary
+                    .multiply(BigDecimal.valueOf(segDays))
+                    .multiply(seg.getRatio()));
+        }
+        return total;
+    }
+
     // ==================== 薪资项目计算 ====================
 
     private DetailItem calcItem(PayrollSchemeItem item,
                                 BigDecimal baseSalary, BigDecimal ssBase, BigDecimal hfBase,
                                 BigDecimal performanceBase, Map<String, BigDecimal> allowanceMap,
                                 int lateCount, BigDecimal leaveDays, BigDecimal overtimeHours,
-                                boolean isProbation, BigDecimal probationRatio) {
+                                List<PaySegment> segments, String period) {
 
         BigDecimal amount = BigDecimal.ZERO;
         String type = "EARNING";
@@ -392,10 +527,7 @@ public class CalculateService {
         switch (item.getItemType()) {
             case "FIXED": {
                 if ("BASE_PAY".equals(item.getItemCode())) {
-                    amount = baseSalary;
-                    if (isProbation && probationRatio.compareTo(BigDecimal.ONE) < 0) {
-                        amount = amount.multiply(probationRatio);
-                    }
+                    amount = calcBasePayWithSegments(baseSalary, segments, period);
                 } else if ("POSITION_ALLOWANCE".equals(item.getItemCode())) {
                     // 从 allowanceBaseJson 解析
                     amount = allowanceMap.getOrDefault(item.getItemCode(),
@@ -459,6 +591,10 @@ public class CalculateService {
         di.setItemName(item.getItemName());
         di.setAmount(amount.setScale(2, RoundingMode.HALF_UP));
         di.setType(type);
+        // 基本工资项目记录分段快照
+        if ("BASE_PAY".equals(item.getItemCode())) {
+            di.setSegments(segments);
+        }
         return di;
     }
 
