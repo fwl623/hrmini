@@ -63,3 +63,5 @@ HRMS-Frontend-System-Design*.md
 
 # 开发环境配置（含服务器地址、密码等敏感信息）
 backend/hrms-app/src/main/resources/application-dev.yml
+# 本机私有覆盖（勿提交）
+backend/hrms-app/src/main/resources/application-dev-local.yml

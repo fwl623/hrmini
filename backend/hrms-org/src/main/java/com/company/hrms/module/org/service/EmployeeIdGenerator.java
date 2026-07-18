@@ -1,5 +1,6 @@
 package com.company.hrms.module.org.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.module.org.constant.OrgRedisKeys;
@@ -100,6 +101,30 @@ public class EmployeeIdGenerator {
 
     public String generate(String deptCode) {
         return generate(deptCode, null);
+    }
+
+    /**
+     * 离职释放工号：将 history 标记为可复用（reuse_flag=1）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void release(String employeeNo) {
+        if (!StringUtils.hasText(employeeNo)) {
+            return;
+        }
+        EmployeeNoHistory history = employeeNoHistoryMapper.selectOne(
+                new LambdaQueryWrapper<EmployeeNoHistory>()
+                        .eq(EmployeeNoHistory::getEmployeeNo, employeeNo.trim())
+                        .last("LIMIT 1"));
+        if (history == null) {
+            log.warn("释放工号未找到历史记录 employeeNo={}", employeeNo);
+            return;
+        }
+        if (history.getReuseFlag() != null && history.getReuseFlag() == 1) {
+            return;
+        }
+        history.setReuseFlag(1);
+        employeeNoHistoryMapper.updateById(history);
+        log.info("已释放工号可复用 employeeNo={} employeeId={}", employeeNo, history.getEmployeeId());
     }
 
     /**

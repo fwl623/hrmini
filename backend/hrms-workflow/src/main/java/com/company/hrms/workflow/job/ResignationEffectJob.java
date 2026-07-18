@@ -10,7 +10,7 @@ import java.time.LocalDate;
 
 /**
  * 离职生效 Job：每天 00:05，将到期待离职 → 已离职。
- * 账号禁用/释放工号/移出考勤组见 EmployeeLifecycleServiceImpl.effectResign TODO。
+ * 副作用（禁账号、释放工号、状态事件、MQ 通知）见 effectResign / ResignationService。
  */
 @Slf4j
 @Component

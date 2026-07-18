@@ -29,6 +29,6 @@ public interface EmployeeLifecycleService {
     /** HR 正式离职审批通过：→ 30 待离职 */
     void markPendingResign(Long employeeId, LocalDate resignationDate);
 
-    /** Job 生效：→ 40 已离职（禁用账号等联动 TODO） */
+    /** Job 生效：→ 40 已离职（禁用账号、释放工号、发状态事件） */
     void effectResign(Long employeeId);
 }

@@ -50,6 +50,17 @@ public class ApprovalNotifyPublisher {
         publish("attendance.resignation.effected", payload);
     }
 
+    /** 审批完成 → hrms.approval.notify（骨架） */
+    public void publishApprovalCompleted(String processType, Long instanceId, Long businessId, String result) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("eventType", "APPROVAL_COMPLETED");
+        payload.put("processType", processType);
+        payload.put("instanceId", instanceId);
+        payload.put("businessId", businessId);
+        payload.put("result", result);
+        publish("hrms.approval.notify", payload);
+    }
+
     private void publish(String routingKey, Map<String, Object> payload) {
         if (!rabbitEnabled) {
             log.info("[MQ-fallback] routing={} payload={}", routingKey, payload);

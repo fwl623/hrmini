@@ -1,0 +1,24 @@
+# 本地私有配置示例
+# 复制到：backend/hrms-app/src/main/resources/application-dev-local.yml（该文件已 gitignore）
+# 启动：--spring.profiles.active=dev,dev-local
+
+spring:
+  config:
+    activate:
+      on-profile: dev-local
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+  flyway:
+    enabled: true
+    validate-on-migrate: false
+
+# 本地联调：关闭 Feign Mock，入职 confirm 走真实建档/建号
+hrms:
+  feign:
+    mock-enabled: false

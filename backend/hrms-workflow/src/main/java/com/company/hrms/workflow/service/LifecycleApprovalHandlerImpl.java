@@ -9,13 +9,16 @@ public class LifecycleApprovalHandlerImpl implements LifecycleApprovalHandler {
     private final RegularizationService regularizationService;
     private final TransferService transferService;
     private final ResignationService resignationService;
+    private final OnboardingService onboardingService;
 
     public LifecycleApprovalHandlerImpl(@Lazy RegularizationService regularizationService,
                                         @Lazy TransferService transferService,
-                                        @Lazy ResignationService resignationService) {
+                                        @Lazy ResignationService resignationService,
+                                        @Lazy OnboardingService onboardingService) {
         this.regularizationService = regularizationService;
         this.transferService = transferService;
         this.resignationService = resignationService;
+        this.onboardingService = onboardingService;
     }
 
     @Override
@@ -25,6 +28,7 @@ public class LifecycleApprovalHandlerImpl implements LifecycleApprovalHandler {
             return;
         }
         switch (processType) {
+            case "ONBOARDING" -> onboardingService.onApprovalFinished(businessKey, true, null);
             case "REGULARIZATION" -> regularizationService.onApproved(id);
             case "TRANSFER" -> transferService.onApproved(id);
             case "RESIGNATION_REQUEST" -> resignationService.onRequestApproved(id);
@@ -41,6 +45,7 @@ public class LifecycleApprovalHandlerImpl implements LifecycleApprovalHandler {
             return;
         }
         switch (processType) {
+            case "ONBOARDING" -> onboardingService.onApprovalFinished(businessKey, false, null);
             case "REGULARIZATION" -> regularizationService.onRejectedOrWithdrawn(id);
             case "TRANSFER" -> transferService.onRejectedOrWithdrawn(id, false);
             case "RESIGNATION_REQUEST" -> resignationService.onRequestRejectedOrWithdrawn(id, false);
@@ -57,6 +62,7 @@ public class LifecycleApprovalHandlerImpl implements LifecycleApprovalHandler {
             return;
         }
         switch (processType) {
+            case "ONBOARDING" -> onboardingService.onApprovalWithdrawn(businessKey);
             case "REGULARIZATION" -> regularizationService.onRejectedOrWithdrawn(id);
             case "TRANSFER" -> transferService.onRejectedOrWithdrawn(id, true);
             case "RESIGNATION_REQUEST" -> resignationService.onRequestRejectedOrWithdrawn(id, true);
@@ -73,6 +79,14 @@ public class LifecycleApprovalHandlerImpl implements LifecycleApprovalHandler {
         try {
             return Long.parseLong(businessKey.trim());
         } catch (NumberFormatException e) {
+            int idx = businessKey.lastIndexOf(':');
+            if (idx >= 0 && idx + 1 < businessKey.length()) {
+                try {
+                    return Long.parseLong(businessKey.substring(idx + 1).trim());
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
             return null;
         }
     }

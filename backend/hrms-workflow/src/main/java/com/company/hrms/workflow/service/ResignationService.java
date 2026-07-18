@@ -13,8 +13,11 @@ import com.company.hrms.workflow.entity.EmployeeResignationRequest;
 import com.company.hrms.workflow.entity.ResignationApplication;
 import com.company.hrms.workflow.mapper.EmployeeResignationRequestMapper;
 import com.company.hrms.workflow.mapper.ResignationApplicationMapper;
+import com.company.hrms.workflow.notify.ApprovalNotifyPublisher;
 import com.company.hrms.workflow.support.AssigneeResolver;
 import com.company.hrms.workflow.support.CurrentUserProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,7 @@ import java.util.stream.Collectors;
 @Service
 public class ResignationService {
 
+    private static final Logger log = LoggerFactory.getLogger(ResignationService.class);
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final EmployeeResignationRequestMapper requestMapper;
@@ -36,17 +40,20 @@ public class ResignationService {
     private final EmployeeLifecycleService employeeLifecycleService;
     private final DbApprovalService dbApprovalService;
     private final CurrentUserProvider currentUserProvider;
+    private final ApprovalNotifyPublisher notifyPublisher;
 
     public ResignationService(EmployeeResignationRequestMapper requestMapper,
                               ResignationApplicationMapper resignationMapper,
                               EmployeeLifecycleService employeeLifecycleService,
                               DbApprovalService dbApprovalService,
-                              CurrentUserProvider currentUserProvider) {
+                              CurrentUserProvider currentUserProvider,
+                              ApprovalNotifyPublisher notifyPublisher) {
         this.requestMapper = requestMapper;
         this.resignationMapper = resignationMapper;
         this.employeeLifecycleService = employeeLifecycleService;
         this.dbApprovalService = dbApprovalService;
         this.currentUserProvider = currentUserProvider;
+        this.notifyPublisher = notifyPublisher;
     }
 
     /** 门户：当前登录员工发起离职申请（SELF） */
@@ -245,9 +252,11 @@ public class ResignationService {
                 employeeLifecycleService.effectResign(app.getEmployeeId());
                 app.setStatus("RESIGNED");
                 resignationMapper.updateById(app);
+                notifyPublisher.publishResignationEffected(app.getEmployeeId());
                 count++;
             } catch (Exception e) {
-                // 单条失败不影响其它
+                log.warn("离职生效失败 appId={} employeeId={}: {}",
+                        app.getId(), app.getEmployeeId(), e.getMessage());
             }
         }
         return count;

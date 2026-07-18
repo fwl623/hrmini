@@ -11,6 +11,9 @@ import com.company.hrms.attendance.mapper.HolidayCalendarMapper;
 import com.company.hrms.attendance.mapper.OvertimeApplicationMapper;
 import com.company.hrms.attendance.mapper.OvertimeLedgerMapper;
 import com.company.hrms.attendance.mapper.WorkdayConfigMapper;
+import com.company.hrms.common.approval.ApprovalEngineService;
+import com.company.hrms.common.approval.CreateApprovalRequest;
+import com.company.hrms.common.approval.CreateApprovalResult;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.web.PageParam;
@@ -30,7 +33,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -47,6 +52,7 @@ public class OvertimeService {
     private final OvertimeLedgerMapper overtimeLedgerMapper;
     private final WorkdayConfigMapper workdayConfigMapper;
     private final HolidayCalendarMapper holidayCalendarMapper;
+    private final ApprovalEngineService approvalEngineService;
 
     /**
      * 加班列表（分页）
@@ -111,13 +117,26 @@ public class OvertimeService {
         app.setStatus("PENDING");
         overtimeApplicationMapper.insert(app);
 
+        CreateApprovalRequest req = new CreateApprovalRequest();
+        req.setProcessType("OVERTIME");
+        req.setBusinessId(app.getId());
+        req.setApplicantId(employeeId);
+        req.setTitle("加班申请#" + app.getId());
+        req.setBusinessSummary(dto.getOvertimeDate() + " " + hours + "h");
+        req.setBusinessNo("OT-" + app.getId());
+        Map<String, Object> form = new HashMap<>();
+        form.put("dailyTotalHours", hours);
+        form.put("needsSecondReview", needsSecondReview);
+        req.setFormData(form);
+        CreateApprovalResult result = approvalEngineService.createInstance(req);
+        app.setInstanceId(result.getInstanceId());
+        overtimeApplicationMapper.updateById(app);
+
         if (needsSecondReview) {
             log.info("加班申请触发二审: id={}, hours={}, rateType={}", app.getId(), hours, rateType);
         }
-        log.info("提交加班: empId={}, date={}, hours={}, rateType={}", employeeId, dto.getOvertimeDate(), hours, rateType);
-
-        // TODO: 创建审批实例（≥4h 触发二审路由）
-        // TODO: 审批通过后写入 overtime_ledger
+        log.info("提交加班: empId={}, date={}, hours={}, rateType={}, instanceId={}",
+                employeeId, dto.getOvertimeDate(), hours, rateType, result.getInstanceId());
 
         return app;
     }

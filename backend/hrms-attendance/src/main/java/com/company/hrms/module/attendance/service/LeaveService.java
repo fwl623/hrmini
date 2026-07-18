@@ -11,6 +11,9 @@ import com.company.hrms.attendance.mapper.HolidayCalendarMapper;
 import com.company.hrms.attendance.mapper.LeaveApplicationMapper;
 import com.company.hrms.attendance.mapper.LeaveBalanceMapper;
 import com.company.hrms.attendance.mapper.WorkdayConfigMapper;
+import com.company.hrms.common.approval.ApprovalEngineService;
+import com.company.hrms.common.approval.CreateApprovalRequest;
+import com.company.hrms.common.approval.CreateApprovalResult;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.web.PageParam;
@@ -33,7 +36,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -50,6 +55,7 @@ public class LeaveService {
     private final LeaveApplicationMapper leaveApplicationMapper;
     private final WorkdayConfigMapper workdayConfigMapper;
     private final HolidayCalendarMapper holidayCalendarMapper;
+    private final ApprovalEngineService approvalEngineService;
 
     // ========== 假期余额 ==========
 
@@ -189,9 +195,23 @@ public class LeaveService {
         app.setStatus("PENDING");
         leaveApplicationMapper.insert(app);
 
-        // TODO: 调用审批引擎创建审批实例
+        CreateApprovalRequest req = new CreateApprovalRequest();
+        req.setProcessType("LEAVE");
+        req.setBusinessId(app.getId());
+        req.setApplicantId(employeeId);
+        req.setTitle("请假申请#" + app.getId());
+        req.setBusinessSummary(app.getLeaveType() + " " + days + "天");
+        req.setBusinessNo("LEAVE-" + app.getId());
+        Map<String, Object> form = new HashMap<>();
+        form.put("leaveType", app.getLeaveType());
+        form.put("days", days);
+        req.setFormData(form);
+        CreateApprovalResult result = approvalEngineService.createInstance(req);
+        app.setInstanceId(result.getInstanceId());
+        leaveApplicationMapper.updateById(app);
 
-        log.info("提交请假: empId={}, type={}, days={}, id={}", employeeId, dto.getLeaveType(), days, app.getId());
+        log.info("提交请假: empId={}, type={}, days={}, id={}, instanceId={}",
+                employeeId, dto.getLeaveType(), days, app.getId(), result.getInstanceId());
         return app;
     }
 
@@ -221,6 +241,13 @@ public class LeaveService {
 
         app.setStatus("CANCELLED");
         leaveApplicationMapper.updateById(app);
+        if (app.getInstanceId() != null) {
+            try {
+                approvalEngineService.withdrawInstance(app.getInstanceId(), app.getEmployeeId());
+            } catch (Exception e) {
+                log.warn("撤回请假审批实例失败 id={} instanceId={}: {}", id, app.getInstanceId(), e.getMessage());
+            }
+        }
         log.info("撤销请假: id={}, empId={}", id, app.getEmployeeId());
     }
 

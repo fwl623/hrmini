@@ -18,6 +18,12 @@ public class ApprovalInstance {
     private Long id;
     private String processType;
     private String businessKey;
+    private String title;
+    private String applicantName;
+    private String applicantDept;
+    private String businessNo;
+    private String businessSummary;
+    private String nodesJson;
     private String status;
     private Long initiatorId;
     private Integer currentNode;

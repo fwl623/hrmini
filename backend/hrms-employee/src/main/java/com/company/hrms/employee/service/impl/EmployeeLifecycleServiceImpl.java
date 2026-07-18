@@ -1,5 +1,6 @@
 package com.company.hrms.employee.service.impl;
 
+import com.company.hrms.common.event.EmployeeStatusChangeEvent;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.employee.dto.TransferEffectDTO;
@@ -9,10 +10,14 @@ import com.company.hrms.employee.mapper.EmployeeMapper;
 import com.company.hrms.employee.mapper.EmployeeTransferHistoryMapper;
 import com.company.hrms.employee.service.EmployeeLifecycleService;
 import com.company.hrms.employee.vo.PendingRegularizationVO;
+import com.company.hrms.module.auth.service.InternalUserService;
+import com.company.hrms.module.org.service.EmployeeIdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -30,6 +35,9 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
 
     private final EmployeeMapper employeeMapper;
     private final EmployeeTransferHistoryMapper transferHistoryMapper;
+    private final InternalUserService internalUserService;
+    private final EmployeeIdGenerator employeeIdGenerator;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public Employee requireEmployee(Long employeeId) {
@@ -146,12 +154,40 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         if (emp.getEmploymentStatus() == null || emp.getEmploymentStatus() != STATUS_PENDING_RESIGN) {
             throw new BusinessException(ErrorCode.EMPLOYEE_STATUS_INVALID, "仅待离职员工可生效离职");
         }
+        LocalDate lastWorkDay = emp.getLastWorkDay() != null ? emp.getLastWorkDay() : LocalDate.now();
         Employee patch = new Employee();
         patch.setId(employeeId);
         patch.setEmploymentStatus(STATUS_RESIGNED);
+        if (emp.getLastWorkDay() == null) {
+            patch.setLastWorkDay(lastWorkDay);
+        }
         employeeMapper.updateById(patch);
-        // TODO: 禁用账号、释放工号、移出考勤组（依赖 auth / attendance 联动）
-        log.info("员工离职生效 employeeId={}（账号禁用/工号释放/考勤移出 TODO）", employeeId);
+
+        if (emp.getUserId() != null) {
+            try {
+                internalUserService.updateStatus(emp.getUserId(), 0);
+            } catch (Exception e) {
+                log.warn("离职禁用账号失败 employeeId={} userId={}: {}", employeeId, emp.getUserId(), e.getMessage());
+            }
+        }
+        if (StringUtils.hasText(emp.getEmployeeNo())) {
+            try {
+                employeeIdGenerator.release(emp.getEmployeeNo());
+            } catch (Exception e) {
+                log.warn("离职释放工号失败 employeeId={} empNo={}: {}", employeeId, emp.getEmployeeNo(), e.getMessage());
+            }
+        }
+
+        eventPublisher.publishEvent(new EmployeeStatusChangeEvent(
+                this,
+                employeeId,
+                String.valueOf(STATUS_PENDING_RESIGN),
+                String.valueOf(STATUS_RESIGNED),
+                LocalDate.now(),
+                "RESIGNATION_EFFECT",
+                lastWorkDay));
+        log.info("员工离职生效 employeeId={} userId={} empNo={} lastWorkDay={}",
+                employeeId, emp.getUserId(), emp.getEmployeeNo(), lastWorkDay);
     }
 
     private PendingRegularizationVO toPendingVo(Employee emp) {

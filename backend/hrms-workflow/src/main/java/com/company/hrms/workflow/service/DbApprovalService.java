@@ -1,6 +1,11 @@
 package com.company.hrms.workflow.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.company.hrms.common.approval.ApprovalEngineService;
+import com.company.hrms.common.approval.ApprovalStatusDTO;
+import com.company.hrms.common.approval.CreateApprovalRequest;
+import com.company.hrms.common.approval.CreateApprovalResult;
+import com.company.hrms.common.event.ApprovalCompletedEvent;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.web.PageResult;
@@ -12,8 +17,12 @@ import com.company.hrms.workflow.mapper.ApprovalInstanceMapper;
 import com.company.hrms.workflow.mapper.ApprovalLogMapper;
 import com.company.hrms.workflow.mapper.ApprovalTaskMapper;
 import com.company.hrms.workflow.model.ProcessNodeDef;
+import com.company.hrms.workflow.notify.ApprovalNotifyPublisher;
 import com.company.hrms.workflow.support.AssigneeResolver;
 import com.company.hrms.workflow.support.CurrentUserProvider;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,16 +37,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * 落库版审批引擎（转正/调岗/离职）；入职仍走 {@link ApprovalEngine}+MemoryStore。
+ * 统一落库审批引擎（唯一实现）。
  */
 @Service
-public class DbApprovalService {
+public class DbApprovalService implements ApprovalEngineService {
 
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final TypeReference<List<ProcessNodeDef>> NODES_TYPE = new TypeReference<>() {};
 
     private final ApprovalInstanceMapper instanceMapper;
     private final ApprovalTaskMapper taskMapper;
@@ -45,22 +54,76 @@ public class DbApprovalService {
     private final CurrentUserProvider currentUserProvider;
     private final AssigneeResolver assigneeResolver;
     private final LifecycleApprovalHandler lifecycleApprovalHandler;
-
-    /** 展示字段（重启后可降级为 processType#businessKey） */
-    private final Map<Long, InstanceDisplay> displays = new ConcurrentHashMap<>();
-    private final Map<String, List<ProcessNodeDef>> nodeCache = new ConcurrentHashMap<>();
+    private final ApprovalNotifyPublisher notifyPublisher;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ObjectMapper objectMapper;
 
     public DbApprovalService(ApprovalInstanceMapper instanceMapper,
                              ApprovalTaskMapper taskMapper,
                              ApprovalLogMapper logMapper,
                              CurrentUserProvider currentUserProvider,
-                             @Lazy LifecycleApprovalHandler lifecycleApprovalHandler) {
+                             @Lazy LifecycleApprovalHandler lifecycleApprovalHandler,
+                             ApprovalNotifyPublisher notifyPublisher,
+                             ApplicationEventPublisher eventPublisher,
+                             ObjectMapper objectMapper) {
         this.instanceMapper = instanceMapper;
         this.taskMapper = taskMapper;
         this.logMapper = logMapper;
         this.currentUserProvider = currentUserProvider;
         this.assigneeResolver = new AssigneeResolver.DevAssigneeResolver();
         this.lifecycleApprovalHandler = lifecycleApprovalHandler;
+        this.notifyPublisher = notifyPublisher;
+        this.eventPublisher = eventPublisher;
+        this.objectMapper = objectMapper;
+    }
+
+    @Override
+    @Transactional
+    public CreateApprovalResult createInstance(CreateApprovalRequest request) {
+        if (request == null || request.getProcessType() == null || request.getBusinessId() == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "processType/businessId 必填");
+        }
+        String processType = request.getProcessType().trim().toUpperCase(Locale.ROOT);
+        List<ProcessNodeDef> nodes = AssigneeResolver.resolveNodes(processType, request.getFormData());
+        InstanceDisplay display = InstanceDisplay.of(
+                request.getTitle() != null ? request.getTitle() : processType + "#" + request.getBusinessId(),
+                request.getApplicantName() != null
+                        ? request.getApplicantName()
+                        : currentUserProvider.displayName(request.getApplicantId()),
+                request.getApplicantDept(),
+                request.getBusinessNo() != null
+                        ? request.getBusinessNo()
+                        : processType + "-" + request.getBusinessId());
+        display.businessSummary = request.getBusinessSummary();
+
+        Long instanceId = createInstance(
+                processType,
+                String.valueOf(request.getBusinessId()),
+                request.getApplicantId(),
+                nodes,
+                display,
+                request.getFormData());
+        return new CreateApprovalResult(instanceId, "PENDING");
+    }
+
+    @Override
+    public ApprovalStatusDTO getInstanceStatus(Long instanceId) {
+        ApprovalInstance instance = instanceMapper.selectById(instanceId);
+        if (instance == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在");
+        }
+        ApprovalStatusDTO dto = new ApprovalStatusDTO();
+        dto.setInstanceId(instanceId);
+        dto.setStatus(instance.getStatus());
+        dto.setCurrentNodeLabel(labelOf(nodesOf(instance), instance.getCurrentNode()));
+        return dto;
+    }
+
+    @Override
+    @Transactional
+    public boolean withdrawInstance(Long instanceId, Long operatorId) {
+        doWithdrawInstance(instanceId.longValue(), operatorId.longValue());
+        return true;
     }
 
     @Transactional
@@ -82,18 +145,25 @@ public class DbApprovalService {
         instance.setCurrentNode(nodes.get(0).getOrder());
         instance.setCreatedAt(now);
         instance.setUpdatedAt(now);
-        instanceMapper.insert(instance);
-
-        nodeCache.put(processType + ":" + instance.getId(), nodes);
         if (display == null) {
             display = new InstanceDisplay();
             display.title = processType + "#" + businessKey;
             display.applicantName = currentUserProvider.displayName(initiatorId);
         }
-        displays.put(instance.getId(), display);
+        instance.setTitle(display.title);
+        instance.setApplicantName(display.applicantName);
+        instance.setApplicantDept(display.applicantDept);
+        instance.setBusinessNo(display.businessNo);
+        instance.setBusinessSummary(display.businessSummary);
+        try {
+            instance.setNodesJson(objectMapper.writeValueAsString(nodes));
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "序列化审批链失败");
+        }
+        instanceMapper.insert(instance);
 
         ProcessNodeDef first = nodes.get(0);
-        createTask(instance.getId(), first, variables, now);
+        createTask(instance, first, variables, now);
         writeLog(instance.getId(), null, initiatorId, "SUBMIT", null, null, "PENDING",
                 "提交 " + processType + " 审批");
         return instance.getId();
@@ -155,7 +225,7 @@ public class DbApprovalService {
         if (instance == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在");
         }
-        InstanceDisplay display = displays.getOrDefault(instance.getId(), InstanceDisplay.fallback(instance));
+        InstanceDisplay display = InstanceDisplay.from(instance);
         List<ProcessNodeDef> nodes = nodesOf(instance);
 
         ApprovalDtos.TaskDetailVO detail = new ApprovalDtos.TaskDetailVO();
@@ -177,6 +247,7 @@ public class DbApprovalService {
         Map<String, Object> biz = new HashMap<>();
         biz.put("businessKey", instance.getBusinessKey());
         biz.put("title", display.title);
+        biz.put("businessSummary", display.businessSummary);
         detail.setBusinessDetail(biz);
 
         detail.setTimeline(buildTimeline(instance.getId()));
@@ -201,6 +272,8 @@ public class DbApprovalService {
         if (!"PENDING".equalsIgnoreCase(task.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_ALREADY_HANDLED, "仅待办可催办");
         }
+        long assignee = task.getActualAssigneeId() != null ? task.getActualAssigneeId() : task.getAssigneeId();
+        notifyPublisher.publishImmediateRemind(taskId, assignee);
         writeLog(task.getInstanceId(), taskId, operatorId, "REMIND", "催办通知已记录",
                 "PENDING", "PENDING", "催办");
     }
@@ -239,6 +312,7 @@ public class DbApprovalService {
             taskMapper.updateById(task);
             writeLog(instance.getId(), taskId, userId, "FORWARD", body.getComment(),
                     "PENDING", "PENDING", "转交给用户" + body.getTargetUserId());
+            notifyPublisher.scheduleRemind(taskId, body.getTargetUserId(), instance.getProcessType());
             return;
         }
 
@@ -254,6 +328,7 @@ public class DbApprovalService {
             instance.setUpdatedAt(now);
             instanceMapper.updateById(instance);
             lifecycleApprovalHandler.onRejected(instance.getProcessType(), instance.getBusinessKey());
+            publishCompleted(instance, "REJECTED", body.getComment());
             return;
         }
 
@@ -264,17 +339,18 @@ public class DbApprovalService {
             instance.setCurrentNode(next.get().getOrder());
             instance.setUpdatedAt(now);
             instanceMapper.updateById(instance);
-            createTask(instance.getId(), next.get(), Map.of(), now);
+            createTask(instance, next.get(), Map.of(), now);
         } else {
             instance.setStatus("APPROVED");
             instance.setUpdatedAt(now);
             instanceMapper.updateById(instance);
             lifecycleApprovalHandler.onApproved(instance.getProcessType(), instance.getBusinessKey());
+            publishCompleted(instance, "APPROVED", body.getComment());
         }
     }
 
     @Transactional
-    public void withdrawInstance(long instanceId, long userId) {
+    public void doWithdrawInstance(long instanceId, long userId) {
         ApprovalInstance instance = instanceMapper.selectById(instanceId);
         if (instance == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在");
@@ -311,7 +387,7 @@ public class DbApprovalService {
                 .eq(ApprovalInstance::getInitiatorId, userId)
                 .orderByDesc(ApprovalInstance::getId));
         List<ApprovalDtos.InstanceListItemVO> items = list.stream().map(inst -> {
-            InstanceDisplay d = displays.getOrDefault(inst.getId(), InstanceDisplay.fallback(inst));
+            InstanceDisplay d = InstanceDisplay.from(inst);
             ApprovalDtos.InstanceListItemVO vo = new ApprovalDtos.InstanceListItemVO();
             vo.setInstanceId(inst.getId());
             vo.setTaskId(0L);
@@ -319,7 +395,7 @@ public class DbApprovalService {
             vo.setTitle(d.title);
             vo.setApplicantName(d.applicantName);
             vo.setApplicantDept(d.applicantDept);
-            vo.setCurrentNodeLabel("node-" + inst.getCurrentNode());
+            vo.setCurrentNodeLabel(labelOf(nodesOf(inst), inst.getCurrentNode()));
             vo.setCreateTime(fmt(inst.getCreatedAt()));
             vo.setStatus(apiStatus(inst.getStatus()));
             return vo;
@@ -327,15 +403,31 @@ public class DbApprovalService {
         return pageOf(items, page, pageSize);
     }
 
-    private void createTask(Long instanceId, ProcessNodeDef node, Map<String, Object> variables, LocalDateTime now) {
+    private void publishCompleted(ApprovalInstance instance, String result, String comment) {
+        Long businessId = parseBusinessId(instance.getBusinessKey());
+        eventPublisher.publishEvent(new ApprovalCompletedEvent(
+                this,
+                instance.getProcessType(),
+                instance.getId(),
+                businessId,
+                result,
+                instance.getInitiatorId(),
+                comment));
+        notifyPublisher.publishApprovalCompleted(
+                instance.getProcessType(), instance.getId(), businessId, result);
+    }
+
+    private void createTask(ApprovalInstance instance, ProcessNodeDef node,
+                            Map<String, Object> variables, LocalDateTime now) {
         ApprovalTask task = new ApprovalTask();
-        task.setInstanceId(instanceId);
+        task.setInstanceId(instance.getId());
         task.setNodeOrder(node.getOrder());
         task.setAssigneeId(assigneeResolver.resolve(node, variables == null ? Map.of() : variables));
         task.setStatus("PENDING");
         task.setOverdue(0);
         task.setSlaDeadline(now.plusHours(48));
         taskMapper.insert(task);
+        notifyPublisher.scheduleRemind(task.getId(), task.getAssigneeId(), instance.getProcessType());
     }
 
     private void writeLog(Long instanceId, Long taskId, Long operatorId, String action, String comment,
@@ -374,7 +466,7 @@ public class DbApprovalService {
         ApprovalInstance instance = instanceMapper.selectById(task.getInstanceId());
         InstanceDisplay d = instance == null
                 ? new InstanceDisplay()
-                : displays.getOrDefault(instance.getId(), InstanceDisplay.fallback(instance));
+                : InstanceDisplay.from(instance);
         List<ProcessNodeDef> nodes = instance == null ? List.of() : nodesOf(instance);
         ApprovalDtos.TaskListItemVO vo = new ApprovalDtos.TaskListItemVO();
         vo.setTaskId(task.getId());
@@ -384,6 +476,7 @@ public class DbApprovalService {
         vo.setApplicantName(d.applicantName);
         vo.setApplicantDept(d.applicantDept);
         vo.setBusinessNo(d.businessNo);
+        vo.setBusinessSummary(d.businessSummary);
         vo.setCurrentNodeLabel(labelOf(nodes, task.getNodeOrder()));
         vo.setCreateTime(instance != null ? fmt(instance.getCreatedAt()) : null);
         vo.setDueAt(fmt(task.getSlaDeadline()));
@@ -392,18 +485,33 @@ public class DbApprovalService {
     }
 
     private List<ProcessNodeDef> nodesOf(ApprovalInstance instance) {
-        String key = instance.getProcessType() + ":" + instance.getId();
-        List<ProcessNodeDef> cached = nodeCache.get(key);
-        if (cached != null) {
-            return cached;
+        if (instance.getNodesJson() != null && !instance.getNodesJson().isBlank()) {
+            try {
+                return objectMapper.readValue(instance.getNodesJson(), NODES_TYPE);
+            } catch (Exception ignored) {
+                // fall through
+            }
         }
-        return switch (instance.getProcessType()) {
-            case "REGULARIZATION" -> AssigneeResolver.regularizationNodes();
-            case "TRANSFER" -> AssigneeResolver.transferNodes();
-            case "RESIGNATION_REQUEST" -> AssigneeResolver.resignationRequestNodes();
-            case "RESIGNATION" -> AssigneeResolver.resignationNodes();
-            default -> List.of();
-        };
+        return AssigneeResolver.resolveNodes(instance.getProcessType(), Map.of());
+    }
+
+    private static Long parseBusinessId(String businessKey) {
+        if (businessKey == null || businessKey.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(businessKey.trim());
+        } catch (NumberFormatException e) {
+            int idx = businessKey.lastIndexOf(':');
+            if (idx >= 0 && idx + 1 < businessKey.length()) {
+                try {
+                    return Long.parseLong(businessKey.substring(idx + 1).trim());
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
+            return null;
+        }
     }
 
     private static String labelOf(List<ProcessNodeDef> nodes, Integer order) {
@@ -447,6 +555,7 @@ public class DbApprovalService {
         public String applicantName;
         public String applicantDept;
         public String businessNo;
+        public String businessSummary;
 
         public static InstanceDisplay of(String title, String applicantName, String applicantDept, String businessNo) {
             InstanceDisplay d = new InstanceDisplay();
@@ -457,9 +566,14 @@ public class DbApprovalService {
             return d;
         }
 
-        static InstanceDisplay fallback(ApprovalInstance inst) {
-            return of(inst.getProcessType() + "#" + inst.getBusinessKey(),
-                    "用户" + inst.getInitiatorId(), null, inst.getBusinessKey());
+        static InstanceDisplay from(ApprovalInstance inst) {
+            InstanceDisplay d = of(
+                    inst.getTitle() != null ? inst.getTitle() : inst.getProcessType() + "#" + inst.getBusinessKey(),
+                    inst.getApplicantName() != null ? inst.getApplicantName() : "用户" + inst.getInitiatorId(),
+                    inst.getApplicantDept(),
+                    inst.getBusinessNo() != null ? inst.getBusinessNo() : inst.getBusinessKey());
+            d.businessSummary = inst.getBusinessSummary();
+            return d;
         }
     }
 }

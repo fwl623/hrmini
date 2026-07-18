@@ -13,6 +13,9 @@ import com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper;
 import com.company.hrms.attendance.mapper.AttendanceMonthLockMapper;
 import com.company.hrms.attendance.mapper.AttendanceRecordMapper;
 import com.company.hrms.attendance.mapper.AttendanceSupplementMapper;
+import com.company.hrms.common.approval.ApprovalEngineService;
+import com.company.hrms.common.approval.CreateApprovalRequest;
+import com.company.hrms.common.approval.CreateApprovalResult;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.web.PageParam;
@@ -60,6 +63,7 @@ public class PunchService {
     private final AttendanceMonthLockMapper attendanceMonthLockMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final ApprovalEngineService approvalEngineService;
 
     /** Redis key 前缀：打卡幂等 */
     private static final String PUNCH_IDEMP_KEY = "hrms:punch:";
@@ -295,16 +299,29 @@ public class PunchService {
         supplement.setStatus("PENDING");
         attendanceSupplementMapper.insert(supplement);
 
+        CreateApprovalRequest req = new CreateApprovalRequest();
+        req.setProcessType("MAKEUP");
+        req.setBusinessId(supplement.getId());
+        req.setApplicantId(employeeId);
+        req.setTitle("补卡申请#" + supplement.getId());
+        req.setBusinessSummary(dto.getPunchDate() + " " + punchType);
+        req.setBusinessNo("MAKEUP-" + supplement.getId());
+        CreateApprovalResult approval = approvalEngineService.createInstance(req);
+        supplement.setInstanceId(approval.getInstanceId());
+        attendanceSupplementMapper.updateById(supplement);
+
         // 5. Redis 原子自增
         stringRedisTemplate.opsForValue().increment(quotaKey);
         // 确保 TTL
         stringRedisTemplate.expire(quotaKey, getSecondsUntilEndOfMonth(fixDate), TimeUnit.SECONDS);
 
-        log.info("补卡申请: empId={}, date={}, type={}, id={}", employeeId, dto.getPunchDate(), punchType, supplement.getId());
+        log.info("补卡申请: empId={}, date={}, type={}, id={}, instanceId={}",
+                employeeId, dto.getPunchDate(), punchType, supplement.getId(), approval.getInstanceId());
 
         Map<String, Object> result = new HashMap<>();
         result.put("id", supplement.getId());
         result.put("status", "PENDING");
+        result.put("instanceId", approval.getInstanceId());
         return result;
     }
 

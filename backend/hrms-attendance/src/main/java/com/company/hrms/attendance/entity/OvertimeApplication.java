@@ -82,6 +82,9 @@ public class OvertimeApplication {
     @TableField("status")
     private String status;
 
+    @TableField("instance_id")
+    private Long instanceId;
+
     /**
      * 折算调休小时
      * 单位：小时，保留两位小数
