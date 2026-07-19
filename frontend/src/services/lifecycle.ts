@@ -189,12 +189,14 @@ export async function fetchResignationStats() {
 
 export async function createResignation(data: {
   employeeId: number;
-  requestId: number;
+  /** 可选；不传表示 HR 直提正式离职（线下协商） */
+  requestId?: number;
   resignationDate: string;
   reasonCategory: string;
   resignationType: string;
   reasonDetail?: string;
-  handoverEmployeeId: number;
+  /** 可选；交接人由部门负责人在审批时确认 */
+  handoverEmployeeId?: number;
 }) {
   return request<API.Result<ResignationItem>>(`${API_BASE}/resignations`, {
     method: 'POST',

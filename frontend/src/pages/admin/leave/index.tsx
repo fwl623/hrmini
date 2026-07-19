@@ -28,19 +28,9 @@ import { ProTable } from '@ant-design/pro-components';
 import { PlusOutlined } from '@ant-design/icons';
 
 import { getLeaveApplications, submitLeave, calcLeaveDays } from '@/services/attendance';
+import { LEAVE_TYPE_OPTIONS, leaveTypeLabel } from '@/constants/leave';
 
 // ========== 共享常量 ==========
-
-/** 请假类型选项（与门户端一致） */
-const LEAVE_TYPE_OPTIONS = [
-  { label: '年假', value: 'annual' },
-  { label: '病假', value: 'sick' },
-  { label: '事假', value: 'personal' },
-  { label: '婚假', value: 'marriage' },
-  { label: '产假', value: 'maternity' },
-  { label: '丧假', value: 'bereavement' },
-  { label: '调休', value: 'compensatory' },
-];
 
 /** 状态筛选选项 */
 const STATUS_FILTER_OPTIONS = [
@@ -143,8 +133,8 @@ const AdminLeavePage: React.FC = () => {
       dataIndex: 'leaveType',
       width: 100,
       valueType: 'select',
-      valueEnum: Object.fromEntries(LEAVE_TYPE_OPTIONS.map((o) => [o.value, o.label])),
-      render: (v: string) => LEAVE_TYPE_OPTIONS.find((o) => o.value === v)?.label || v,
+      valueEnum: Object.fromEntries(LEAVE_TYPE_OPTIONS.map((o) => [o.value, { text: o.label }])),
+      render: (_: unknown, record: { leaveType?: string }) => leaveTypeLabel(record.leaveType),
     },
     { title: '开始时间', dataIndex: 'startTime', width: 160 },
     { title: '结束时间', dataIndex: 'endTime', width: 160 },
@@ -156,7 +146,10 @@ const AdminLeavePage: React.FC = () => {
       width: 100,
       valueType: 'select',
       valueEnum: Object.fromEntries(STATUS_FILTER_OPTIONS.map((o) => [o.value, o.label])),
-      render: (v: string) => <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>,
+      render: (_: unknown, record: { status?: string }) => {
+        const v = record.status || '';
+        return <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>;
+      },
     },
     {
       title: '操作',
@@ -223,10 +216,11 @@ const AdminLeavePage: React.FC = () => {
               page: current,
               leaveType,
               status,
+              employeeId: 0,
               keyword: searchKeyword || undefined,
               dateFrom,
               dateTo,
-            } as any);
+            });
             return {
               data: res.data?.list || [],
               total: res.data?.total || 0,

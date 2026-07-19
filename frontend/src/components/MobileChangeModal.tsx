@@ -48,6 +48,7 @@ const MobileChangeModal: React.FC<Props> = ({ open, onClose, onSuccess }) => {
       onCancel={() => { form.resetFields(); onClose(); }}
       confirmLoading={loading}
       okText="提交申请"
+      cancelText="取消"
       destroyOnClose
     >
       <Typography.Paragraph type="secondary">

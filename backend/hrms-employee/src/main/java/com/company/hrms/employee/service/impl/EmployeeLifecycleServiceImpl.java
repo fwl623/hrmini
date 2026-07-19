@@ -10,7 +10,10 @@ import com.company.hrms.employee.mapper.EmployeeMapper;
 import com.company.hrms.employee.mapper.EmployeeTransferHistoryMapper;
 import com.company.hrms.employee.service.EmployeeLifecycleService;
 import com.company.hrms.employee.vo.PendingRegularizationVO;
+import com.company.hrms.module.auth.mapper.SysUserMapper;
 import com.company.hrms.module.auth.service.InternalUserService;
+import com.company.hrms.module.org.entity.Department;
+import com.company.hrms.module.org.mapper.DepartmentMapper;
 import com.company.hrms.module.org.service.EmployeeIdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -38,6 +44,8 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
     private final InternalUserService internalUserService;
     private final EmployeeIdGenerator employeeIdGenerator;
     private final ApplicationEventPublisher eventPublisher;
+    private final DepartmentMapper departmentMapper;
+    private final SysUserMapper sysUserMapper;
 
     @Override
     public Employee requireEmployee(Long employeeId) {
@@ -46,6 +54,72 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "员工不存在: " + employeeId);
         }
         return emp;
+    }
+
+    @Override
+    public Long resolveDeptManagerUserId(Long employeeId) {
+        Employee emp = requireEmployee(employeeId);
+        // 1) 直属上级
+        Long fromManager = userIdOfEmployee(emp.getManagerId());
+        if (fromManager != null) {
+            return fromManager;
+        }
+        // 2) 沿部门树找负责人（跳过本人）
+        Long deptId = emp.getDepartmentId();
+        Set<Long> visited = new HashSet<>();
+        while (deptId != null && visited.add(deptId)) {
+            Department dept = departmentMapper.selectById(deptId);
+            if (dept == null || (dept.getDeleted() != null && dept.getDeleted() == 1)) {
+                break;
+            }
+            Long headEmpId = dept.getHeadEmployeeId();
+            if (headEmpId != null && !headEmpId.equals(emp.getId())) {
+                Long userId = userIdOfEmployee(headEmpId);
+                if (userId != null) {
+                    return userId;
+                }
+            }
+            deptId = dept.getParentId();
+        }
+        // 3) 回退：任意 DEPT_MANAGER 角色
+        List<Long> managers = sysUserMapper.selectUserIdsByRoleCode("DEPT_MANAGER");
+        if (managers != null) {
+            for (Long uid : managers) {
+                if (uid != null && !Objects.equals(uid, emp.getUserId())) {
+                    return uid;
+                }
+            }
+            if (!managers.isEmpty() && managers.get(0) != null) {
+                return managers.get(0);
+            }
+        }
+        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                "无法解析部门负责人审批人，请为员工设置直属上级或部门负责人");
+    }
+
+    @Override
+    public Long resolveHrApproverUserId(Long excludeUserId) {
+        List<Long> hrs = sysUserMapper.selectUserIdsByRoleCode("HR_STAFF");
+        if (hrs == null || hrs.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "系统中无 HR_STAFF 用户，无法派发 HR 审批");
+        }
+        for (Long uid : hrs) {
+            if (uid != null && !Objects.equals(uid, excludeUserId)) {
+                return uid;
+            }
+        }
+        return hrs.get(0);
+    }
+
+    private Long userIdOfEmployee(Long employeeId) {
+        if (employeeId == null) {
+            return null;
+        }
+        Employee e = employeeMapper.selectById(employeeId);
+        if (e == null || e.getUserId() == null) {
+            return null;
+        }
+        return e.getUserId();
     }
 
     @Override
@@ -134,8 +208,20 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
     public void markPendingResign(Long employeeId, LocalDate resignationDate) {
         Employee emp = requireEmployee(employeeId);
         int status = emp.getEmploymentStatus() == null ? -1 : emp.getEmploymentStatus();
-        if (status == STATUS_RESIGNED || status == STATUS_PENDING_RESIGN) {
-            throw new BusinessException(ErrorCode.EMPLOYEE_STATUS_INVALID, "员工已处于离职流程");
+        if (status == STATUS_RESIGNED) {
+            throw new BusinessException(ErrorCode.EMPLOYEE_STATUS_INVALID, "员工已离职，无法再次进入离职流程");
+        }
+        // 已是待离职：幂等（允许 HR 终审补完审批单状态，避免重复抛错）
+        if (status == STATUS_PENDING_RESIGN) {
+            if (resignationDate != null
+                    && (emp.getLastWorkDay() == null || !resignationDate.equals(emp.getLastWorkDay()))) {
+                Employee patch = new Employee();
+                patch.setId(employeeId);
+                patch.setLastWorkDay(resignationDate);
+                employeeMapper.updateById(patch);
+            }
+            log.info("员工已是待离职，跳过重复标记 employeeId={}", employeeId);
+            return;
         }
         Employee patch = new Employee();
         patch.setId(employeeId);
@@ -151,6 +237,12 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
     @Transactional
     public void effectResign(Long employeeId) {
         Employee emp = requireEmployee(employeeId);
+        // 已离职：仍确保账号禁用（避免只改了员工状态、账号仍可登录）
+        if (emp.getEmploymentStatus() != null && emp.getEmploymentStatus() == STATUS_RESIGNED) {
+            ensureUserDisabled(emp);
+            log.info("员工已是离职状态，补齐账号禁用后跳过 employeeId={}", employeeId);
+            return;
+        }
         if (emp.getEmploymentStatus() == null || emp.getEmploymentStatus() != STATUS_PENDING_RESIGN) {
             throw new BusinessException(ErrorCode.EMPLOYEE_STATUS_INVALID, "仅待离职员工可生效离职");
         }
@@ -163,13 +255,7 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         }
         employeeMapper.updateById(patch);
 
-        if (emp.getUserId() != null) {
-            try {
-                internalUserService.updateStatus(emp.getUserId(), 0);
-            } catch (Exception e) {
-                log.warn("离职禁用账号失败 employeeId={} userId={}: {}", employeeId, emp.getUserId(), e.getMessage());
-            }
-        }
+        ensureUserDisabled(emp);
         if (StringUtils.hasText(emp.getEmployeeNo())) {
             try {
                 employeeIdGenerator.release(emp.getEmployeeNo());
@@ -188,6 +274,18 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
                 lastWorkDay));
         log.info("员工离职生效 employeeId={} userId={} empNo={} lastWorkDay={}",
                 employeeId, emp.getUserId(), emp.getEmployeeNo(), lastWorkDay);
+    }
+
+    private void ensureUserDisabled(Employee emp) {
+        if (emp.getUserId() == null) {
+            log.warn("离职员工未绑定账号，无法禁用登录 employeeId={}", emp.getId());
+            return;
+        }
+        try {
+            internalUserService.updateStatus(emp.getUserId(), 0);
+        } catch (Exception e) {
+            log.warn("离职禁用账号失败 employeeId={} userId={}: {}", emp.getId(), emp.getUserId(), e.getMessage());
+        }
     }
 
     private PendingRegularizationVO toPendingVo(Employee emp) {

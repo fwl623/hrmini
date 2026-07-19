@@ -4,6 +4,7 @@ import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import React, { useMemo } from 'react';
 import { forceLogout } from '@/utils/authSession';
+import './layout.css';
 
 const { Header, Sider, Content } = Layout;
 
@@ -12,8 +13,7 @@ const ALL_PORTAL_MENU: MenuProps['items'] = [
   { key: '/portal/attendance', label: '考勤打卡' },
   { key: '/portal/leave', label: '我的请假' },
   { key: '/portal/overtime', label: '我的加班' },
-  { key: '/portal/payslips', label: '我的薪资' },
-  { key: '/portal/resignation', label: '离职申请' },
+  { key: '/portal/payslips', label: '我的工资条' },
   { key: '/portal/security', label: '账号安全' },
 ];
 
@@ -27,12 +27,13 @@ const PortalLayout: React.FC = () => {
     () =>
       (ALL_PORTAL_MENU ?? []).filter((item) => {
         if (!item || typeof item !== 'object' || !('key' in item)) return false;
+        // 本人工资条：用 canViewOwnPayslip，勿用管理端 canViewPayroll（会拦掉普通员工）
         if (item.key === '/portal/payslips') {
-          return access.canViewPayroll;
+          return access.canViewOwnPayslip;
         }
         return true;
       }),
-    [access.canViewPayroll],
+    [access.canViewOwnPayslip],
   );
 
   const handleLogout = async () => {
@@ -44,8 +45,13 @@ const PortalLayout: React.FC = () => {
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="light" width={200}>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
+      <Sider
+        theme="light"
+        width={200}
+        className="hrms-sider-scroll"
+        style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden' }}
+      >
         <div style={{ padding: 16, fontWeight: 600 }}>员工门户</div>
         <Menu
           mode="inline"
@@ -54,7 +60,7 @@ const PortalLayout: React.FC = () => {
           onClick={({ key }) => history.push(key)}
         />
       </Sider>
-      <Layout>
+      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Header
           style={{
             background: '#fff',
@@ -62,6 +68,7 @@ const PortalLayout: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexShrink: 0,
           }}
         >
           <Typography.Text>员工自助</Typography.Text>
@@ -72,7 +79,7 @@ const PortalLayout: React.FC = () => {
             </Space>
           </Dropdown>
         </Header>
-        <Content style={{ margin: 24 }}>
+        <Content style={{ margin: 24, overflow: 'auto', flex: 1, minHeight: 0 }}>
           <Outlet />
         </Content>
       </Layout>

@@ -41,4 +41,14 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
             LIMIT 1
             """)
     Long selectDeptIdByEmployeeId(@Param("employeeId") Long employeeId);
+
+    /** 按角色查启用用户（审批派单用） */
+    @Select("""
+            SELECT u.id FROM sys_user u
+            INNER JOIN sys_user_role ur ON ur.user_id = u.id
+            INNER JOIN sys_role r ON r.id = ur.role_id
+            WHERE r.code = #{roleCode} AND u.status = 1
+            ORDER BY u.id ASC
+            """)
+    List<Long> selectUserIdsByRoleCode(@Param("roleCode") String roleCode);
 }

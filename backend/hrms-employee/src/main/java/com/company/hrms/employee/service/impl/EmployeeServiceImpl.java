@@ -277,15 +277,20 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     private void updatePersonal(Long employeeId, LocalDate birthday, String addr,
                                  String contact, String phone) {
+        // 无任何个人字段变更时跳过，避免空 insert 触发 id_number_enc NOT NULL → 90001
+        if (birthday == null && addr == null && contact == null && phone == null) {
+            return;
+        }
         EmployeePersonal personal = employeePersonalMapper.selectById(employeeId);
-        boolean exists = personal != null;
-        if (personal == null) { personal = new EmployeePersonal(); personal.setEmployeeId(employeeId); }
+        if (personal == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID,
+                    "员工个人信息未建档，无法更新住址/紧急联系人等字段");
+        }
         if (birthday != null) personal.setBirthday(birthday);
         if (addr != null) personal.setResidenceAddress(addr);
         if (contact != null) personal.setEmergencyContact(contact);
         if (phone != null) personal.setEmergencyPhone(phone);
-        if (exists) employeePersonalMapper.updateById(personal);
-        else employeePersonalMapper.insert(personal);
+        employeePersonalMapper.updateById(personal);
     }
 
     private EmployeeListVO toListVO(Employee emp) {
@@ -293,6 +298,8 @@ public class EmployeeServiceImpl implements EmployeeService {
         vo.setEmployeeId(emp.getId());
         vo.setEmpNo(emp.getEmployeeNo());
         vo.setName(emp.getName());
+        vo.setDepartment(emp.getDepartmentName());
+        vo.setPosition(emp.getPositionName());
         vo.setGrade(emp.getGrade());
         vo.setEmploymentStatus(formatStatus(emp.getEmploymentStatus()));
         vo.setHireDate(emp.getHireDate());

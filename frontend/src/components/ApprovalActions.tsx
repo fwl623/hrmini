@@ -11,7 +11,7 @@ export interface ApprovalActionsProps {
   onAction?: (
     action: ApprovalActionType,
     payload: { comment?: string; targetUserId?: number },
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
 }
 
 /**
@@ -34,7 +34,10 @@ export default function ApprovalActions({
     payload: { comment?: string; targetUserId?: number } = {},
   ) => {
     try {
-      await onAction?.(action, payload);
+      const deferred = await onAction?.(action, payload);
+      if (deferred === false) {
+        return;
+      }
       const tip =
         action === 'REMIND'
           ? '已催办'

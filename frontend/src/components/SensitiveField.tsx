@@ -64,6 +64,7 @@ const SensitiveField: React.FC<Props> = ({ employeeId, field, label, defaultValu
         onCancel={() => { setOpen(false); setPassword(''); }}
         confirmLoading={loading}
         okText="验证并查看"
+        cancelText="取消"
       >
         <Typography.Paragraph type="secondary">
           查看敏感信息需验证身份，请输入您的登录密码。

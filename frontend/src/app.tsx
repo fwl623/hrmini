@@ -1,6 +1,9 @@
 import type { RequestConfig } from '@umijs/max';
 import { history, request as umiRequest } from '@umijs/max';
 import { message, Modal } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import dayjs from 'dayjs';
+import 'dayjs/locale/zh-cn';
 import { getProfile, toCurrentUser } from '@/services/auth';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { useUserStore } from '@/stores/userStore';
@@ -14,6 +17,13 @@ import {
   isAuthEndpoint,
   isUnauthorizedError,
 } from '@/utils/requestError';
+
+dayjs.locale('zh-cn');
+
+/** Ant Design 全局中文（Modal 取消 →「取消」等） */
+export const antd = {
+  locale: zhCN,
+};
 
 const PUBLIC_PATHS = ['/login'];
 

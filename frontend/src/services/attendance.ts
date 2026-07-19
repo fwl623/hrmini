@@ -293,14 +293,24 @@ export async function getLeaveBalances(employeeId?: number) {
  * 请假列表（分页）
  *
  * 按筛选条件分页查询员工的请假申请记录。
+ * 管理端应传 employeeId=0 查全部；门户不传则查当前登录员工。
  *
  * @param params - 查询参数
  * @param params.page - 当前页码（从 1 开始）
  * @param params.leaveType - 请假类型筛选（可选），如 "ANNUAL"（年假）、"SICK"（病假）、"PERSONAL"（事假）等
  * @param params.status - 审批状态筛选（可选），如 "PENDING"（待审批）、"APPROVED"（已通过）、"REJECTED"（已驳回）等
+ * @param params.employeeId - 员工 ID；传 0 表示查全部（管理端）
  * @returns 返回分页后的请假申请列表
  */
-export async function getLeaveApplications(params: { page?: number; leaveType?: string; status?: string }) {
+export async function getLeaveApplications(params: {
+  page?: number;
+  leaveType?: string;
+  status?: string;
+  employeeId?: number;
+  keyword?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
   return request<API.Result<API.Page<API.LeaveApplicationVO>>>(`/api/v1/leaves/applications`, {
     method: 'GET',
     params,
@@ -346,12 +356,20 @@ export async function calcLeaveDays(params: { startTime: string; endTime: string
  * 加班列表（分页）
  *
  * 分页查询加班申请记录。
+ * 管理端应传 employeeId=0 查全部；门户不传则查当前登录员工。
  *
  * @param params - 查询参数
  * @param params.page - 当前页码（从 1 开始）
+ * @param params.employeeId - 员工 ID；传 0 表示查全部（管理端）
  * @returns 返回分页后的加班申请列表
  */
-export async function getOvertimeApplications(params: { page?: number }) {
+export async function getOvertimeApplications(params: {
+  page?: number;
+  employeeId?: number;
+  keyword?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
   return request<API.Result<API.Page<API.OvertimeApplicationVO>>>(`/api/v1/overtime/applications`, {
     method: 'GET',
     params,

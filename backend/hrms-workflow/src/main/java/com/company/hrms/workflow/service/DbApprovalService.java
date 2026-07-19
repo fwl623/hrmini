@@ -58,6 +58,7 @@ public class DbApprovalService implements ApprovalEngineService {
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
     private final DelegationService delegationService;
+    private final ResignationService resignationService;
 
     public DbApprovalService(ApprovalInstanceMapper instanceMapper,
                              ApprovalTaskMapper taskMapper,
@@ -67,7 +68,8 @@ public class DbApprovalService implements ApprovalEngineService {
                              ApprovalNotifyPublisher notifyPublisher,
                              ApplicationEventPublisher eventPublisher,
                              ObjectMapper objectMapper,
-                             DelegationService delegationService) {
+                             DelegationService delegationService,
+                             @Lazy ResignationService resignationService) {
         this.instanceMapper = instanceMapper;
         this.taskMapper = taskMapper;
         this.logMapper = logMapper;
@@ -78,6 +80,7 @@ public class DbApprovalService implements ApprovalEngineService {
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
         this.delegationService = delegationService;
+        this.resignationService = resignationService;
     }
 
     @Override
@@ -258,6 +261,17 @@ public class DbApprovalService implements ApprovalEngineService {
         biz.put("businessKey", instance.getBusinessKey());
         biz.put("title", display.title);
         biz.put("businessSummary", display.businessSummary);
+        if ("RESIGNATION".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = Long.parseLong(instance.getBusinessKey());
+                biz.putAll(resignationService.resignationBusinessDetail(appId));
+                boolean needHandover = task.getNodeOrder() != null && task.getNodeOrder() == 1
+                        && "PENDING".equalsIgnoreCase(task.getStatus());
+                biz.put("needHandoverConfirm", needHandover);
+            } catch (Exception ignored) {
+                biz.put("needHandoverConfirm", false);
+            }
+        }
         detail.setBusinessDetail(biz);
 
         detail.setTimeline(buildTimeline(instance.getId()));
@@ -326,12 +340,28 @@ public class DbApprovalService implements ApprovalEngineService {
             return;
         }
 
+        // 正式离职第一岗：部门负责人须确认工作交接人
+        if ("APPROVE".equals(action)
+                && "RESIGNATION".equalsIgnoreCase(instance.getProcessType())
+                && task.getNodeOrder() != null
+                && task.getNodeOrder() == 1) {
+            try {
+                Long appId = Long.parseLong(instance.getBusinessKey());
+                resignationService.confirmHandover(appId, body.getHandoverEmployeeId());
+            } catch (NumberFormatException ex) {
+                throw new BusinessException(ErrorCode.PARAM_INVALID, "离职单关联异常");
+            }
+        }
+
         task.setStatus("APPROVE".equals(action) ? "APPROVED" : "REJECTED");
         task.setComment(body.getComment());
         task.setCompletedAt(now);
         taskMapper.updateById(task);
         writeLog(instance.getId(), taskId, userId, action, body.getComment(),
-                "PENDING", task.getStatus(), action);
+                "PENDING", task.getStatus(),
+                "APPROVE".equals(action) && body.getHandoverEmployeeId() != null
+                        ? action + "（交接人#" + body.getHandoverEmployeeId() + "）"
+                        : action);
 
         if ("REJECT".equals(action)) {
             instance.setStatus("REJECTED");

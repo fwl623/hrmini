@@ -2,10 +2,13 @@ import { Tag } from 'antd';
 
 const STATUS_META: Record<string, { color: string; label: string }> = {
   draft: { color: 'default', label: '草稿' },
+  DRAFT: { color: 'default', label: '草稿' },
   pending: { color: 'processing', label: '审批中' },
+  PENDING: { color: 'processing', label: '待审批' },
   approved_pending: { color: 'warning', label: '待入职' },
   onboarded: { color: 'success', label: '已入职' },
   rejected: { color: 'error', label: '已拒绝' },
+  REJECTED: { color: 'error', label: '已驳回' },
   abandoned: { color: 'error', label: '已放弃' },
   approved: { color: 'success', label: '已通过' },
   APPROVED: { color: 'success', label: '已通过' },
@@ -14,6 +17,7 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   RESIGNED: { color: 'default', label: '已离职' },
   resigned: { color: 'default', label: '已离职' },
   cancelled: { color: 'default', label: '已取消' },
+  CANCELLED: { color: 'default', label: '已撤销' },
   PASS: { color: 'success', label: '转正通过' },
   EXTEND: { color: 'warning', label: '延长试用' },
   FAIL: { color: 'error', label: '不通过' },

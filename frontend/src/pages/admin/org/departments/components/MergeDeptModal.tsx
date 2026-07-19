@@ -68,6 +68,7 @@ const MergeDeptModal: React.FC<MergeDeptModalProps> = ({
       confirmLoading={loading}
       destroyOnClose
       okText="确认合并"
+      cancelText="取消"
       okButtonProps={{ danger: true }}
       width={480}
     >

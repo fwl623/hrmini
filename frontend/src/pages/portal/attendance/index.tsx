@@ -242,8 +242,8 @@ const AttendancePunchPage: React.FC = () => {
           </Form.Item>
           <Form.Item name="type" label="补卡类型" rules={[{ required: true, message: '请选择类型' }]}>
             <Select options={[
-              { label: '上班卡 (IN)', value: 'in' },
-              { label: '下班卡 (OUT)', value: 'out' },
+              { label: '上班卡', value: 'in' },
+              { label: '下班卡', value: 'out' },
             ]} />
           </Form.Item>
           <Form.Item name="punchTime" label="补卡时间" rules={[{ required: true, message: '请选择时间' }]}>

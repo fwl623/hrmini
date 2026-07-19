@@ -11,6 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -59,6 +61,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Result<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Result.error(ErrorCode.PARAM_INVALID.getCode(), "参数类型错误: " + ex.getName()));
+    }
+
+    /** 缺必填 query/path 参数 → 10001，勿落 90001 */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Result<Void>> handleMissingParam(MissingServletRequestParameterException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Result.error(ErrorCode.PARAM_INVALID.getCode(), "缺少参数: " + ex.getParameterName()));
+    }
+
+    /** 缺必填 Header → 10001 */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<Result<Void>> handleMissingHeader(MissingRequestHeaderException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Result.error(ErrorCode.PARAM_INVALID.getCode(), "缺少请求头: " + ex.getHeaderName()));
     }
 
     @ExceptionHandler(Exception.class)

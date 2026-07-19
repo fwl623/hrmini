@@ -78,7 +78,7 @@ public class EmployeeController {
     public Result<SensitiveFieldVO> getSensitiveField(
             @PathVariable Long id,
             @PathVariable String field,
-            @RequestHeader("X-Sensitive-Password") String password) {
+            @RequestHeader(value = "X-Sensitive-Password", required = false) String password) {
         return Result.success(sensitiveFieldService.reveal(id, field, password));
     }
 

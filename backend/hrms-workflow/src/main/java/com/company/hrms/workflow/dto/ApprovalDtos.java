@@ -73,6 +73,8 @@ public final class ApprovalDtos {
         private String action;
         private String comment;
         private Long targetUserId;
+        /** 正式离职：部门负责人同意时必填，指定工作交接人 */
+        private Long handoverEmployeeId;
     }
 
     @Data

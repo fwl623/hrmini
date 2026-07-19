@@ -110,7 +110,10 @@ const AdminOvertimePage: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      render: (v: string) => <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>,
+      render: (_: unknown, record: { status?: string }) => {
+        const v = record.status || '';
+        return <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>;
+      },
     },
   ];
 
@@ -160,10 +163,11 @@ const AdminOvertimePage: React.FC = () => {
           try {
             const res = await getOvertimeApplications({
               page: current,
+              employeeId: 0,
               keyword: searchKeyword || undefined,
               dateFrom,
               dateTo,
-            } as any);
+            });
             return {
               data: res.data?.list || [],
               total: res.data?.total || 0,

@@ -66,7 +66,8 @@ public class SensitiveFieldServiceImpl implements SensitiveFieldService {
                     decrypted = aesEncryptUtil.decrypt(personal.getIdNumberEnc());
                 } catch (Exception e) {
                     log.error("身份证解密失败: employeeId={}", employeeId, e);
-                    throw new BusinessException(ErrorCode.SYSTEM_ERROR, "敏感字段解密失败");
+                    // 密文损坏/占位串：业务可解释错误，勿落 90001
+                    throw new BusinessException(ErrorCode.PARAM_INVALID, "敏感字段解密失败，请检查档案密文");
                 }
             }
             case "bankAccount" -> {
@@ -78,7 +79,7 @@ public class SensitiveFieldServiceImpl implements SensitiveFieldService {
                     decrypted = aesEncryptUtil.decrypt(bank.getBankAccountEnc());
                 } catch (Exception e) {
                     log.error("银行卡解密失败: employeeId={}", employeeId, e);
-                    throw new BusinessException(ErrorCode.SYSTEM_ERROR, "敏感字段解密失败");
+                    throw new BusinessException(ErrorCode.PARAM_INVALID, "敏感字段解密失败，请检查档案密文");
                 }
             }
             default -> throw new BusinessException(ErrorCode.PARAM_INVALID, "不支持的敏感字段: " + field);

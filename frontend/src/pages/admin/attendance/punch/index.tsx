@@ -36,7 +36,7 @@ const statusLabelMap: Record<string, string> = {
 /* 打卡来源 → 中文标签 */
 const sourceLabelMap: Record<string, string> = {
   CARD: '打卡机',
-  APP: 'APP',
+  APP: '手机端',
   ADMIN: '代打',
   FIX: '补卡',
 };
@@ -319,8 +319,8 @@ const PunchAdminPage: React.FC = () => {
           <Form.Item name="type" label="打卡类型" rules={[{ required: true, message: '请选择类型' }]}>
             <Select
               options={[
-                { label: '上班打卡 (IN)', value: 'in' },
-                { label: '下班打卡 (OUT)', value: 'out' },
+                { label: '上班打卡', value: 'in' },
+                { label: '下班打卡', value: 'out' },
               ]}
             />
           </Form.Item>
@@ -355,8 +355,8 @@ const PunchAdminPage: React.FC = () => {
           <Form.Item name="type" label="补卡类型" rules={[{ required: true, message: '请选择类型' }]}>
             <Select
               options={[
-                { label: '上班卡 (IN)', value: 'in' },
-                { label: '下班卡 (OUT)', value: 'out' },
+                { label: '上班卡', value: 'in' },
+                { label: '下班卡', value: 'out' },
               ]}
             />
           </Form.Item>

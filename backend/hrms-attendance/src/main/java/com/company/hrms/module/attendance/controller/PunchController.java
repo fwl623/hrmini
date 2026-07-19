@@ -41,7 +41,7 @@ public class PunchController {
      */
     @PostMapping("/punch")
     public Result<Map<String, String>> punch(@RequestBody PunchDTO dto) {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+        Long employeeId = requireEmployeeId();
         String punchStatus = punchService.punch(employeeId, dto);
         return Result.success(Map.of("punchStatus", punchStatus));
     }
@@ -54,8 +54,7 @@ public class PunchController {
      */
     @GetMapping("/punch/today")
     public Result<TodayPunchVO> todayStatus() {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        return Result.success(punchService.getTodayStatus(employeeId));
+        return Result.success(punchService.getTodayStatus(requireEmployeeId()));
     }
 
     /**
@@ -81,8 +80,7 @@ public class PunchController {
      */
     @PostMapping("/punch-fix")
     public Result<Map<String, Object>> applyFix(@RequestBody PunchFixDTO dto) {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        Map<String, Object> result = punchService.applyFix(employeeId, dto);
+        Map<String, Object> result = punchService.applyFix(requireEmployeeId(), dto);
         return Result.success(result);
     }
 
@@ -94,8 +92,16 @@ public class PunchController {
      */
     @GetMapping("/punch-fix/quota")
     public Result<QuotaVO> fixQuota() {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        return Result.success(punchService.getFixQuota(employeeId));
+        return Result.success(punchService.getFixQuota(requireEmployeeId()));
+    }
+
+    private static Long requireEmployeeId() {
+        Long employeeId = SecurityUtils.requireLoginUser().getEmployeeId();
+        if (employeeId == null) {
+            throw new com.company.hrms.common.exception.BusinessException(
+                    com.company.hrms.common.exception.ErrorCode.PARAM_INVALID, "当前账号未关联员工档案");
+        }
+        return employeeId;
     }
 
 }

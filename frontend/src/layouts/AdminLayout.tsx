@@ -4,6 +4,7 @@ import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import React, { useMemo } from 'react';
 import { forceLogout } from '@/utils/authSession';
+import './layout.css';
 
 const { Header, Sider, Content } = Layout;
 
@@ -45,7 +46,9 @@ const AdminLayout: React.FC = () => {
     workbench: true,
     org: access.canViewDept || access.canViewPosition,
     employee: access.canViewEmployee,
-    workflow: access.canManageWorkflow || access.canApprove,
+    lifecycle: access.canManageWorkflow || access.canHr,
+    approval: access.canApprove || access.canManageWorkflow,
+    resignation: access.canManageResignation,
     attendance: access.canManageAttendance,
     payroll: access.canViewPayroll,
     system: access.canManageSystem,
@@ -73,14 +76,21 @@ const AdminLayout: React.FC = () => {
         ],
       },
       {
-        key: '/admin/workflow',
-        label: '入转调离/审批',
-        accessKey: 'workflow',
+        key: 'group-lifecycle',
+        label: '入转调离',
+        accessKey: 'lifecycle',
         children: [
           { key: '/admin/onboarding', label: '入职管理' },
           { key: '/admin/regularization', label: '转正管理' },
           { key: '/admin/transfers', label: '调岗管理' },
-          { key: '/admin/resignation', label: '离职管理' },
+          { key: '/admin/resignation', label: '离职管理', accessKey: 'resignation' },
+        ],
+      },
+      {
+        key: 'group-approval',
+        label: '审批管理',
+        accessKey: 'approval',
+        children: [
           { key: '/admin/approval', label: '审批中心' },
           { key: '/admin/delegation', label: '审批委托' },
         ],
@@ -137,7 +147,19 @@ const AdminLayout: React.FC = () => {
   }, [access]);
 
   const openKeys = useMemo(() => {
-    const parts = location.pathname.split('/').filter(Boolean);
+    const path = location.pathname;
+    if (
+      path.startsWith('/admin/onboarding') ||
+      path.startsWith('/admin/regularization') ||
+      path.startsWith('/admin/transfers') ||
+      path.startsWith('/admin/resignation')
+    ) {
+      return ['group-lifecycle'];
+    }
+    if (path.startsWith('/admin/approval') || path.startsWith('/admin/delegation')) {
+      return ['group-approval'];
+    }
+    const parts = path.split('/').filter(Boolean);
     if (parts.length >= 2) {
       return [`/${parts[0]}/${parts[1]}`];
     }
@@ -153,18 +175,26 @@ const AdminLayout: React.FC = () => {
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="light" width={220}>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
+      <Sider
+        theme="light"
+        width={220}
+        className="hrms-sider-scroll"
+        style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden' }}
+      >
         <div style={{ padding: 16, fontWeight: 600 }}>HRMS 管理后台</div>
         <Menu
           mode="inline"
           selectedKeys={[location.pathname]}
           defaultOpenKeys={openKeys}
           items={menuItems}
-          onClick={({ key }) => history.push(key)}
+          onClick={({ key }) => {
+            if (String(key).startsWith('group-')) return;
+            history.push(key);
+          }}
         />
       </Sider>
-      <Layout>
+      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Header
           style={{
             background: '#fff',
@@ -172,6 +202,7 @@ const AdminLayout: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexShrink: 0,
           }}
         >
           <Typography.Text>人力资源管理系统</Typography.Text>
@@ -182,7 +213,7 @@ const AdminLayout: React.FC = () => {
             </Space>
           </Dropdown>
         </Header>
-        <Content style={{ margin: 24 }}>
+        <Content style={{ margin: 24, overflow: 'auto', flex: 1, minHeight: 0 }}>
           <Outlet />
         </Content>
       </Layout>
