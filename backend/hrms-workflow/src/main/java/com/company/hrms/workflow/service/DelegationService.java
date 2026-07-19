@@ -60,6 +60,7 @@ public class DelegationService {
         if (body.getEndDate().isBefore(body.getStartDate())) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "结束日期不能早于开始日期");
         }
+        expireOverdue(LocalDate.now());
         Long activeCount = delegationMapper.selectCount(new LambdaQueryWrapper<ApprovalDelegation>()
                 .eq(ApprovalDelegation::getDelegatorId, delegatorId)
                 .eq(ApprovalDelegation::getStatus, STATUS_ACTIVE));
@@ -104,7 +105,9 @@ public class DelegationService {
     }
 
     public long resolveAssignee(long assigneeUserId, LocalDate onDate) {
-        return findActive(assigneeUserId, onDate)
+        LocalDate day = onDate == null ? LocalDate.now() : onDate;
+        expireOverdue(day);
+        return findActive(assigneeUserId, day)
                 .map(ApprovalDelegation::getDelegateUserId)
                 .orElse(assigneeUserId);
     }
@@ -120,6 +123,26 @@ public class DelegationService {
                         .last("LIMIT 1"))
                 .stream()
                 .findFirst();
+    }
+
+    /**
+     * 将 endDate &lt; onDate 的 ACTIVE 委托自动置为 CANCELLED（含边界：结束日当天仍有效）。
+     */
+    @Transactional
+    public int expireOverdue(LocalDate onDate) {
+        LocalDate day = onDate == null ? LocalDate.now() : onDate;
+        List<ApprovalDelegation> expired = delegationMapper.selectList(new LambdaQueryWrapper<ApprovalDelegation>()
+                .eq(ApprovalDelegation::getStatus, STATUS_ACTIVE)
+                .lt(ApprovalDelegation::getEndDate, day));
+        int n = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (ApprovalDelegation row : expired) {
+            row.setStatus(STATUS_CANCELLED);
+            row.setCancelledAt(now);
+            delegationMapper.updateById(row);
+            n++;
+        }
+        return n;
     }
 
     private ApprovalDtos.DelegationVO toVo(ApprovalDelegation row) {

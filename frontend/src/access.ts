@@ -26,9 +26,16 @@ export default function access(initialState: API.InitialState) {
     canManager: roleCode === ROLES.DEPT_MANAGER,
     canEmployee: roles.includes(ROLES.EMPLOYEE),
     canPortal: roles.includes(ROLES.EMPLOYEE),
+    /** 管理端薪资全量（账套/核算等）；SYS_ADMIN 禁入 */
     canViewPayroll:
       roleCode !== ROLES.SYS_ADMIN &&
       (has('payroll:view') || roleIn(roleCode, [ROLES.HR_STAFF, ROLES.FINANCE])),
+    /** 门户本人工资条（PRD：普通员工可看个人历史工资条/趋势；≠ 管理端薪资全量） */
+    canViewOwnPayslip:
+      roleCode !== ROLES.SYS_ADMIN &&
+      (roleCode === ROLES.EMPLOYEE ||
+        roles.includes(ROLES.EMPLOYEE) ||
+        roleIn(roleCode, [ROLES.HR_STAFF, ROLES.FINANCE, ROLES.DEPT_MANAGER])),
     canApprove:
       !isFinance &&
       (has('approval:handle') ||
@@ -62,6 +69,8 @@ export default function access(initialState: API.InitialState) {
         has('approval:handle') ||
         isHr ||
         roleCode === ROLES.DEPT_MANAGER),
+    /** 离职管理（发起正式离职）：仅 HR/管理员，部门主管只走审批中心 */
+    canManageResignation: isHr,
     canManageSystem: roleCode === ROLES.SYS_ADMIN || has('menu:system'),
     canViewEmployee:
       !isFinance &&

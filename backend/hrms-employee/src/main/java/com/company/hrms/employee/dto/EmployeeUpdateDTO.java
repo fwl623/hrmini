@@ -8,7 +8,8 @@ import java.time.LocalDate;
  * 员工编辑请求参数（HR管理端）
  * <p>
  * PUT /api/v1/employees/{id}
- * 仅允许更新白名单字段，其它字段（如 departmentId、positionId、mobile）拒绝并返回 20003。
+ * 仅允许更新白名单字段；流程字段（departmentId / mobile 等）即使传入也会被校验并返回 20003。
+ * 流程字段必须出现在本 DTO 中，否则 Jackson 会静默丢弃，无法触发白名单拦截。
  * </p>
  */
 @Data
@@ -37,4 +38,12 @@ public class EmployeeUpdateDTO {
 
     /** 工作地点 */
     private String workLocation;
+
+    // ---- 流程字段：不可直接 PUT，仅用于 rejectFlowFields 拦截 → 20003 ----
+    private Long departmentId;
+    private Long positionId;
+    private String grade;
+    private Long managerId;
+    private String mobile;
+    private String idNumber;
 }

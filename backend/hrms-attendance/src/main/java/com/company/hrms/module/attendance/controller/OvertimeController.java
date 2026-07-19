@@ -1,6 +1,8 @@
 package com.company.hrms.module.attendance.controller;
 
 import com.company.hrms.attendance.entity.OvertimeApplication;
+import com.company.hrms.common.exception.BusinessException;
+import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
@@ -36,12 +38,15 @@ public class OvertimeController {
     @GetMapping("/applications")
     public Result<PageResult<OvertimeApplicationVO>> list(PageParam pageParam,
                                                           @RequestParam(required = false) Long employeeId) {
-        // employeeId=0 表示查全部（管理端），null 查本人（门户端）
+        // employeeId=0 查全部（管理端）；不传则查本人（门户）
         if (employeeId == null) {
             employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+            if (employeeId == null) {
+                throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工，无法查询本人加班");
+            }
         }
-        return Result.success(overtimeService.pageApplications(pageParam,
-                employeeId == 0 ? null : employeeId));
+        Long filterEmployeeId = employeeId == 0L ? null : employeeId;
+        return Result.success(overtimeService.pageApplications(pageParam, filterEmployeeId));
     }
 
     /**

@@ -3,6 +3,8 @@ package com.company.hrms.workflow.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
+import com.company.hrms.common.security.LoginUser;
+import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.employee.dto.TransferEffectDTO;
 import com.company.hrms.employee.entity.Employee;
@@ -50,6 +52,7 @@ public class TransferService {
     }
 
     public PageResult<LifecycleDtos.TransferVO> list(int page, int pageSize, String status) {
+        requireHrOrAdmin();
         LambdaQueryWrapper<TransferApplication> q = new LambdaQueryWrapper<TransferApplication>()
                 .orderByDesc(TransferApplication::getId);
         if (status != null && !status.isBlank()) {
@@ -67,6 +70,7 @@ public class TransferService {
     }
 
     public LifecycleDtos.TransferVO detail(Long id) {
+        requireHrOrAdmin();
         TransferApplication app = mapper.selectById(id);
         if (app == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "调岗申请不存在");
@@ -76,6 +80,8 @@ public class TransferService {
 
     @Transactional
     public LifecycleDtos.TransferVO create(LifecycleDtos.TransferCreateRequest req) {
+        // TC-TRF-004 / BUG-008：仅 HR/管理员可发起调岗，前端藏菜单不够
+        requireHrOrAdmin();
         if (req == null || req.getEmployeeId() == null || req.getNewDepartmentId() == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "employeeId / newDepartmentId 必填");
         }
@@ -142,6 +148,7 @@ public class TransferService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "APPROVING", "PENDING");
         TransferEffectDTO dto = new TransferEffectDTO();
         dto.setTransferAppId(app.getId());
         dto.setNewDepartmentId(app.getNewDepartmentId());
@@ -161,8 +168,22 @@ public class TransferService {
         if (app == null) {
             return;
         }
+        requireStatus(app.getStatus(), "APPROVING", "PENDING");
         app.setStatus(withdrawn ? "CANCELLED" : "REJECTED");
         mapper.updateById(app);
+    }
+
+    private static void requireStatus(String current, String... allowed) {
+        if (current == null || current.isBlank()) {
+            throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "申请状态为空，无法流转");
+        }
+        for (String a : allowed) {
+            if (a.equalsIgnoreCase(current)) {
+                return;
+            }
+        }
+        throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID,
+                "非法状态转换: current=" + current + ", allowed=" + String.join("/", allowed));
     }
 
     private LifecycleDtos.TransferVO toVo(TransferApplication app, boolean withNodes) {
@@ -223,5 +244,14 @@ public class TransferService {
                     .orElse(""));
         }
         return vo;
+    }
+
+    /** PRD / TC-TRF-004：仅 HR / 系统管理员可发起与查看调岗管理接口 */
+    private void requireHrOrAdmin() {
+        LoginUser login = SecurityUtils.getLoginUser();
+        if (login == null
+                || (!login.hasRole("HR_STAFF") && !login.hasRole("SYS_ADMIN"))) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅 HR/管理员可发起调岗");
+        }
     }
 }

@@ -27,6 +27,21 @@ public final class DataScopeSqlBuilder {
         };
     }
 
+    /**
+     * 员工表别名 e 的默认片段（不依赖 @DataScope / Aspect，供 Service 直接注入 ${dataScope}）。
+     */
+    public static String buildForEmployeeAlias(LoginUser user) {
+        if (user == null) {
+            return " AND 1=0";
+        }
+        DataScopeType scope = user.getDataScope() == null ? DataScopeType.SELF : user.getDataScope();
+        return switch (scope) {
+            case ALL, PAYROLL, NONE_PAYROLL -> "";
+            case DEPT_TREE -> buildDeptTree(user.getDeptId(), "e", "department_id");
+            case SELF, AUTO -> buildSelf(user.getEmployeeId(), "e", "id");
+        };
+    }
+
     private static String buildSelf(Long employeeId, String empAlias, String empColumn) {
         if (employeeId == null || employeeId <= 0) {
             return " AND 1=0";

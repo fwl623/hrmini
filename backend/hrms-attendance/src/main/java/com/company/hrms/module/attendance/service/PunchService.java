@@ -262,25 +262,8 @@ public class PunchService {
             throw new BusinessException(ErrorCode.ATTENDANCE_MONTH_LOCKED, "考勤月已锁定，请联系 HR 解锁");
         }
 
-        // 2. 校验补卡配额
-        String quotaKey = SUPPLEMENT_KEY + employeeId + ":" + ym;
-        String usedStr = stringRedisTemplate.opsForValue().get(quotaKey);
-        int usedQuota = 0;
-        if (usedStr != null) {
-            usedQuota = Integer.parseInt(usedStr);
-        } else {
-            // Redis 无缓存，从 DB 查询并写入 Redis（加锁避免并发）
-            synchronized (this) {
-                usedStr = stringRedisTemplate.opsForValue().get(quotaKey);
-                if (usedStr == null) { // 双重检查
-                    usedQuota = attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
-                    stringRedisTemplate.opsForValue().set(quotaKey, String.valueOf(usedQuota),
-                            getSecondsUntilEndOfMonth(fixDate), TimeUnit.SECONDS);
-                } else {
-                    usedQuota = Integer.parseInt(usedStr);
-                }
-            }
-        }
+        // 2. 校验补卡配额（Redis 不可用时回落 DB）
+        int usedQuota = resolveUsedQuota(employeeId, ym, fixDate);
 
         if (usedQuota >= MAX_SUPPLEMENT_QUOTA) {
             throw new BusinessException(ErrorCode.MAKEUP_LIMIT_EXCEEDED, "每月最多补卡 " + MAX_SUPPLEMENT_QUOTA + " 次");
@@ -310,10 +293,14 @@ public class PunchService {
         supplement.setInstanceId(approval.getInstanceId());
         attendanceSupplementMapper.updateById(supplement);
 
-        // 5. Redis 原子自增
-        stringRedisTemplate.opsForValue().increment(quotaKey);
-        // 确保 TTL
-        stringRedisTemplate.expire(quotaKey, getSecondsUntilEndOfMonth(fixDate), TimeUnit.SECONDS);
+        // 5. Redis 原子自增（失败仅记日志，以 DB 计数为准）
+        String quotaKey = SUPPLEMENT_KEY + employeeId + ":" + ym;
+        try {
+            stringRedisTemplate.opsForValue().increment(quotaKey);
+            stringRedisTemplate.expire(quotaKey, getSecondsUntilEndOfMonth(fixDate), TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("补卡配额 Redis 自增失败（已落库）: empId={}, err={}", employeeId, e.getMessage());
+        }
 
         log.info("补卡申请: empId={}, date={}, type={}, id={}, instanceId={}",
                 employeeId, dto.getPunchDate(), punchType, supplement.getId(), approval.getInstanceId());
@@ -329,20 +316,32 @@ public class PunchService {
      * 补卡剩余次数
      */
     public QuotaVO getFixQuota(Long employeeId) {
-        String ym = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM"));
-        String quotaKey = SUPPLEMENT_KEY + employeeId + ":" + ym;
-
-        String usedStr = stringRedisTemplate.opsForValue().get(quotaKey);
-        int usedQuota = 0;
-        if (usedStr != null) {
-            usedQuota = Integer.parseInt(usedStr);
-        } else {
-            usedQuota = attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
-            stringRedisTemplate.opsForValue().set(quotaKey, String.valueOf(usedQuota),
-                    getSecondsUntilEndOfMonth(LocalDate.now()), TimeUnit.SECONDS);
+        if (employeeId == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未关联员工档案");
         }
-
+        String ym = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM"));
+        int usedQuota = resolveUsedQuota(employeeId, ym, LocalDate.now());
         return new QuotaVO(MAX_SUPPLEMENT_QUOTA, usedQuota, Math.max(0, MAX_SUPPLEMENT_QUOTA - usedQuota));
+    }
+
+    /**
+     * 读配额：Redis 优先，失败或未命中则回落 DB，避免 Redis 不可用直接 90001。
+     */
+    private int resolveUsedQuota(Long employeeId, String ym, LocalDate refDate) {
+        String quotaKey = SUPPLEMENT_KEY + employeeId + ":" + ym;
+        try {
+            String usedStr = stringRedisTemplate.opsForValue().get(quotaKey);
+            if (usedStr != null) {
+                return Integer.parseInt(usedStr);
+            }
+            int usedQuota = attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
+            stringRedisTemplate.opsForValue().set(quotaKey, String.valueOf(usedQuota),
+                    getSecondsUntilEndOfMonth(refDate), TimeUnit.SECONDS);
+            return usedQuota;
+        } catch (Exception e) {
+            log.warn("补卡配额 Redis 不可用，回落 DB: empId={}, ym={}, err={}", employeeId, ym, e.getMessage());
+            return attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
+        }
     }
 
     // ========== 私有方法 ==========

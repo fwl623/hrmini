@@ -14,16 +14,22 @@ public interface AssigneeResolver {
 
     long resolve(ProcessNodeDef node, Map<String, Object> variables);
 
-    /** 开发期默认实现 */
+    /**
+     * 默认解析：优先用节点上已写入的真实 userId（业务侧解析部门负责人/HR），
+     * 否则回退 DevAssignees 开发桩。
+     */
     class DevAssigneeResolver implements AssigneeResolver {
         @Override
         public long resolve(ProcessNodeDef node, Map<String, Object> variables) {
-            String type = node.getAssigneeType() == null ? "" : node.getAssigneeType();
+            if (node != null && node.getAssigneeUserId() != null) {
+                return node.getAssigneeUserId();
+            }
+            String type = node == null || node.getAssigneeType() == null ? "" : node.getAssigneeType();
             return switch (type) {
                 case "NEW_DEPT_MANAGER" -> DevAssignees.NEW_DEPT_MANAGER;
                 case "ROLE", "HR_STAFF", "FINANCE" -> DevAssignees.HR_STAFF;
                 case "SUPERVISOR", "DEPT_MANAGER" -> DevAssignees.DEPT_MANAGER;
-                default -> node.getAssigneeUserId() != null ? node.getAssigneeUserId() : DevAssignees.DEPT_MANAGER;
+                default -> DevAssignees.DEPT_MANAGER;
             };
         }
     }

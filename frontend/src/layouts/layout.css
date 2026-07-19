@@ -1,0 +1,13 @@
+/* 侧栏可滚动，但不显示滚动条 */
+.hrms-sider-scroll,
+.hrms-sider-scroll .ant-layout-sider-children {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge legacy */
+}
+
+.hrms-sider-scroll::-webkit-scrollbar,
+.hrms-sider-scroll .ant-layout-sider-children::-webkit-scrollbar {
+  display: none; /* Chrome / Safari / Edge */
+  width: 0;
+  height: 0;
+}

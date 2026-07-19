@@ -44,6 +44,7 @@ WHERE NOT EXISTS (SELECT 1 FROM payroll_scheme_item WHERE scheme_id=1 AND item_c
 -- ------------------------------------------------------------
 -- 4. 系统用户（固定 ID，对齐审批演示账号）
 --    1001 HR李四 / 1002 部门负责人王五 / 1003 HR赵六 / 1004 代审孙七 / 1005 管理员
+--    1008 财务钱八（勿用 1006/1007，本地常被联调账号占用）
 --    密码均为 Admin@123
 -- ------------------------------------------------------------
 INSERT INTO sys_user (id, username, password_hash, password_changed_at, employee_id, status)
@@ -52,7 +53,8 @@ VALUES
     (1002, '13800001002', '$2b$10$ycE0ACxTN3D3RmBLw01OJeq6Fr2b/m8ieTVtbd1RxO5sByeG25r22', NOW(), NULL, 1),
     (1003, '13800001003', '$2b$10$ycE0ACxTN3D3RmBLw01OJeq6Fr2b/m8ieTVtbd1RxO5sByeG25r22', NOW(), NULL, 1),
     (1004, '13800001004', '$2b$10$ycE0ACxTN3D3RmBLw01OJeq6Fr2b/m8ieTVtbd1RxO5sByeG25r22', NOW(), NULL, 1),
-    (1005, '13800001005', '$2b$10$ycE0ACxTN3D3RmBLw01OJeq6Fr2b/m8ieTVtbd1RxO5sByeG25r22', NOW(), NULL, 1)
+    (1005, '13800001005', '$2b$10$ycE0ACxTN3D3RmBLw01OJeq6Fr2b/m8ieTVtbd1RxO5sByeG25r22', NOW(), NULL, 1),
+    (1008, '13800001006', '$2b$10$ycE0ACxTN3D3RmBLw01OJeq6Fr2b/m8ieTVtbd1RxO5sByeG25r22', NOW(), NULL, 1)
 ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), status=1;
 
 -- ------------------------------------------------------------
@@ -64,7 +66,8 @@ VALUES
     (102, '202610001', 1002, '王五', 'MALE',   '13800001002', 'wangwu.mgr@example.com',  10, 23, 'M2', NULL, '北京', '2023-06-01', 'fulltime', 20, 1.00, 0),
     (103, '202611002', 1003, '赵六', 'FEMALE', '13800001003', 'zhaoliu.hr@example.com',  11, 22, 'S2', 101,  '北京', '2024-08-01', 'fulltime', 20, 1.00, 0),
     (104, '202610002', 1004, '孙七', 'MALE',   '13800001004', 'sunqi.dev@example.com',   10, 20, 'P4', 102,  '北京', '2025-01-15', 'fulltime', 20, 1.00, 0),
-    (105, '202600001', 1005, '管理员', 'MALE', '13800001005', 'admin@example.com',       1,  23, 'M3', NULL, '北京', '2022-01-01', 'fulltime', 20, 1.00, 0)
+    (105, '202600001', 1005, '管理员', 'MALE', '13800001005', 'admin@example.com',       1,  23, 'M3', NULL, '北京', '2022-01-01', 'fulltime', 20, 1.00, 0),
+    (106, '202612001', 1008, '钱八', 'FEMALE', '13800001006', 'finance@example.com',     12, 24, 'S3', NULL, '北京', '2024-05-01', 'fulltime', 20, 1.00, 0)
 ON DUPLICATE KEY UPDATE name=VALUES(name), department_id=VALUES(department_id), position_id=VALUES(position_id);
 
 UPDATE sys_user SET employee_id = 101 WHERE id = 1001;
@@ -72,10 +75,12 @@ UPDATE sys_user SET employee_id = 102 WHERE id = 1002;
 UPDATE sys_user SET employee_id = 103 WHERE id = 1003;
 UPDATE sys_user SET employee_id = 104 WHERE id = 1004;
 UPDATE sys_user SET employee_id = 105 WHERE id = 1005;
+UPDATE sys_user SET employee_id = 106 WHERE id = 1008;
 
 UPDATE department SET head_employee_id = 102 WHERE id = 10;
 UPDATE department SET head_employee_id = 101 WHERE id = 11;
 UPDATE department SET head_employee_id = 105 WHERE id = 1;
+UPDATE department SET head_employee_id = 106 WHERE id = 12;
 
 -- 员工个人信息（身份证字段本地联调用占位密文/哈希）
 INSERT INTO employee_personal (employee_id, id_number_enc, id_number_hash, birthday, emergency_contact, emergency_phone)
@@ -84,7 +89,8 @@ VALUES
     (102, 'ENC:110101198805052222', SHA2('110101198805052222', 256), '1988-05-05', '紧急联系人B', '13900000002'),
     (103, 'ENC:110101199203033333', SHA2('110101199203033333', 256), '1992-03-03', '紧急联系人C', '13900000003'),
     (104, 'ENC:110101199507074444', SHA2('110101199507074444', 256), '1995-07-07', '紧急联系人D', '13900000004'),
-    (105, 'ENC:110101198001015555', SHA2('110101198001015555', 256), '1980-01-01', '紧急联系人E', '13900000005')
+    (105, 'ENC:110101198001015555', SHA2('110101198001015555', 256), '1980-01-01', '紧急联系人E', '13900000005'),
+    (106, 'ENC:110101199404044444', SHA2('110101199404044444', 256), '1994-04-04', '紧急联系人F', '13900000006')
 ON DUPLICATE KEY UPDATE emergency_contact=VALUES(emergency_contact);
 
 INSERT INTO employee_contract (employee_id, contract_type, contract_expire_date, probation_salary_ratio, scheme_id, base_salary)
@@ -93,7 +99,8 @@ VALUES
     (102, 'UNFIXED', NULL,       1.0000, 1, 25000.00),
     (103, 'FIXED', '2027-08-01', 1.0000, 1, 10000.00),
     (104, 'FIXED', '2028-01-15', 1.0000, 1, 18000.00),
-    (105, 'UNFIXED', NULL,       1.0000, 1, 30000.00)
+    (105, 'UNFIXED', NULL,       1.0000, 1, 30000.00),
+    (106, 'FIXED', '2027-05-01', 1.0000, 1, 15000.00)
 ON DUPLICATE KEY UPDATE base_salary=VALUES(base_salary);
 
 INSERT INTO employee_salary_profile (employee_id, scheme_id, base_salary, ss_base, hf_base, performance_base, probation_ratio, effective_date)
@@ -102,7 +109,8 @@ VALUES
     (102, 1, 25000.00, 20000.00, 20000.00, 5000.00, 1.0000, '2023-06-01'),
     (103, 1, 10000.00, 10000.00, 10000.00, 1500.00, 1.0000, '2024-08-01'),
     (104, 1, 18000.00, 15000.00, 15000.00, 3000.00, 1.0000, '2025-01-15'),
-    (105, 1, 30000.00, 20000.00, 20000.00, 8000.00, 1.0000, '2022-01-01')
+    (105, 1, 30000.00, 20000.00, 20000.00, 8000.00, 1.0000, '2022-01-01'),
+    (106, 1, 15000.00, 15000.00, 15000.00, 2000.00, 1.0000, '2024-05-01')
 ON DUPLICATE KEY UPDATE base_salary=VALUES(base_salary);
 
 -- ------------------------------------------------------------
@@ -115,6 +123,7 @@ VALUES
     (1001, 2),
     (1003, 2),
     (1002, 3),
+    (1008, 4),
     (1004, 5)
 ON DUPLICATE KEY UPDATE created_at=VALUES(created_at);
 
@@ -185,7 +194,7 @@ VALUES
 ON DUPLICATE KEY UPDATE name=VALUES(name);
 
 INSERT INTO attendance_group_member (group_id, employee_id)
-VALUES (1, 101), (1, 102), (1, 103), (1, 104), (1, 105)
+VALUES (1, 101), (1, 102), (1, 103), (1, 104), (1, 105), (1, 106)
 ON DUPLICATE KEY UPDATE group_id=VALUES(group_id);
 
 INSERT INTO attendance_group_scope (group_id, scope_type, scope_id)

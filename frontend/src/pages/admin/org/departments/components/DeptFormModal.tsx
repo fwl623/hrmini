@@ -125,6 +125,7 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
       confirmLoading={loading}
       destroyOnClose
       okText="保存"
+      cancelText="取消"
       width={520}
     >
       <Form form={form} layout="vertical" preserve={false}>
@@ -190,9 +191,9 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
         <Form.Item
           name="headEmployeeId"
           label="部门负责人"
-          extra="填写在职员工 ID（employeeId）；可选。人员搜索选择器待员工模块提供轻量检索接口后再接"
+          extra="填写在职员工编号（可选）。人员搜索选择器待员工模块提供轻量检索接口后再接"
         >
-          <InputNumber placeholder="员工 ID" style={{ width: '100%' }} min={1} precision={0} />
+          <InputNumber placeholder="员工编号" style={{ width: '100%' }} min={1} precision={0} />
         </Form.Item>
         <Form.Item
           name="sortOrder"

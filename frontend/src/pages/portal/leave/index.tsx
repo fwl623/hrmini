@@ -3,16 +3,7 @@ import { Card, Row, Col, Statistic, Timeline, Tag, Typography, message, Modal, F
 import dayjs from 'dayjs';
 
 import { getLeaveBalances, getLeaveApplications, submitLeave, calcLeaveDays } from '@/services/attendance';
-
-const LEAVE_TYPE_OPTIONS = [
-  { label: '年假', value: 'annual' },
-  { label: '病假', value: 'sick' },
-  { label: '事假', value: 'personal' },
-  { label: '婚假', value: 'marriage' },
-  { label: '产假', value: 'maternity' },
-  { label: '丧假', value: 'bereavement' },
-  { label: '调休', value: 'compensatory' },
-];
+import { LEAVE_TYPE_OPTIONS, leaveTypeLabel } from '@/constants/leave';
 
 const statusLabelMap: Record<string, string> = { PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回', CANCELLED: '已撤销' };
 const statusColorMap: Record<string, string> = { PENDING: 'orange', APPROVED: 'green', REJECTED: 'red', CANCELLED: 'default' };
@@ -73,7 +64,7 @@ const LeavePage: React.FC = () => {
   };
 
   const columns = [
-    { title: '类型', dataIndex: 'leaveType', render: (v: string) => LEAVE_TYPE_OPTIONS.find(o => o.value === v)?.label || v },
+    { title: '类型', dataIndex: 'leaveType', render: (_: unknown, r: { leaveType?: string }) => leaveTypeLabel(r.leaveType) },
     { title: '开始', dataIndex: 'startTime' },
     { title: '结束', dataIndex: 'endTime' },
     { title: '天数', dataIndex: 'leaveDays' },
@@ -86,7 +77,7 @@ const LeavePage: React.FC = () => {
       <Col xs={24} lg={6}>
         <Card title="假期余额">
           {balances.map(b => (
-            <Statistic key={b.leaveType} title={LEAVE_TYPE_OPTIONS.find(o => o.value === b.leaveType)?.label || b.leaveType}
+            <Statistic key={b.leaveType} title={leaveTypeLabel(b.leaveType)}
               value={b.balance} suffix="天" style={{ marginBottom: 16 }} />
           ))}
           {balances.length === 0 && <Typography.Text type="secondary">暂无余额</Typography.Text>}
@@ -99,7 +90,7 @@ const LeavePage: React.FC = () => {
       </Col>
 
       <Modal title="申请请假" open={modalOpen} onOk={handleSubmit} onCancel={() => { setModalOpen(false); form.resetFields(); setPreviewDays(null); }}
-        confirmLoading={submitting} width={600}>
+        confirmLoading={submitting} width={600} okText="提交" cancelText="取消">
         <Form form={form} layout="vertical">
           <Form.Item name="leaveType" label="请假类型" rules={[{ required: true }]}>
             <Select options={LEAVE_TYPE_OPTIONS} />

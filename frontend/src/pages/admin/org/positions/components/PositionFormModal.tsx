@@ -204,6 +204,7 @@ const PositionFormModal: React.FC<PositionFormModalProps> = ({
       confirmLoading={loading}
       destroyOnClose
       okText="保存"
+      cancelText="取消"
       width={560}
     >
       <Form

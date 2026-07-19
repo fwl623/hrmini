@@ -57,6 +57,8 @@ public class DbApprovalService implements ApprovalEngineService {
     private final ApprovalNotifyPublisher notifyPublisher;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final DelegationService delegationService;
+    private final ResignationService resignationService;
 
     public DbApprovalService(ApprovalInstanceMapper instanceMapper,
                              ApprovalTaskMapper taskMapper,
@@ -65,7 +67,9 @@ public class DbApprovalService implements ApprovalEngineService {
                              @Lazy LifecycleApprovalHandler lifecycleApprovalHandler,
                              ApprovalNotifyPublisher notifyPublisher,
                              ApplicationEventPublisher eventPublisher,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             DelegationService delegationService,
+                             @Lazy ResignationService resignationService) {
         this.instanceMapper = instanceMapper;
         this.taskMapper = taskMapper;
         this.logMapper = logMapper;
@@ -75,6 +79,8 @@ public class DbApprovalService implements ApprovalEngineService {
         this.notifyPublisher = notifyPublisher;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
+        this.delegationService = delegationService;
+        this.resignationService = resignationService;
     }
 
     @Override
@@ -178,10 +184,12 @@ public class DbApprovalService implements ApprovalEngineService {
     }
 
     public ApprovalDtos.TaskStatsVO taskStats(long userId) {
-        List<ApprovalTask> mine = taskMapper.selectList(new LambdaQueryWrapper<ApprovalTask>()
-                .eq(ApprovalTask::getAssigneeId, userId));
+        List<ApprovalTask> mine = taskMapper.selectList(tasksVisibleToUser(userId));
         ApprovalDtos.TaskStatsVO vo = new ApprovalDtos.TaskStatsVO();
-        vo.setPending(mine.stream().filter(t -> "PENDING".equalsIgnoreCase(t.getStatus())).count());
+        vo.setPending(mine.stream()
+                .filter(t -> "PENDING".equalsIgnoreCase(t.getStatus()))
+                .filter(t -> isEffectiveAssignee(t, userId))
+                .count());
         LocalDate today = LocalDate.now();
         vo.setApprovedToday(mine.stream()
                 .filter(t -> t.getCompletedAt() != null && t.getCompletedAt().toLocalDate().equals(today))
@@ -189,6 +197,7 @@ public class DbApprovalService implements ApprovalEngineService {
                 .count());
         vo.setOverdueCount(mine.stream()
                 .filter(t -> "PENDING".equalsIgnoreCase(t.getStatus()))
+                .filter(t -> isEffectiveAssignee(t, userId))
                 .filter(t -> t.getSlaDeadline() != null && t.getSlaDeadline().isBefore(LocalDateTime.now()))
                 .count());
         return vo;
@@ -196,9 +205,7 @@ public class DbApprovalService implements ApprovalEngineService {
 
     public PageResult<ApprovalDtos.TaskListItemVO> listTasks(long userId, String status, String processType,
                                                              String keyword, int page, int pageSize) {
-        LambdaQueryWrapper<ApprovalTask> q = new LambdaQueryWrapper<ApprovalTask>()
-                .eq(ApprovalTask::getAssigneeId, userId)
-                .orderByDesc(ApprovalTask::getId);
+        LambdaQueryWrapper<ApprovalTask> q = tasksVisibleToUser(userId).orderByDesc(ApprovalTask::getId);
         if (status != null && !status.isBlank()) {
             if ("pending".equalsIgnoreCase(status)) {
                 q.eq(ApprovalTask::getStatus, "PENDING");
@@ -207,6 +214,12 @@ public class DbApprovalService implements ApprovalEngineService {
             }
         }
         List<ApprovalDtos.TaskListItemVO> all = taskMapper.selectList(q).stream()
+                .filter(t -> {
+                    if (status != null && "pending".equalsIgnoreCase(status)) {
+                        return isEffectiveAssignee(t, userId);
+                    }
+                    return true;
+                })
                 .map(t -> toTaskItem(t, userId))
                 .filter(item -> processType == null || processType.isBlank()
                         || processType.equalsIgnoreCase(item.getProcessType()))
@@ -248,6 +261,17 @@ public class DbApprovalService implements ApprovalEngineService {
         biz.put("businessKey", instance.getBusinessKey());
         biz.put("title", display.title);
         biz.put("businessSummary", display.businessSummary);
+        if ("RESIGNATION".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = Long.parseLong(instance.getBusinessKey());
+                biz.putAll(resignationService.resignationBusinessDetail(appId));
+                boolean needHandover = task.getNodeOrder() != null && task.getNodeOrder() == 1
+                        && "PENDING".equalsIgnoreCase(task.getStatus());
+                biz.put("needHandoverConfirm", needHandover);
+            } catch (Exception ignored) {
+                biz.put("needHandoverConfirm", false);
+            }
+        }
         detail.setBusinessDetail(biz);
 
         detail.setTimeline(buildTimeline(instance.getId()));
@@ -316,12 +340,28 @@ public class DbApprovalService implements ApprovalEngineService {
             return;
         }
 
+        // 正式离职第一岗：部门负责人须确认工作交接人
+        if ("APPROVE".equals(action)
+                && "RESIGNATION".equalsIgnoreCase(instance.getProcessType())
+                && task.getNodeOrder() != null
+                && task.getNodeOrder() == 1) {
+            try {
+                Long appId = Long.parseLong(instance.getBusinessKey());
+                resignationService.confirmHandover(appId, body.getHandoverEmployeeId());
+            } catch (NumberFormatException ex) {
+                throw new BusinessException(ErrorCode.PARAM_INVALID, "离职单关联异常");
+            }
+        }
+
         task.setStatus("APPROVE".equals(action) ? "APPROVED" : "REJECTED");
         task.setComment(body.getComment());
         task.setCompletedAt(now);
         taskMapper.updateById(task);
         writeLog(instance.getId(), taskId, userId, action, body.getComment(),
-                "PENDING", task.getStatus(), action);
+                "PENDING", task.getStatus(),
+                "APPROVE".equals(action) && body.getHandoverEmployeeId() != null
+                        ? action + "（交接人#" + body.getHandoverEmployeeId() + "）"
+                        : action);
 
         if ("REJECT".equals(action)) {
             instance.setStatus("REJECTED");
@@ -414,20 +454,46 @@ public class DbApprovalService implements ApprovalEngineService {
                 instance.getInitiatorId(),
                 comment));
         notifyPublisher.publishApprovalCompleted(
-                instance.getProcessType(), instance.getId(), businessId, result);
+                instance.getProcessType(),
+                instance.getId(),
+                businessId,
+                result,
+                instance.getInitiatorId(),
+                comment);
     }
 
     private void createTask(ApprovalInstance instance, ProcessNodeDef node,
                             Map<String, Object> variables, LocalDateTime now) {
+        long configuredAssignee = assigneeResolver.resolve(node, variables == null ? Map.of() : variables);
+        long actualAssignee = delegationService.resolveAssignee(configuredAssignee, now.toLocalDate());
         ApprovalTask task = new ApprovalTask();
         task.setInstanceId(instance.getId());
         task.setNodeOrder(node.getOrder());
-        task.setAssigneeId(assigneeResolver.resolve(node, variables == null ? Map.of() : variables));
+        task.setAssigneeId(configuredAssignee);
+        if (actualAssignee != configuredAssignee) {
+            task.setActualAssigneeId(actualAssignee);
+        }
         task.setStatus("PENDING");
         task.setOverdue(0);
         task.setSlaDeadline(now.plusHours(48));
         taskMapper.insert(task);
-        notifyPublisher.scheduleRemind(task.getId(), task.getAssigneeId(), instance.getProcessType());
+        notifyPublisher.scheduleRemind(task.getId(), actualAssignee, instance.getProcessType());
+    }
+
+    /** 可见：原审批人或实际审批人（委托） */
+    private static LambdaQueryWrapper<ApprovalTask> tasksVisibleToUser(long userId) {
+        return new LambdaQueryWrapper<ApprovalTask>()
+                .and(w -> w.eq(ApprovalTask::getAssigneeId, userId)
+                        .or()
+                        .eq(ApprovalTask::getActualAssigneeId, userId));
+    }
+
+    /** 待办可操作人：有 actual 时仅 actual，否则 assignee */
+    private static boolean isEffectiveAssignee(ApprovalTask task, long userId) {
+        if (task.getActualAssigneeId() != null) {
+            return userId == task.getActualAssigneeId();
+        }
+        return task.getAssigneeId() != null && userId == task.getAssigneeId();
     }
 
     private void writeLog(Long instanceId, Long taskId, Long operatorId, String action, String comment,

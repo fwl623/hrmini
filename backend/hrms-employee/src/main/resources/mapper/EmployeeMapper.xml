@@ -46,7 +46,8 @@
         <if test="keyword != null and keyword != ''">
             AND (e.name LIKE CONCAT('%', #{keyword}, '%')
               OR e.employee_no LIKE CONCAT('%', #{keyword}, '%')
-              OR e.mobile LIKE CONCAT('%', #{keyword}, '%'))
+              OR e.mobile LIKE CONCAT('%', #{keyword}, '%')
+              OR d.name LIKE CONCAT('%', #{keyword}, '%'))
         </if>
         <if test="deptIds != null and deptIds.size > 0">
             AND e.department_id IN
@@ -71,11 +72,14 @@
     </select>
 
     <select id="countSearch" resultType="long">
-        SELECT COUNT(1) FROM employee e WHERE e.deleted = 0
+        SELECT COUNT(1) FROM employee e
+        LEFT JOIN department d ON e.department_id = d.id AND d.deleted = 0
+        WHERE e.deleted = 0
         <if test="keyword != null and keyword != ''">
             AND (e.name LIKE CONCAT('%', #{keyword}, '%')
               OR e.employee_no LIKE CONCAT('%', #{keyword}, '%')
-              OR e.mobile LIKE CONCAT('%', #{keyword}, '%'))
+              OR e.mobile LIKE CONCAT('%', #{keyword}, '%')
+              OR d.name LIKE CONCAT('%', #{keyword}, '%'))
         </if>
         <if test="deptIds != null and deptIds.size > 0">
             AND e.department_id IN
@@ -100,6 +104,16 @@
 
     <select id="selectById" resultMap="BaseMap">
         SELECT <include refid="BaseColumns"/> FROM employee WHERE id = #{id} AND deleted = 0
+    </select>
+
+    <select id="selectByIdScoped" resultMap="BaseMap">
+        SELECT e.id, e.employee_no, e.user_id, e.name, e.gender, e.mobile, e.email,
+               e.department_id, e.position_id, e.grade, e.manager_id, e.work_location,
+               e.hire_date, e.employment_type, e.employment_status, e.last_work_day,
+               e.probation_pay_ratio, e.probation_end_date, e.deleted, e.created_at, e.updated_at
+        FROM employee e
+        WHERE e.id = #{id} AND e.deleted = 0
+        ${dataScope}
     </select>
 
     <select id="selectByEmployeeNo" resultMap="BaseMap">

@@ -65,3 +65,35 @@ HRMS-Frontend-System-Design*.md
 backend/hrms-app/src/main/resources/application-dev.yml
 # 本机私有覆盖（勿提交）
 backend/hrms-app/src/main/resources/application-dev-local.yml
+
+# ---------- 本地联调 / Playwright 临时产物（勿提交）----------
+.agents/
+.playwright-cli/
+.cursor/skills/playwright-cli/
+
+# 根目录 Playwright 快照 / 状态 yaml
+/login.yaml
+/login2.yaml
+/after-login.yaml
+/batch*.yaml
+/dlg-*.yaml
+
+# Playwright 批跑脚本与本地造数
+scripts/pw-*.js
+scripts/_*.js
+scripts/build-official-matrix.js
+scripts/extract-tc-results.js
+scripts/parse-smoke.js
+scripts/seed_local_*.sql
+
+# 测试执行产物 / 截图证据
+docs/tc-results*.json
+docs/tc-official-matrix.json
+docs/pw-smoke-*
+docs/batch*-raw.*
+docs/evidence-*.png
+docs/HRMS-测试执行-Bug日志.md
+docs/HRMS-测试用例全集.md
+
+# 本地备注
+backend/hrms-org/*改动.md

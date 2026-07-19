@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 离职双通道：门户申请 + HR 正式离职。
+ * 离职：正式流程由 HR/管理员发起（员工线下协商，门户不可发起）。
  */
 @RestController
 public class ResignationController {
@@ -77,5 +77,13 @@ public class ResignationController {
     @GetMapping("/resignations/{id}")
     public Result<LifecycleDtos.ResignationVO> detail(@PathVariable("id") Long id) {
         return Result.success(resignationService.resignationDetail(id));
+    }
+
+    /**
+     * 手动触发到期离职生效（联调/补跑）：将 resignationDate ≤ 今天 的待离职单生效并禁账号。
+     */
+    @PostMapping("/resignations/effect-due")
+    public Result<Integer> effectDue() {
+        return Result.success(resignationService.effectDueResignations(java.time.LocalDate.now()));
     }
 }

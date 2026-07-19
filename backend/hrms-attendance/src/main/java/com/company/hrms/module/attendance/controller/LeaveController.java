@@ -1,6 +1,8 @@
 package com.company.hrms.module.attendance.controller;
 
 import com.company.hrms.attendance.entity.LeaveApplication;
+import com.company.hrms.common.exception.BusinessException;
+import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
@@ -52,12 +54,15 @@ public class LeaveController {
                                                        @RequestParam(required = false) String leaveType,
                                                        @RequestParam(required = false) String status,
                                                        @RequestParam(required = false) Long employeeId) {
-        // employeeId=0 表示查全部（管理端），null 查本人（门户端）
+        // employeeId=0 查全部（管理端）；不传则查本人（门户）
         if (employeeId == null) {
             employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+            if (employeeId == null) {
+                throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工，无法查询本人请假");
+            }
         }
-        return Result.success(leaveService.pageApplications(pageParam, leaveType, status,
-                employeeId == 0 ? null : employeeId));
+        Long filterEmployeeId = employeeId == 0L ? null : employeeId;
+        return Result.success(leaveService.pageApplications(pageParam, leaveType, status, filterEmployeeId));
     }
 
     /**

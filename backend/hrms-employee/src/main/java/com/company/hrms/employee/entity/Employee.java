@@ -79,4 +79,12 @@ public class Employee {
 
     /** 更新时间 */
     private LocalDateTime updatedAt;
+
+    /** 列表查询 JOIN 部门名（非表字段） */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String departmentName;
+
+    /** 列表查询 JOIN 职位名（非表字段） */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String positionName;
 }

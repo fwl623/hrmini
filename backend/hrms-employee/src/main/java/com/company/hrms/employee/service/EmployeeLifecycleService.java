@@ -14,6 +14,17 @@ public interface EmployeeLifecycleService {
 
     Employee requireEmployee(Long employeeId);
 
+    /**
+     * 解析部门负责人审批人 userId：优先员工直属上级，其次沿部门树找 head_employee，
+     * 再回退任意 DEPT_MANAGER 角色用户。
+     */
+    Long resolveDeptManagerUserId(Long employeeId);
+
+    /**
+     * 解析 HR 审批人 userId：优先非 excludeUserId 的 HR_STAFF，否则任意 HR_STAFF。
+     */
+    Long resolveHrApproverUserId(Long excludeUserId);
+
     /** 试用结束前 7 天内的待转正列表 */
     List<PendingRegularizationVO> listPendingRegularization(LocalDate from, LocalDate to);
 

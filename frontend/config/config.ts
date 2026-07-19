@@ -56,7 +56,7 @@ export default defineConfig({
           access: 'canManageWorkflow',
         },
         { path: 'transfers', component: './admin/transfers', access: 'canManageWorkflow' },
-        { path: 'resignation', component: './admin/resignation', access: 'canManageWorkflow' },
+        { path: 'resignation', component: './admin/resignation', access: 'canManageResignation' },
         { path: 'approval', component: './admin/approval', access: 'canManageWorkflow' },
         { path: 'delegation', component: './admin/delegation', access: 'canManageWorkflow' },
 
@@ -127,8 +127,8 @@ export default defineConfig({
         { path: 'attendance', component: './portal/attendance' },
         { path: 'leave', component: './portal/leave' },
         { path: 'overtime', component: './portal/overtime' },
-        { path: 'payslips', component: './portal/payslips', access: 'canViewPayroll' },
-        { path: 'resignation', component: './portal/resignation' },
+        { path: 'payslips', component: './portal/payslips', access: 'canViewOwnPayslip' },
+        // 离职正式流程仅 HR/管理员在 /admin/resignation 发起；员工线下协商，门户无入口
         { path: 'security', component: './portal/security' },
       ],
     },

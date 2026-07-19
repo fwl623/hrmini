@@ -24,4 +24,12 @@ public class ProfileUpdateDTO {
 
     /** 紧急联系人电话 */
     private String emergencyPhone;
+
+    // ---- 流程字段：抓包强行携带时返回 20003 ----
+    private Long departmentId;
+    private Long positionId;
+    private String grade;
+    private Long managerId;
+    private String mobile;
+    private String idNumber;
 }

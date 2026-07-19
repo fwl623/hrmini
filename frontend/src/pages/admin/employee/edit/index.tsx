@@ -16,7 +16,7 @@ import dayjs from 'dayjs';
 const FLOW_HINTS: Record<string, string> = {
   departmentId: '请走调岗流程（POST /transfers）',
   positionId:   '请走调岗流程（POST /transfers）',
-  mobile:       '手机号变更请提交 MOBILE_CHANGE 申请',
+  mobile:       '手机号变更请提交手机号变更申请',
   idNumber:     '身份证号不可编辑',
   grade:        '请走调岗流程',
 };

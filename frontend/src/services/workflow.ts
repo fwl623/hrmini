@@ -1,5 +1,5 @@
-/**
- * 审批中心 + 入职申请 API
+﻿/**
+ * 瀹℃壒涓績 + 鍏ヨ亴鐢宠 API
  * Base: /api/v1
  */
 import { request } from '@umijs/max';
@@ -38,6 +38,8 @@ export interface ApprovalActionPayload {
   action: 'APPROVE' | 'REJECT' | 'FORWARD';
   comment?: string;
   targetUserId?: number;
+  /** 正式离职部门负责人同意时必填 */
+  handoverEmployeeId?: number;
 }
 
 export interface ApprovalTaskStats {
@@ -95,7 +97,6 @@ export interface OnboardingForm {
 export async function fetchTaskStats() {
   const res = await request<API.Result<ApprovalTaskStats>>(`${APPROVAL_PREFIX}/tasks/stats`, {
     method: 'GET',
-    headers: { 'X-User-Id': '1002' },
   });
   return res.data;
 }
@@ -114,7 +115,6 @@ export async function fetchTasks(params?: {
   >(`${APPROVAL_PREFIX}/tasks`, {
     method: 'GET',
     params,
-    headers: { 'X-User-Id': '1002' },
   });
   return res.data;
 }
@@ -123,7 +123,6 @@ export async function fetchTasks(params?: {
 export async function fetchTaskDetail(taskId: number) {
   const res = await request<API.Result<ApprovalTaskDetail>>(`${APPROVAL_PREFIX}/tasks/${taskId}`, {
     method: 'GET',
-    headers: { 'X-User-Id': '1002' },
   });
   return res.data;
 }
@@ -133,7 +132,6 @@ export async function postTaskAction(taskId: number, body: ApprovalActionPayload
   return request<API.Result<null>>(`${APPROVAL_PREFIX}/tasks/${taskId}/action`, {
     method: 'POST',
     data: body,
-    headers: { 'X-User-Id': '1002' },
   });
 }
 
@@ -141,7 +139,6 @@ export async function postTaskAction(taskId: number, body: ApprovalActionPayload
 export async function remindTask(taskId: number) {
   return request<API.Result<null>>(`${APPROVAL_PREFIX}/tasks/${taskId}/remind`, {
     method: 'POST',
-    headers: { 'X-User-Id': '1002' },
   });
 }
 
@@ -172,17 +169,16 @@ export async function fetchDelegations(params?: { page?: number; pageSize?: numb
   >(`${APPROVAL_PREFIX}/delegations`, {
     method: 'GET',
     params,
-    headers: { 'X-User-Id': '1002' },
   });
   return res.data;
 }
 
-/** POST /approvals/delegations */
+/** POST /approvals/delegations（冲突 60003 由页面处理，避免误关弹窗/误报成功） */
 export async function createDelegation(data: DelegationForm) {
   return request<API.Result<DelegationItem>>(`${APPROVAL_PREFIX}/delegations`, {
     method: 'POST',
     data,
-    headers: { 'X-User-Id': '1002' },
+    skipErrorHandler: true,
   });
 }
 
@@ -190,7 +186,6 @@ export async function createDelegation(data: DelegationForm) {
 export async function cancelDelegation(id: number) {
   return request<API.Result<null>>(`${APPROVAL_PREFIX}/delegations/${id}`, {
     method: 'DELETE',
-    headers: { 'X-User-Id': '1002' },
   });
 }
 
@@ -198,23 +193,21 @@ export async function cancelDelegation(id: number) {
 export async function withdrawInstance(instanceId: number) {
   return request<API.Result<null>>(`${APPROVAL_PREFIX}/instances/${instanceId}/withdraw`, {
     method: 'POST',
-    headers: { 'X-User-Id': '1001' },
   });
 }
 
-/** GET /approvals/instances — 我发起的 */
+/** GET /approvals/instances 鈥?鎴戝彂璧风殑 */
 export async function fetchMyInstances(params?: { page?: number; pageSize?: number }) {
   const res = await request<
     API.Result<{ list: ApprovalTaskItem[]; total: number; page: number; pageSize: number }>
   >(`${APPROVAL_PREFIX}/instances`, {
     method: 'GET',
     params,
-    headers: { 'X-User-Id': '1001' },
   });
   return res.data;
 }
 
-/** 入职列表（含 stats） */
+/** 鍏ヨ亴鍒楄〃锛堝惈 stats锛?*/
 export async function fetchOnboardingApplications(params?: {
   status?: string;
   page?: number;
@@ -241,7 +234,6 @@ export async function fetchOnboardingApplications(params?: {
   >(`${ONBOARDING_PREFIX}`, {
     method: 'GET',
     params,
-    headers: { 'X-User-Id': '1001' },
   });
   return res.data;
 }
@@ -250,7 +242,6 @@ export async function createOnboardingApplication(data: OnboardingForm) {
   return request<API.Result<unknown>>(`${ONBOARDING_PREFIX}`, {
     method: 'POST',
     data,
-    headers: { 'X-User-Id': '1001' },
   });
 }
 
@@ -258,41 +249,36 @@ export async function updateOnboardingApplication(id: number, data: Partial<Onbo
   return request<API.Result<unknown>>(`${ONBOARDING_PREFIX}/${id}`, {
     method: 'PUT',
     data,
-    headers: { 'X-User-Id': '1001' },
   });
 }
 
 export async function deleteOnboardingApplication(id: number) {
   return request<API.Result<null>>(`${ONBOARDING_PREFIX}/${id}`, {
     method: 'DELETE',
-    headers: { 'X-User-Id': '1001' },
   });
 }
 
 export async function submitOnboardingApplication(id: number) {
   return request<API.Result<unknown>>(`${ONBOARDING_PREFIX}/${id}/submit`, {
     method: 'POST',
-    headers: { 'X-User-Id': '1001' },
   });
 }
 
 export async function withdrawOnboardingApplication(id: number) {
   return request<API.Result<unknown>>(`${ONBOARDING_PREFIX}/${id}/withdraw`, {
     method: 'POST',
-    headers: { 'X-User-Id': '1001' },
   });
 }
 
 export async function confirmOnboardingApplication(id: number) {
   return request<API.Result<unknown>>(`${ONBOARDING_PREFIX}/${id}/confirm`, {
     method: 'POST',
-    headers: { 'X-User-Id': '1001' },
   });
 }
 
 export async function abandonOnboardingApplication(id: number) {
   return request<API.Result<unknown>>(`${ONBOARDING_PREFIX}/${id}/abandon`, {
     method: 'POST',
-    headers: { 'X-User-Id': '1001' },
   });
 }
+

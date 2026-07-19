@@ -1,8 +1,8 @@
 package com.company.hrms.employee.controller;
 
-import com.company.hrms.common.datascope.DataScope;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.common.web.Result;
+import com.company.hrms.common.datascope.DataScope;
 import com.company.hrms.employee.dto.EmployeePageQuery;
 import com.company.hrms.employee.dto.EmployeeUpdateDTO;
 import com.company.hrms.employee.dto.SalaryProfileUpdateDTO;
@@ -49,11 +49,13 @@ public class EmployeeController {
     }
 
     @GetMapping("/{id}")
+    @DataScope
     public Result<EmployeeDetailVO> getDetail(@PathVariable Long id) {
         return Result.success(employeeService.getDetail(id));
     }
 
     @PutMapping("/{id}")
+    @DataScope
     public Result<Void> update(@PathVariable Long id,
                                 @Valid @RequestBody EmployeeUpdateDTO dto) {
         employeeService.update(id, dto);

@@ -32,35 +32,39 @@ public class AttendanceProfileController {
     /** 员工打卡（门户代理） */
     @PostMapping("/profile/attendance/punch")
     public Result<Map<String, String>> punch(@RequestBody PunchDTO dto) {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        return Result.success(Map.of("punchStatus", punchService.punch(employeeId, dto)));
+        return Result.success(Map.of("punchStatus", punchService.punch(requireEmployeeId(), dto)));
     }
 
     /** 员工补卡（门户代理） */
     @PostMapping("/profile/attendance/punch-fix")
     public Result<Map<String, Object>> applyFix(@RequestBody PunchFixDTO dto) {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        return Result.success(punchService.applyFix(employeeId, dto));
+        return Result.success(punchService.applyFix(requireEmployeeId(), dto));
     }
 
     /** 今日打卡状态（门户代理） */
     @GetMapping("/profile/attendance/punch/today")
     public Result<TodayPunchVO> todayStatus() {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        return Result.success(punchService.getTodayStatus(employeeId));
+        return Result.success(punchService.getTodayStatus(requireEmployeeId()));
     }
 
     /** 补卡配额（门户代理） */
     @GetMapping("/profile/attendance/punch-fix/quota")
     public Result<QuotaVO> fixQuota() {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        return Result.success(punchService.getFixQuota(employeeId));
+        return Result.success(punchService.getFixQuota(requireEmployeeId()));
     }
 
     /** 考勤日历（门户代理） */
     @GetMapping("/profile/attendance/calendar")
     public Result<AttendanceCalendarVO> calendar(@RequestParam String period) {
-        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
-        return Result.success(summaryService.getCalendar(employeeId, period));
+        return Result.success(summaryService.getCalendar(requireEmployeeId(), period));
+    }
+
+    private static Long requireEmployeeId() {
+        Long employeeId = SecurityUtils.requireLoginUser().getEmployeeId();
+        if (employeeId == null) {
+            throw new com.company.hrms.common.exception.BusinessException(
+                    com.company.hrms.common.exception.ErrorCode.PARAM_INVALID, "当前账号未关联员工档案");
+        }
+        return employeeId;
     }
 }
