@@ -10,11 +10,27 @@ import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.employee.dto.*;
 import com.company.hrms.employee.entity.Employee;
+import com.company.hrms.employee.entity.EmployeeBank;
+import com.company.hrms.employee.entity.EmployeeContract;
 import com.company.hrms.employee.entity.EmployeePersonal;
+import com.company.hrms.employee.entity.EmployeeSalaryProfile;
+import com.company.hrms.employee.mapper.EmployeeBankMapper;
+import com.company.hrms.employee.mapper.EmployeeContractMapper;
 import com.company.hrms.employee.mapper.EmployeeMapper;
 import com.company.hrms.employee.mapper.EmployeePersonalMapper;
+import com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper;
 import com.company.hrms.employee.service.EmployeeService;
 import com.company.hrms.employee.vo.*;
+import com.company.hrms.common.field.FieldPermissionFilter;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.company.hrms.module.auth.dto.ChangePasswordRequest;
+import com.company.hrms.module.auth.entity.LoginLog;
+import com.company.hrms.module.auth.mapper.LoginLogMapper;
+import com.company.hrms.module.auth.service.AuthService;
+import com.company.hrms.module.org.entity.Department;
+import com.company.hrms.module.org.entity.Position;
+import com.company.hrms.module.org.mapper.DepartmentMapper;
+import com.company.hrms.module.org.mapper.PositionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,10 +45,10 @@ import java.util.stream.Collectors;
 /**
  * 员工档案服务
  *
- * 白名单 HR端：name, gender, email, birthday, residenceAddress,
- *               emergencyContact, emergencyPhone, workLocation
+ * 白名单 HR端：name, gender, email, birthday, householdAddress, residenceAddress,
+ *               emergencyContact, emergencyPhone
  * 白名单 门户：email, residenceAddress, emergencyContact, emergencyPhone
- * 流程字段（含则 20003）：departmentId, positionId, grade, managerId, mobile, idNumber
+ * 流程字段（含则 20003）：departmentId, positionId, grade, managerId, workLocation, mobile, idNumber
  */
 @Slf4j
 @Service
@@ -40,16 +56,24 @@ import java.util.stream.Collectors;
 public class EmployeeServiceImpl implements EmployeeService {
 
     private static final Set<String> HR_ALLOWED = Set.of(
-            "name", "gender", "email", "birthday", "residenceAddress",
-            "emergencyContact", "emergencyPhone", "workLocation");
+            "name", "gender", "email", "birthday", "householdAddress", "residenceAddress",
+            "emergencyContact", "emergencyPhone");
     private static final Set<String> PORTAL_ALLOWED = Set.of(
             "email", "residenceAddress", "emergencyContact", "emergencyPhone");
     private static final Set<String> FLOW_FIELDS = Set.of(
-            "departmentId", "positionId", "grade", "managerId", "mobile", "idNumber");
+            "departmentId", "positionId", "grade", "managerId", "workLocation", "mobile", "idNumber");
 
     private final EmployeeMapper employeeMapper;
     private final EmployeePersonalMapper employeePersonalMapper;
+    private final EmployeeSalaryProfileMapper salaryProfileMapper;
+    private final EmployeeContractMapper employeeContractMapper;
+    private final EmployeeBankMapper employeeBankMapper;
+    private final DepartmentMapper departmentMapper;
+    private final PositionMapper positionMapper;
     private final HrmsSecurityProperties securityProperties;
+    private final AuthService authService;
+    private final LoginLogMapper loginLogMapper;
+    private final FieldPermissionFilter fieldPermissionFilter;
 
     // ==================== 花名册分页 ====================
 
@@ -93,15 +117,18 @@ public class EmployeeServiceImpl implements EmployeeService {
         vo.setMobile(maskMobile(emp.getMobile()));
         vo.setEmail(emp.getEmail());
         vo.setDepartmentId(emp.getDepartmentId());
-        // TODO: org接口未完成 — department/position/managerName 需调用 hrms-org 根据 ID 查询名称后填充，当前 SQL JOIN department/position 表直接取 name
+        vo.setDepartment(resolveDepartmentName(emp.getDepartmentId()));
         vo.setPositionId(emp.getPositionId());
+        vo.setPosition(resolvePositionName(emp.getPositionId()));
         vo.setGrade(emp.getGrade());
         vo.setManagerId(emp.getManagerId());
+        vo.setManagerName(resolveEmployeeName(emp.getManagerId()));
         vo.setWorkLocation(emp.getWorkLocation());
         vo.setEmploymentType(emp.getEmploymentType());
         vo.setEmploymentStatus(formatStatus(emp.getEmploymentStatus()));
         vo.setHireDate(emp.getHireDate());
         vo.setProbationPayRatio(emp.getProbationPayRatio());
+        vo.setCreatedAt(emp.getCreatedAt());
 
         EmployeePersonal personal = employeePersonalMapper.selectById(employeeId);
         if (personal != null) {
@@ -110,6 +137,50 @@ public class EmployeeServiceImpl implements EmployeeService {
             vo.setResidenceAddress(personal.getResidenceAddress());
             vo.setEmergencyContact(personal.getEmergencyContact());
             vo.setEmergencyPhone(personal.getEmergencyPhone());
+        }
+
+        // 合同 + 薪资档案
+        EmployeeContract contract = employeeContractMapper.selectByEmployeeId(employeeId);
+        if (contract != null) {
+            vo.setContractType(contract.getContractType());
+            vo.setContractExpireDate(contract.getContractExpireDate());
+            vo.setSchemeId(contract.getSchemeId());
+            if (contract.getProbationSalaryRatio() != null) {
+                vo.setProbationPayRatio(contract.getProbationSalaryRatio());
+            }
+            if (contract.getBaseSalary() != null) {
+                vo.setBaseSalary(contract.getBaseSalary());
+            }
+        }
+        EmployeeSalaryProfile salaryProfile = salaryProfileMapper.selectByEmployeeId(employeeId);
+        if (salaryProfile != null) {
+            if (salaryProfile.getSchemeId() != null) {
+                vo.setSchemeId(salaryProfile.getSchemeId());
+            }
+            if (salaryProfile.getBaseSalary() != null) {
+                vo.setBaseSalary(salaryProfile.getBaseSalary());
+            }
+            if (salaryProfile.getProbationRatio() != null) {
+                vo.setProbationPayRatio(salaryProfile.getProbationRatio());
+            }
+        }
+        if (vo.getSchemeId() != null) {
+            vo.setSchemeName(employeeContractMapper.selectSchemeName(vo.getSchemeId()));
+        }
+
+        // 银行信息（脱敏后四位）
+        EmployeeBank bank = employeeBankMapper.selectById(employeeId);
+        if (bank != null) {
+            vo.setBankName(bank.getBankName());
+            if (StringUtils.hasText(bank.getBankAccountTail())) {
+                vo.setBankAccount("****" + bank.getBankAccountTail());
+            }
+        }
+
+        // 按角色裁剪敏感字段
+        LoginUser loginUser = SecurityUtils.getLoginUser();
+        if (loginUser != null) {
+            fieldPermissionFilter.filter(vo, loginUser, employeeId);
         }
         return vo;
     }
@@ -131,12 +202,11 @@ public class EmployeeServiceImpl implements EmployeeService {
         if (dto.getName() != null) { update.setName(dto.getName()); hasUpdate = true; }
         if (dto.getGender() != null) { update.setGender(dto.getGender()); hasUpdate = true; }
         if (dto.getEmail() != null) { update.setEmail(dto.getEmail()); hasUpdate = true; }
-        if (dto.getWorkLocation() != null) { update.setWorkLocation(dto.getWorkLocation()); hasUpdate = true; }
         if (hasUpdate) {
             employeeMapper.updateById(update);
         }
 
-        updatePersonal(employeeId, dto.getBirthday(), dto.getResidenceAddress(),
+        updatePersonal(employeeId, dto.getBirthday(), dto.getHouseholdAddress(), dto.getResidenceAddress(),
                 dto.getEmergencyContact(), dto.getEmergencyPhone());
 
         log.info("员工档案编辑: employeeId={}, operatorId={}", employeeId, SecurityUtils.getUserId());
@@ -155,6 +225,12 @@ public class EmployeeServiceImpl implements EmployeeService {
         vo.setMobileBound(bound);
         vo.setMobile(bound ? maskMobile(emp.getMobile()) : null);
         vo.setEmail(emp.getEmail());
+        vo.setDepartment(resolveDepartmentName(emp.getDepartmentId()));
+        vo.setPosition(resolvePositionName(emp.getPositionId()));
+        EmployeeSalaryProfile salaryProfile = salaryProfileMapper.selectByEmployeeId(employeeId);
+        if (salaryProfile != null) {
+            vo.setBaseSalary(salaryProfile.getBaseSalary());
+        }
         vo.setGrade(emp.getGrade());
         vo.setHireDate(emp.getHireDate() != null ? emp.getHireDate().toString() : null);
         EmployeePersonal personal = employeePersonalMapper.selectById(employeeId);
@@ -177,15 +253,25 @@ public class EmployeeServiceImpl implements EmployeeService {
             update.setEmail(dto.getEmail());
             employeeMapper.updateById(update);
         }
-        updatePersonal(employeeId, null, dto.getResidenceAddress(),
+        updatePersonal(employeeId, null, null, dto.getResidenceAddress(),
                 dto.getEmergencyContact(), dto.getEmergencyPhone());
     }
 
     // ==================== 委托至 hrms-auth ====================
 
     @Override
-    public void changePassword(Long userId, PasswordChangeDTO dto) {
-        log.info("修改密码: userId={}", userId);
+    public void changePassword(Long userId, PasswordChangeDTO dto, String accessToken) {
+        if (dto == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "请求参数不能为空");
+        }
+        ChangePasswordRequest req = new ChangePasswordRequest();
+        req.setOldPassword(dto.getOldPassword());
+        req.setNewPassword(dto.getNewPassword());
+        req.setConfirmPassword(dto.getConfirmPassword());
+        authService.changePassword(req, accessToken);
+        // 清掉其余会话态（refresh / 活跃心跳 / 工资条二次验证等）
+        authService.invalidateUserSessions(userId);
+        log.info("修改密码成功并失效会话: userId={}", userId);
     }
 
     @Override
@@ -222,7 +308,24 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     public List<LoginLogVO> listLoginLogs(Long userId) {
-        return Collections.emptyList();
+        if (userId == null) {
+            return Collections.emptyList();
+        }
+        List<LoginLog> rows = loginLogMapper.selectList(new LambdaQueryWrapper<LoginLog>()
+                .eq(LoginLog::getUserId, userId)
+                .orderByDesc(LoginLog::getLoginTime)
+                .last("LIMIT 50"));
+        List<LoginLogVO> list = new ArrayList<>(rows.size());
+        for (LoginLog row : rows) {
+            LoginLogVO vo = new LoginLogVO();
+            vo.setLoginTime(row.getLoginTime());
+            vo.setIp(row.getLoginIp());
+            vo.setDevice(row.getDevice());
+            vo.setLocation(row.getLocation());
+            vo.setSuccess(row.getSuccess() != null && row.getSuccess() == 1);
+            list.add(vo);
+        }
+        return list;
     }
 
     // ==================== 私有方法 ====================
@@ -231,6 +334,36 @@ public class EmployeeServiceImpl implements EmployeeService {
         Employee emp = employeeMapper.selectById(id);
         if (emp == null) throw new BusinessException(ErrorCode.PARAM_INVALID, "员工不存在");
         return emp;
+    }
+
+    private String resolveEmployeeName(Long employeeId) {
+        if (employeeId == null || employeeId <= 0) {
+            return null;
+        }
+        Employee manager = employeeMapper.selectById(employeeId);
+        return manager != null ? manager.getName() : null;
+    }
+
+    private String resolveDepartmentName(Long departmentId) {
+        if (departmentId == null || departmentId <= 0) {
+            return null;
+        }
+        Department dept = departmentMapper.selectById(departmentId);
+        if (dept == null || (dept.getDeleted() != null && dept.getDeleted() == 1)) {
+            return null;
+        }
+        return dept.getName();
+    }
+
+    private String resolvePositionName(Long positionId) {
+        if (positionId == null || positionId <= 0) {
+            return null;
+        }
+        Position position = positionMapper.selectById(positionId);
+        if (position == null || (position.getDeleted() != null && position.getDeleted() == 1)) {
+            return null;
+        }
+        return position.getName();
     }
 
     /** 管理端读/写：按当前用户 DataScope 过滤，越权返回 20002 */
@@ -278,10 +411,10 @@ public class EmployeeServiceImpl implements EmployeeService {
         }
     }
 
-    private void updatePersonal(Long employeeId, LocalDate birthday, String addr,
+    private void updatePersonal(Long employeeId, LocalDate birthday, String householdAddr, String residenceAddr,
                                  String contact, String phone) {
         // 无任何个人字段变更时跳过，避免空 insert 触发 id_number_enc NOT NULL → 90001
-        if (birthday == null && addr == null && contact == null && phone == null) {
+        if (birthday == null && householdAddr == null && residenceAddr == null && contact == null && phone == null) {
             return;
         }
         EmployeePersonal personal = employeePersonalMapper.selectById(employeeId);
@@ -290,7 +423,8 @@ public class EmployeeServiceImpl implements EmployeeService {
                     "员工个人信息未建档，无法更新住址/紧急联系人等字段");
         }
         if (birthday != null) personal.setBirthday(birthday);
-        if (addr != null) personal.setResidenceAddress(addr);
+        if (householdAddr != null) personal.setHouseholdAddress(householdAddr);
+        if (residenceAddr != null) personal.setResidenceAddress(residenceAddr);
         if (contact != null) personal.setEmergencyContact(contact);
         if (phone != null) personal.setEmergencyPhone(phone);
         employeePersonalMapper.updateById(personal);

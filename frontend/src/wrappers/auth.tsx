@@ -1,7 +1,8 @@
 import { history, Outlet, useLocation, useModel } from '@umijs/max';
 import { Spin } from 'antd';
 import React, { useEffect } from 'react';
-import { ADMIN_ROLES, ROLES, type RoleCode } from '@/constants/roles';
+import { ADMIN_ROLES, type RoleCode } from '@/constants/roles';
+import { getHomePath } from '@/utils/authSession';
 import { getAccessToken } from '@/utils/token';
 
 const AuthWrapper: React.FC = () => {
@@ -31,12 +32,9 @@ const AuthWrapper: React.FC = () => {
   const isAdminRoute = location.pathname.startsWith('/admin');
   const hasAdminRole = roles.some((role: string) => ADMIN_ROLES.includes(role as RoleCode));
 
+  // 无管理端角色时不可进 /admin，按角色回首页（员工→门户，其它→登录由 getHomePath 兜底）
   if (isAdminRoute && !hasAdminRole) {
-    if (roles.includes(ROLES.EMPLOYEE)) {
-      history.replace('/portal/profile');
-      return null;
-    }
-    history.replace('/login');
+    history.replace(getHomePath(roles));
     return null;
   }
 

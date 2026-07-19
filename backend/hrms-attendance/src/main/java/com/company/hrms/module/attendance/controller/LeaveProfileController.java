@@ -58,7 +58,7 @@ public class LeaveProfileController {
      */
     @PutMapping("/profile/leave/applications/{id}/cancel")
     public Result<Map<String, String>> cancel(@PathVariable Long id) {
-        leaveService.cancel(id);
+        leaveService.cancel(id, SecurityUtils.getCurrentUser().getEmployeeId());
         return Result.success(Map.of("status", "CANCELLED"));
     }
 }

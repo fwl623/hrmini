@@ -83,7 +83,16 @@ public class ApprovalController {
     @PostMapping("/instances/{id}/withdraw")
     public Result<Void> withdraw(@PathVariable("id") long id) {
         long userId = currentUserProvider.requireUserId();
-        dbApprovalService.doWithdrawInstance(id, userId);
+        Long employeeId = null;
+        try {
+            var login = com.company.hrms.common.security.SecurityUtils.getLoginUser();
+            if (login != null) {
+                employeeId = login.getEmployeeId();
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+        dbApprovalService.doWithdrawInstance(id, userId, employeeId);
         return Result.success();
     }
 
@@ -93,6 +102,22 @@ public class ApprovalController {
             @RequestParam(required = false, defaultValue = "20") int pageSize) {
         long userId = currentUserProvider.requireUserId();
         return Result.success(dbApprovalService.listMyInstances(userId, page, pageSize));
+    }
+
+    /** 发起人查看审批进度 */
+    @GetMapping("/instances/{id}")
+    public Result<ApprovalDtos.InstanceDetailVO> instanceDetail(@PathVariable("id") long id) {
+        long userId = currentUserProvider.requireUserId();
+        Long employeeId = null;
+        try {
+            var login = com.company.hrms.common.security.SecurityUtils.getLoginUser();
+            if (login != null) {
+                employeeId = login.getEmployeeId();
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+        return Result.success(dbApprovalService.getInstanceDetail(id, userId, employeeId));
     }
 
     @GetMapping("/delegations")

@@ -24,12 +24,18 @@ public class FieldPermissionFilter {
     private static final Set<String> IDENTITY_SENSITIVE = Set.of(
             "idNumber", "idNumberEnc", "idCard", "idCardNo",
             "emergencyContact", "emergencyPhone", "emergencyName",
-            "bankAccount", "bankCard", "bankCardNumber", "bankAccountEnc"
+            "bankAccount", "bankCard", "bankCardNumber", "bankAccountEnc", "bankName"
     );
 
+    /** HR + 财务可见（PRD：基本工资） */
     private static final Set<String> SALARY_SENSITIVE = Set.of(
-            "salaryInfo", "baseSalary", "salary", "probationPayRatio",
-            "payrollSchemeId", "schemeId", "grossPay", "netPay", "takeHome"
+            "salaryInfo", "baseSalary", "salary", "grossPay", "netPay", "takeHome"
+    );
+
+    /** 仅 HR 可见（合同/账套/试用比例） */
+    private static final Set<String> CONTRACT_HR_SENSITIVE = Set.of(
+            "contractType", "contractExpireDate", "schemeId", "schemeName",
+            "probationPayRatio", "probationSalaryRatio", "probationRatio", "payrollSchemeId"
     );
 
     /**
@@ -43,10 +49,11 @@ public class FieldPermissionFilter {
         }
         boolean canIdentity = canViewIdentity(user, recordEmployeeId);
         boolean canSalary = canViewSalary(user, recordEmployeeId);
-        if (canIdentity && canSalary) {
+        boolean canContract = canViewContract(user);
+        if (canIdentity && canSalary && canContract) {
             return dto;
         }
-        walk(dto, canIdentity, canSalary, new IdentityHashMap<>());
+        walk(dto, canIdentity, canSalary, canContract, new IdentityHashMap<>());
         return dto;
     }
 
@@ -100,13 +107,19 @@ public class FieldPermissionFilter {
         return isSelf(user, recordEmployeeId);
     }
 
+    /** 合同/账套/试用比例：仅 HR（PRD §4.1.4 可见性） */
+    static boolean canViewContract(LoginUser user) {
+        return user.hasRole(RoleCode.HR_STAFF.name());
+    }
+
     private static boolean isSelf(LoginUser user, Long recordEmployeeId) {
         return recordEmployeeId != null
                 && user.getEmployeeId() != null
                 && recordEmployeeId.equals(user.getEmployeeId());
     }
 
-    private void walk(Object obj, boolean canIdentity, boolean canSalary, IdentityHashMap<Object, Boolean> seen) {
+    private void walk(Object obj, boolean canIdentity, boolean canSalary, boolean canContract,
+                      IdentityHashMap<Object, Boolean> seen) {
         if (obj == null || seen.containsKey(obj)) {
             return;
         }
@@ -118,20 +131,20 @@ public class FieldPermissionFilter {
 
         if (obj instanceof Collection<?> col) {
             for (Object item : col) {
-                walk(item, canIdentity, canSalary, seen);
+                walk(item, canIdentity, canSalary, canContract, seen);
             }
             return;
         }
         if (obj instanceof Map<?, ?> map) {
             for (Object value : map.values()) {
-                walk(value, canIdentity, canSalary, seen);
+                walk(value, canIdentity, canSalary, canContract, seen);
             }
             return;
         }
         if (type.isArray()) {
             int len = Array.getLength(obj);
             for (int i = 0; i < len; i++) {
-                walk(Array.get(obj, i), canIdentity, canSalary, seen);
+                walk(Array.get(obj, i), canIdentity, canSalary, canContract, seen);
             }
             return;
         }
@@ -155,8 +168,14 @@ public class FieldPermissionFilter {
                     }
                     continue;
                 }
+                if (!canContract && CONTRACT_HR_SENSITIVE.contains(name)) {
+                    if (!field.getType().isPrimitive()) {
+                        field.set(obj, null);
+                    }
+                    continue;
+                }
                 Object value = field.get(obj);
-                walk(value, canIdentity, canSalary, seen);
+                walk(value, canIdentity, canSalary, canContract, seen);
             } catch (IllegalAccessException ignored) {
                 // skip
             }

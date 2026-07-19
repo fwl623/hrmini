@@ -85,6 +85,7 @@ const LoginPage: React.FC = () => {
     startTokenRefresher();
     startIdleDetector();
 
+    // 管理员优先进管理后台，普通员工进门户
     const home = getHomePath(currentUser.roles);
     if (mustChangePassword || currentUser.mustChangePassword) {
       setChangePwdOpen(true);
@@ -147,7 +148,7 @@ const LoginPage: React.FC = () => {
           type="info"
           showIcon
           style={{ marginBottom: 20 }}
-          message="联调账号：13800000000 / Admin@12345"
+          message="联调账号：13800000000 / Admin@12345（管理员登录后进入管理后台）"
         />
 
         <Form<LoginForm>

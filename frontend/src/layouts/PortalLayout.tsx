@@ -1,8 +1,9 @@
-import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
+import { DashboardOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { Outlet, history, useAccess, useLocation, useModel } from '@umijs/max';
 import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import React, { useMemo } from 'react';
+import { ADMIN_ROLES, type RoleCode } from '@/constants/roles';
 import { forceLogout } from '@/utils/authSession';
 import './layout.css';
 
@@ -13,7 +14,7 @@ const ALL_PORTAL_MENU: MenuProps['items'] = [
   { key: '/portal/attendance', label: '考勤打卡' },
   { key: '/portal/leave', label: '我的请假' },
   { key: '/portal/overtime', label: '我的加班' },
-  { key: '/portal/payslips', label: '我的工资条' },
+  { key: '/portal/payslips', label: '我的薪资' },
   { key: '/portal/security', label: '账号安全' },
 ];
 
@@ -40,7 +41,21 @@ const PortalLayout: React.FC = () => {
     await forceLogout();
   };
 
+  const roles = initialState?.currentUser?.roles ?? [];
+  const hasAdminRole = roles.some((role) => ADMIN_ROLES.includes(role as RoleCode));
+
   const userMenu: MenuProps['items'] = [
+    ...(hasAdminRole
+      ? [
+          {
+            key: 'admin',
+            icon: <DashboardOutlined />,
+            label: '返回管理后台',
+            onClick: () => history.push('/admin/workbench'),
+          },
+          { type: 'divider' as const },
+        ]
+      : []),
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: handleLogout },
   ];
 

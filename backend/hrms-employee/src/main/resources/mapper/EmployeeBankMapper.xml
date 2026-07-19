@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.employee.mapper.EmployeeBankMapper">
+
+    <select id="selectById" resultType="com.company.hrms.employee.entity.EmployeeBank">
+        SELECT employee_id AS employeeId,
+               bank_account_enc AS bankAccountEnc,
+               bank_account_tail AS bankAccountTail,
+               bank_name AS bankName,
+               created_at AS createdAt,
+               updated_at AS updatedAt
+        FROM employee_bank
+        WHERE employee_id = #{employeeId}
+    </select>
+
+    <insert id="insert">
+        INSERT INTO employee_bank (employee_id, bank_account_enc, bank_account_tail, bank_name)
+        VALUES (#{employeeId}, #{bankAccountEnc}, #{bankAccountTail}, #{bankName})
+    </insert>
+
+    <update id="updateById">
+        UPDATE employee_bank
+        <set>
+            <if test="bankAccountEnc != null">bank_account_enc = #{bankAccountEnc},</if>
+            <if test="bankAccountTail != null">bank_account_tail = #{bankAccountTail},</if>
+            <if test="bankName != null">bank_name = #{bankName},</if>
+        </set>
+        WHERE employee_id = #{employeeId}
+    </update>
+</mapper>

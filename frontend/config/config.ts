@@ -16,7 +16,7 @@ export default defineConfig({
   request: {},
   layout: false,
   routes: [
-    { path: '/', redirect: '/login' },
+    { path: '/', component: './home-redirect', layout: false },
     { path: '/login', component: './login', layout: false },
     {
       path: '/admin',

@@ -1,5 +1,6 @@
 package com.company.hrms.employee.vo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -15,6 +16,7 @@ import java.time.LocalDateTime;
 public class LoginLogVO {
 
     /** 登录时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime loginTime;
 
     /** 登录IP地址 */

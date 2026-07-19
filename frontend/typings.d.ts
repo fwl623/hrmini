@@ -181,6 +181,7 @@ declare namespace API {
     leaveDays: number;
     reason: string;
     status: string;
+    instanceId?: number;
   }
 
   interface LeaveApplicationDTO {

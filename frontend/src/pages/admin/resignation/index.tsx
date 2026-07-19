@@ -13,7 +13,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
-import { useAccess } from '@umijs/max';
+import { useAccess, useSearchParams } from '@umijs/max';
 import { useCallback, useEffect, useState } from 'react';
 import {
   createResignation,
@@ -22,14 +22,15 @@ import {
   type ResignationItem,
   type ResignationStats,
 } from '@/services/lifecycle';
-import { getEmployeeList } from '@/services/employee';
+import { getEmployeeDetail, getEmployeeList } from '@/services/employee';
 
 /**
  * HR/管理员离职管理：仅发起正式离职（PRD §5.4）
- * 工作交接人由部门负责人在审批中心确认，本页不采集。
+ * 支持 ?employeeId=&name=&open=1 从花名册「更多-离职」带入
  */
 export default function AdminResignationPage() {
   const access = useAccess();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [resignations, setResignations] = useState<ResignationItem[]>([]);
   const [stats, setStats] = useState<ResignationStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,6 +58,39 @@ export default function AdminResignationPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!access.canManageResignation) return;
+    const employeeId = searchParams.get('employeeId');
+    const shouldOpen = searchParams.get('open') === '1';
+    if (!employeeId || !shouldOpen) return;
+
+    const id = Number(employeeId);
+    if (!Number.isFinite(id) || id <= 0) return;
+
+    (async () => {
+      form.resetFields();
+      const nameFromQuery = searchParams.get('name');
+      let label = nameFromQuery ? decodeURIComponent(nameFromQuery) : `员工#${id}`;
+      try {
+        const res = await getEmployeeDetail(id);
+        if (res.code === 0 && res.data) {
+          label = `${res.data.name} · ${res.data.department || '未分部门'} · ${res.data.empNo || '-'}`;
+        }
+      } catch {
+        // keep label
+      }
+      setEmpOptions([{ label, value: id }]);
+      form.setFieldsValue({
+        employeeId: id,
+        resignationDate: dayjs().add(14, 'day'),
+        reasonCategory: 'VOLUNTARY',
+        resignationType: 'resignation',
+      });
+      setOpen(true);
+      setSearchParams({}, { replace: true });
+    })();
+  }, [access.canManageResignation, form, searchParams, setSearchParams]);
 
   const searchEmployees = useCallback(async (keyword: string) => {
     if (!keyword || keyword.trim().length < 1) {

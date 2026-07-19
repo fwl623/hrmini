@@ -1,4 +1,4 @@
-import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
+import { IdcardOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { Outlet, history, useAccess, useLocation, useModel } from '@umijs/max';
 import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
@@ -171,6 +171,13 @@ const AdminLayout: React.FC = () => {
   };
 
   const userMenu: MenuProps['items'] = [
+    {
+      key: 'profile',
+      icon: <IdcardOutlined />,
+      label: '个人中心',
+      onClick: () => history.push('/portal/profile'),
+    },
+    { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: handleLogout },
   ];
 

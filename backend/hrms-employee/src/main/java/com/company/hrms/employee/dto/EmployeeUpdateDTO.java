@@ -30,13 +30,16 @@ public class EmployeeUpdateDTO {
     /** 现居地址 */
     private String residenceAddress;
 
+    /** 户籍地址 */
+    private String householdAddress;
+
     /** 紧急联系人姓名 */
     private String emergencyContact;
 
     /** 紧急联系人电话 */
     private String emergencyPhone;
 
-    /** 工作地点 */
+    // workLocation 不可直接 PUT（PRD：须走调岗），仅用于 rejectFlowFields 拦截
     private String workLocation;
 
     // ---- 流程字段：不可直接 PUT，仅用于 rejectFlowFields 拦截 → 20003 ----

@@ -16,23 +16,27 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from '@umijs/max';
 import {
   createTransfer,
   fetchTransferDetail,
   fetchTransfers,
   type TransferItem,
 } from '@/services/lifecycle';
+import { getEmployeeDetail } from '@/services/employee';
 
 /**
  * 调岗管理：列表 + 发起 + 详情三节点
- * 部门选择：依赖 A 同学部门树选择器（/departments/tree），当前用 InputNumber 暂代 departmentId。
+ * 支持 ?employeeId=&open=1 从花名册「更多-调岗」带入
  */
 export default function TransfersPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [list, setList] = useState<TransferItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<TransferItem | null>(null);
   const [form] = Form.useForm();
+  const [employeeHint, setEmployeeHint] = useState<string>('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,6 +53,30 @@ export default function TransfersPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const employeeId = searchParams.get('employeeId');
+    const shouldOpen = searchParams.get('open') === '1';
+    if (!employeeId || !shouldOpen) return;
+
+    const id = Number(employeeId);
+    if (!Number.isFinite(id) || id <= 0) return;
+
+    (async () => {
+      form.resetFields();
+      form.setFieldsValue({ employeeId: id });
+      try {
+        const res = await getEmployeeDetail(id);
+        if (res.code === 0 && res.data) {
+          setEmployeeHint(`${res.data.name}（${res.data.empNo}）`);
+        }
+      } catch {
+        setEmployeeHint('');
+      }
+      setOpen(true);
+      setSearchParams({}, { replace: true });
+    })();
+  }, [form, searchParams, setSearchParams]);
 
   const columns: ColumnsType<TransferItem> = [
     { title: 'ID', dataIndex: 'id', width: 80 },
@@ -91,7 +119,7 @@ export default function TransfersPage() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           调岗管理
         </Typography.Title>
-        <Button type="primary" onClick={() => { form.resetFields(); setOpen(true); }}>
+        <Button type="primary" onClick={() => { form.resetFields(); setEmployeeHint(''); setOpen(true); }}>
           发起调岗
         </Button>
       </Space>
@@ -128,7 +156,12 @@ export default function TransfersPage() {
         width={560}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="employeeId" label="员工 ID" rules={[{ required: true }]}>
+          <Form.Item
+            name="employeeId"
+            label="员工 ID"
+            rules={[{ required: true }]}
+            extra={employeeHint || '可从花名册「更多 → 调岗」带入'}
+          >
             <InputNumber style={{ width: '100%' }} />
           </Form.Item>
           {/* 依赖 A 同学部门树选择器（/departments/tree），当前暂用部门 ID 输入 */}

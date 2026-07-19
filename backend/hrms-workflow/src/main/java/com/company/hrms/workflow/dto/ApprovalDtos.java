@@ -91,6 +91,27 @@ public final class ApprovalDtos {
         private String status;
     }
 
+    /** 发起人查看审批进度 */
+    @Data
+    public static class InstanceDetailVO {
+        private Long instanceId;
+        private String processType;
+        private String title;
+        private String status;
+        private String currentNodeLabel;
+        private String createdAt;
+        private List<NodeProgressVO> nodes;
+        private List<TimelineItemVO> timeline;
+    }
+
+    @Data
+    public static class NodeProgressVO {
+        private int order;
+        private String label;
+        /** pending / current / done / cancelled */
+        private String state;
+    }
+
     @Data
     public static class DelegationFormRequest {
         private Long delegateUserId;

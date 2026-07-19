@@ -103,6 +103,16 @@ VALUES
     (106, 'FIXED', '2027-05-01', 1.0000, 1, 15000.00)
 ON DUPLICATE KEY UPDATE base_salary=VALUES(base_salary);
 
+INSERT INTO employee_bank (employee_id, bank_account_enc, bank_account_tail, bank_name)
+VALUES
+    (101, 'ENC:6222021000000001001', '1001', '工商银行'),
+    (102, 'ENC:6222021000000001002', '1002', '建设银行'),
+    (103, 'ENC:6222021000000001003', '1003', '农业银行'),
+    (104, 'ENC:6222021000000001004', '1004', '招商银行'),
+    (105, 'ENC:6222021000000001005', '1005', '中国银行'),
+    (106, 'ENC:6222021000000001006', '1006', '交通银行')
+ON DUPLICATE KEY UPDATE bank_name=VALUES(bank_name), bank_account_tail=VALUES(bank_account_tail);
+
 INSERT INTO employee_salary_profile (employee_id, scheme_id, base_salary, ss_base, hf_base, performance_base, probation_ratio, effective_date)
 VALUES
     (101, 1, 12000.00, 12000.00, 12000.00, 2000.00, 1.0000, '2024-03-01'),
@@ -216,6 +226,71 @@ VALUES
     ('2026-10-01', '国庆节')
 ON DUPLICATE KEY UPDATE name=VALUES(name);
 
+-- ------------------------------------------------------------
+-- 11. 门户「我的薪资」联调：近6个月已发放工资条（员工 104 孙七）
+-- ------------------------------------------------------------
+INSERT INTO payroll_batch (id, period, status, total_count, success_count, gross_total, net_total, anomaly_count, attendance_locked, created_by)
+VALUES
+    (201, '2026-02', 'DISTRIBUTED', 1, 1, 21000.00, 16800.00, 0, 1, 1001),
+    (202, '2026-03', 'DISTRIBUTED', 1, 1, 21500.00, 17150.00, 0, 1, 1001),
+    (203, '2026-04', 'DISTRIBUTED', 1, 1, 22000.00, 17500.00, 0, 1, 1001),
+    (204, '2026-05', 'DISTRIBUTED', 1, 1, 21800.00, 17320.00, 0, 1, 1001),
+    (205, '2026-06', 'DISTRIBUTED', 1, 1, 22500.00, 17900.00, 0, 1, 1001),
+    (206, '2026-07', 'DISTRIBUTED', 1, 1, 23000.00, 18250.00, 0, 1, 1001)
+ON DUPLICATE KEY UPDATE status=VALUES(status), gross_total=VALUES(gross_total), net_total=VALUES(net_total);
+
+INSERT INTO payroll_detail (batch_id, employee_id, calc_status, gross_salary, net_salary, detail_json, prev_net_salary, manual_adjusted)
+VALUES
+    (201, 104, 'SUCCESS', 21000.00, 16800.00,
+     JSON_ARRAY(
+       JSON_OBJECT('itemName', '基本工资', 'amount', 18000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '绩效工资', 'amount', 3000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '社保个人', 'amount', 2100, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '公积金个人', 'amount', 1440, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '个税', 'amount', 660, 'type', 'DEDUCTION')
+     ), NULL, 0),
+    (202, 104, 'SUCCESS', 21500.00, 17150.00,
+     JSON_ARRAY(
+       JSON_OBJECT('itemName', '基本工资', 'amount', 18000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '绩效工资', 'amount', 3500, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '社保个人', 'amount', 2100, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '公积金个人', 'amount', 1440, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '个税', 'amount', 810, 'type', 'DEDUCTION')
+     ), 16800.00, 0),
+    (203, 104, 'SUCCESS', 22000.00, 17500.00,
+     JSON_ARRAY(
+       JSON_OBJECT('itemName', '基本工资', 'amount', 18000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '绩效工资', 'amount', 4000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '社保个人', 'amount', 2100, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '公积金个人', 'amount', 1440, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '个税', 'amount', 960, 'type', 'DEDUCTION')
+     ), 17150.00, 0),
+    (204, 104, 'SUCCESS', 21800.00, 17320.00,
+     JSON_ARRAY(
+       JSON_OBJECT('itemName', '基本工资', 'amount', 18000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '绩效工资', 'amount', 3800, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '社保个人', 'amount', 2100, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '公积金个人', 'amount', 1440, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '个税', 'amount', 940, 'type', 'DEDUCTION')
+     ), 17500.00, 0),
+    (205, 104, 'SUCCESS', 22500.00, 17900.00,
+     JSON_ARRAY(
+       JSON_OBJECT('itemName', '基本工资', 'amount', 18000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '绩效工资', 'amount', 4500, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '社保个人', 'amount', 2100, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '公积金个人', 'amount', 1440, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '个税', 'amount', 1060, 'type', 'DEDUCTION')
+     ), 17320.00, 0),
+    (206, 104, 'SUCCESS', 23000.00, 18250.00,
+     JSON_ARRAY(
+       JSON_OBJECT('itemName', '基本工资', 'amount', 18000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '绩效工资', 'amount', 5000, 'type', 'EARNING'),
+       JSON_OBJECT('itemName', '社保个人', 'amount', 2100, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '公积金个人', 'amount', 1440, 'type', 'DEDUCTION'),
+       JSON_OBJECT('itemName', '个税', 'amount', 1210, 'type', 'DEDUCTION')
+     ), 17900.00, 0)
+ON DUPLICATE KEY UPDATE gross_salary=VALUES(gross_salary), net_salary=VALUES(net_salary), detail_json=VALUES(detail_json);
+
 -- 自增起点，避免后续插入与固定 ID 冲突
 ALTER TABLE department AUTO_INCREMENT = 100;
 ALTER TABLE position AUTO_INCREMENT = 100;
@@ -225,3 +300,4 @@ ALTER TABLE payroll_scheme AUTO_INCREMENT = 10;
 ALTER TABLE approval_process_def AUTO_INCREMENT = 10;
 ALTER TABLE attendance_group AUTO_INCREMENT = 10;
 ALTER TABLE sys_permission AUTO_INCREMENT = 100;
+ALTER TABLE payroll_batch AUTO_INCREMENT = 300;

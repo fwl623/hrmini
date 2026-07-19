@@ -1,19 +1,46 @@
-import React, { useState, useEffect, useCallback } from 'react';
+/**
+ * 我的考勤（员工门户）
+ * PRD §9.2：打卡 + 日历视图（色块标记出勤/请假/迟到/缺卡等）
+ */
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Card, Row, Col, Button, Statistic, Timeline, Tag, Typography, message, Space, Modal, Form, DatePicker, TimePicker, Input, Select,
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  Form,
+  Input,
+  Modal,
+  Row,
+  Select,
+  Space,
+  Statistic,
+  Tag,
+  Timeline,
+  TimePicker,
+  Typography,
+  message,
 } from 'antd';
+import type { Dayjs } from 'dayjs';
 import {
+  AimOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
-  AimOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
-import { portalPunch, getTodayPunchStatus, getPunchFixQuota, applyPunchFix } from '@/services/attendance';
+import {
+  applyPunchFix,
+  getAttendanceCalendar,
+  getPunchFixQuota,
+  getTodayPunchStatus,
+  portalPunch,
+} from '@/services/attendance';
 
-/* 打卡状态 → 颜色映射 */
-const statusColorMap: Record<string, string> = {
+const punchStatusColorMap: Record<string, string> = {
   NORMAL: 'green',
   LATE: 'orange',
   EARLY_LEAVE: 'orange',
@@ -21,8 +48,7 @@ const statusColorMap: Record<string, string> = {
   ABSENT: 'red',
 };
 
-/* 打卡状态 → 中文标签 */
-const statusLabelMap: Record<string, string> = {
+const punchStatusLabelMap: Record<string, string> = {
   NORMAL: '正常',
   LATE: '迟到',
   EARLY_LEAVE: '早退',
@@ -30,8 +56,38 @@ const statusLabelMap: Record<string, string> = {
   ABSENT: '旷工',
 };
 
+/** 日历日状态：底色 + 圆点（对齐截图样式） */
+const DAY_STATUS_META: Record<string, { label: string; bg: string; dot: string }> = {
+  NORMAL: { label: '出勤', bg: '#f6ffed', dot: '#52c41a' },
+  LATE: { label: '迟到', bg: '#fffbe6', dot: '#faad14' },
+  EARLY_LEAVE: { label: '早退', bg: '#fff7e6', dot: '#fa8c16' },
+  ABSENT: { label: '旷工', bg: '#fff1f0', dot: '#ff4d4f' },
+  ABSENT_HALF: { label: '旷半天', bg: '#fff1f0', dot: '#ff7875' },
+  MISSING_IN: { label: '缺上班卡', bg: '#fff1f0', dot: '#f5222d' },
+  MISSING_OUT: { label: '缺下班卡', bg: '#fff1f0', dot: '#f5222d' },
+  LEAVE: { label: '请假', bg: '#f9f0ff', dot: '#722ed1' },
+  '--': { label: '休息', bg: '#fafafa', dot: 'transparent' },
+};
+
+const LEGEND_ITEMS = [
+  { key: 'NORMAL', label: '出勤' },
+  { key: 'LATE', label: '迟到' },
+  { key: 'EARLY_LEAVE', label: '早退' },
+  { key: 'LEAVE', label: '请假' },
+  { key: 'MISSING_IN', label: '缺卡' },
+  { key: 'ABSENT', label: '旷工' },
+] as const;
+
+const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
+
 const AttendancePunchPage: React.FC = () => {
-  const [todayStatus, setTodayStatus] = useState({ clockedCount: 0, totalCount: 2, lateCount: 0, earlyLeaveCount: 0, absentCount: 0 });
+  const [todayStatus, setTodayStatus] = useState({
+    clockedCount: 0,
+    totalCount: 2,
+    lateCount: 0,
+    earlyLeaveCount: 0,
+    absentCount: 0,
+  });
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastPunch, setLastPunch] = useState<string | null>(null);
@@ -40,24 +96,60 @@ const AttendancePunchPage: React.FC = () => {
   const [fixForm] = Form.useForm();
   const [fixSubmitting, setFixSubmitting] = useState(false);
 
-  // 当前时间
+  const [calendarMonth, setCalendarMonth] = useState(() => dayjs());
+  const [calendarDays, setCalendarDays] = useState<API.AttendanceCalendarDay[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<API.AttendanceCalendarDay | null>(null);
+
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // 加载今日数据和补卡配额
+  const dayMap = useMemo(() => {
+    const map = new Map<string, API.AttendanceCalendarDay>();
+    calendarDays.forEach((d) => map.set(d.date, d));
+    return map;
+  }, [calendarDays]);
+
+  const calendarCells = useMemo(() => {
+    const start = calendarMonth.startOf('month');
+    const startWeekday = (start.day() + 6) % 7; // 周一为起点
+    const daysInMonth = calendarMonth.daysInMonth();
+    const cells: { date: Dayjs | null; key: string }[] = [];
+    for (let i = 0; i < startWeekday; i += 1) {
+      cells.push({ date: null, key: `pad-${i}` });
+    }
+    for (let d = 1; d <= daysInMonth; d += 1) {
+      const date = calendarMonth.date(d);
+      cells.push({ date, key: date.format('YYYY-MM-DD') });
+    }
+    while (cells.length % 7 !== 0) {
+      cells.push({ date: null, key: `tail-${cells.length}` });
+    }
+    return cells;
+  }, [calendarMonth]);
+
   const loadData = useCallback(async () => {
     try {
-      const [statusRes, quotaRes] = await Promise.all([
-        getTodayPunchStatus(),
-        getPunchFixQuota(),
-      ]);
+      const [statusRes, quotaRes] = await Promise.all([getTodayPunchStatus(), getPunchFixQuota()]);
       if (statusRes.data) setTodayStatus(statusRes.data);
       if (quotaRes.data) setQuota(quotaRes.data);
     } catch {
-      // API 未就绪时静默失败
+      // ignore
+    }
+  }, []);
+
+  const loadCalendar = useCallback(async (month: Dayjs) => {
+    setCalendarLoading(true);
+    try {
+      const res = await getAttendanceCalendar(month.format('YYYY-MM'));
+      setCalendarDays(res.code === 0 && res.data?.days ? res.data.days : []);
+    } catch {
+      setCalendarDays([]);
+    } finally {
+      setCalendarLoading(false);
     }
   }, []);
 
@@ -65,19 +157,21 @@ const AttendancePunchPage: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    loadCalendar(calendarMonth);
+  }, [calendarMonth, loadCalendar]);
+
   const handlePunch = async (type: 'in' | 'out') => {
     setLoading(true);
     try {
       const res = await portalPunch({ type, punchTime: new Date().toISOString() });
       const punchStatus = res.data?.punchStatus || 'NORMAL';
       const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-      setLastPunch(`${type === 'in' ? '上班' : '下班'} ${timeStr} — ${statusLabelMap[punchStatus]}`);
+      setLastPunch(`${type === 'in' ? '上班' : '下班'} ${timeStr} — ${punchStatusLabelMap[punchStatus]}`);
       message.success(`${type === 'in' ? '上班' : '下班'}打卡成功`);
-
-      // 刷新数据和记录
       await loadData();
-      // 添加模拟记录（实时反馈）
-      setRecords(prev => [
+      await loadCalendar(calendarMonth);
+      setRecords((prev) => [
         ...prev,
         { time: timeStr, type: type === 'in' ? '上班' : '下班', status: punchStatus },
       ]);
@@ -88,7 +182,6 @@ const AttendancePunchPage: React.FC = () => {
     }
   };
 
-  // 补卡
   const handleFixSubmit = async () => {
     try {
       const values = await fixForm.validateFields();
@@ -103,6 +196,7 @@ const AttendancePunchPage: React.FC = () => {
       setFixModalOpen(false);
       fixForm.resetFields();
       await loadData();
+      await loadCalendar(calendarMonth);
     } catch (err: any) {
       if (err?.message) message.error(err.message);
     } finally {
@@ -112,14 +206,18 @@ const AttendancePunchPage: React.FC = () => {
 
   return (
     <Row gutter={[24, 24]}>
-      {/* 时间卡片 + 打卡按钮 */}
       <Col xs={24} lg={8}>
         <Card>
           <Typography.Title level={2} style={{ textAlign: 'center', marginBottom: 0 }}>
             {now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </Typography.Title>
           <Typography.Text type="secondary" style={{ display: 'block', textAlign: 'center' }}>
-            {now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
+            {now.toLocaleDateString('zh-CN', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              weekday: 'long',
+            })}
           </Typography.Text>
         </Card>
 
@@ -154,20 +252,23 @@ const AttendancePunchPage: React.FC = () => {
           )}
         </Card>
 
-        {/* 补卡入口 */}
         <Card style={{ marginTop: 16 }} size="small">
           <Space direction="vertical" style={{ width: '100%' }}>
             <Typography.Text type="secondary">
               本月补卡剩余次数：{quota.remainingQuota} 次（最多 {quota.totalQuota} 次/月）
             </Typography.Text>
-            <Button type="link" size="small" onClick={() => setFixModalOpen(true)} disabled={quota.remainingQuota <= 0}>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setFixModalOpen(true)}
+              disabled={quota.remainingQuota <= 0}
+            >
               申请补卡
             </Button>
           </Space>
         </Card>
       </Col>
 
-      {/* 今日状态 + 打卡记录 */}
       <Col xs={24} lg={16}>
         <Card title="今日打卡状态">
           <Row gutter={[16, 16]}>
@@ -211,12 +312,12 @@ const AttendancePunchPage: React.FC = () => {
             <Timeline
               items={records.map((r, i) => ({
                 key: i,
-                color: statusColorMap[r.status] || 'gray',
+                color: punchStatusColorMap[r.status] || 'gray',
                 children: (
                   <>
                     <Typography.Text strong>{r.time}</Typography.Text>
-                    <Tag color={statusColorMap[r.status] || 'default'} style={{ marginLeft: 8 }}>
-                      {r.type} · {statusLabelMap[r.status] || r.status}
+                    <Tag color={punchStatusColorMap[r.status] || 'default'} style={{ marginLeft: 8 }}>
+                      {r.type} · {punchStatusLabelMap[r.status] || r.status}
                     </Tag>
                   </>
                 ),
@@ -228,28 +329,165 @@ const AttendancePunchPage: React.FC = () => {
         </Card>
       </Col>
 
-      {/* 补卡申请弹窗 */}
+      <Col span={24}>
+        <Card
+          title="我的考勤日历"
+          loading={calendarLoading}
+          extra={
+            <Space>
+              <Button
+                size="small"
+                icon={<LeftOutlined />}
+                onClick={() => setCalendarMonth((m) => m.subtract(1, 'month'))}
+              />
+              <Typography.Text>{calendarMonth.format('YYYY年MM月')}</Typography.Text>
+              <Button
+                size="small"
+                icon={<RightOutlined />}
+                onClick={() => setCalendarMonth((m) => m.add(1, 'month'))}
+              />
+              <Button size="small" onClick={() => setCalendarMonth(dayjs())}>
+                本月
+              </Button>
+            </Space>
+          }
+        >
+          <Space wrap style={{ marginBottom: 12 }}>
+            {LEGEND_ITEMS.map((item) => (
+              <Space key={item.key} size={4}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: DAY_STATUS_META[item.key].dot,
+                  }}
+                />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {item.label}
+                </Typography.Text>
+              </Space>
+            ))}
+          </Space>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, 1fr)',
+              gap: 8,
+            }}
+          >
+            {WEEKDAYS.map((w) => (
+              <div
+                key={w}
+                style={{ textAlign: 'center', color: '#8c8c8c', fontSize: 13, paddingBottom: 4 }}
+              >
+                {w}
+              </div>
+            ))}
+            {calendarCells.map((cell) => {
+              if (!cell.date) return <div key={cell.key} />;
+              const key = cell.date.format('YYYY-MM-DD');
+              const day = dayMap.get(key);
+              const status = day?.dayStatus || '--';
+              const isWeekend = cell.date.day() === 0 || cell.date.day() === 6;
+              const meta =
+                DAY_STATUS_META[status] ||
+                (isWeekend
+                  ? DAY_STATUS_META['--']
+                  : { label: status, bg: '#f5f5f5', dot: '#bfbfbf' });
+              const selected = selectedDay?.date === key;
+              const isToday = cell.date.isSame(dayjs(), 'day');
+              return (
+                <button
+                  key={cell.key}
+                  type="button"
+                  onClick={() => setSelectedDay(day ?? { date: key, dayStatus: status })}
+                  style={{
+                    border: selected || isToday ? '2px solid #1677ff' : '1px solid #f0f0f0',
+                    borderRadius: 8,
+                    background: meta.bg,
+                    minHeight: 64,
+                    cursor: 'pointer',
+                    padding: '8px 4px 6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span style={{ fontWeight: isToday ? 600 : 400, color: '#262626' }}>
+                    {cell.date.date()}
+                  </span>
+                  {status !== '--' ? (
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: meta.dot,
+                        marginTop: 4,
+                      }}
+                    />
+                  ) : (
+                    <span style={{ height: 8, marginTop: 4 }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedDay && (
+            <Card size="small" style={{ marginTop: 12 }} title={`${selectedDay.date} 详情`}>
+              {selectedDay.dayStatus && selectedDay.dayStatus !== '--' ? (
+                <Space direction="vertical" size={4}>
+                  <div>
+                    状态：
+                    <Tag>{DAY_STATUS_META[selectedDay.dayStatus]?.label || selectedDay.dayStatus}</Tag>
+                  </div>
+                  <Typography.Text type="secondary">
+                    上班：{selectedDay.clockInTime || '-'}　下班：{selectedDay.clockOutTime || '-'}
+                  </Typography.Text>
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">当日无考勤汇总（休息日或尚未生成）</Typography.Text>
+              )}
+            </Card>
+          )}
+        </Card>
+      </Col>
+
       <Modal
         title="申请补卡"
         open={fixModalOpen}
         onOk={handleFixSubmit}
-        onCancel={() => { setFixModalOpen(false); fixForm.resetFields(); }}
+        onCancel={() => {
+          setFixModalOpen(false);
+          fixForm.resetFields();
+        }}
         confirmLoading={fixSubmitting}
       >
         <Form form={fixForm} layout="vertical">
           <Form.Item name="punchDate" label="补卡日期" rules={[{ required: true, message: '请选择日期' }]}>
-            <DatePicker style={{ width: '100%' }} disabledDate={(d) => d && d.isAfter(dayjs())} />
+            <DatePicker style={{ width: '100%' }} disabledDate={(d) => !!d && d.isAfter(dayjs())} />
           </Form.Item>
           <Form.Item name="type" label="补卡类型" rules={[{ required: true, message: '请选择类型' }]}>
-            <Select options={[
-              { label: '上班卡', value: 'in' },
-              { label: '下班卡', value: 'out' },
-            ]} />
+            <Select
+              options={[
+                { label: '上班卡', value: 'in' },
+                { label: '下班卡', value: 'out' },
+              ]}
+            />
           </Form.Item>
           <Form.Item name="punchTime" label="补卡时间" rules={[{ required: true, message: '请选择时间' }]}>
             <TimePicker format="HH:mm" style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="reason" label="补卡原因" rules={[{ required: true, max: 256, message: '请输入原因（≤256字符）' }]}>
+          <Form.Item
+            name="reason"
+            label="补卡原因"
+            rules={[{ required: true, max: 256, message: '请输入原因（≤256字符）' }]}
+          >
             <Input.TextArea rows={3} maxLength={256} showCount />
           </Form.Item>
         </Form>

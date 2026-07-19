@@ -15,4 +15,6 @@ public class LeaveApplicationVO {
     private Double leaveDays;
     private String reason;
     private String status;
+    /** 审批实例 ID，门户查看进度用 */
+    private Long instanceId;
 }

@@ -15,4 +15,9 @@ public interface EmployeeContractMapper {
     EmployeeContract selectByEmployeeId(Long employeeId);
     int insert(EmployeeContract contract);
     int updateById(EmployeeContract contract);
+
+    /** 账套名称（跨表只读，避免 hrms-employee 依赖 payroll 模块） */
+    @org.apache.ibatis.annotations.Select(
+            "SELECT name FROM payroll_scheme WHERE id = #{schemeId} AND (deleted = 0 OR deleted IS NULL) LIMIT 1")
+    String selectSchemeName(@org.apache.ibatis.annotations.Param("schemeId") Long schemeId);
 }

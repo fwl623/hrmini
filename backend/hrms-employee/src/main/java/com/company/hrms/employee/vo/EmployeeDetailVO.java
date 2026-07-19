@@ -1,9 +1,11 @@
 package com.company.hrms.employee.vo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
@@ -58,6 +60,9 @@ public class EmployeeDetailVO {
     private LocalDate hireDate;
     /** 试用期薪资比例 */
     private BigDecimal probationPayRatio;
+    /** 档案创建时间（系统记录） */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime createdAt;
 
     // ========== 敏感字段（脱敏后） ==========
     /** 身份证号（脱敏：3301**********1234） */
@@ -72,6 +77,17 @@ public class EmployeeDetailVO {
     private String emergencyContact;
     /** 紧急联系人电话 */
     private String emergencyPhone;
+    // ========== 薪资与合同（按角色裁剪） ==========
+    /** 合同类型 FIXED/UNFIXED/LABOR */
+    private String contractType;
+    /** 合同到期日 */
+    private LocalDate contractExpireDate;
+    /** 薪资账套 ID */
+    private Long schemeId;
+    /** 薪资账套名称 */
+    private String schemeName;
+    /** 基本工资 */
+    private BigDecimal baseSalary;
     /** 银行卡号（脱敏：****1234） */
     private String bankAccount;
     /** 开户行 */

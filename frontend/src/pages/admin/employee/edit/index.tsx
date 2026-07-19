@@ -14,11 +14,13 @@ import dayjs from 'dayjs';
 
 // TODO: org接口未完成 — departmentId/positionId 的禁用+Tooltip 展示依赖 org 模块组织树数据，后续可增加「点击跳转调岗申请页」链接
 const FLOW_HINTS: Record<string, string> = {
-  departmentId: '请走调岗流程（POST /transfers）',
-  positionId:   '请走调岗流程（POST /transfers）',
-  mobile:       '手机号变更请提交手机号变更申请',
-  idNumber:     '身份证号不可编辑',
-  grade:        '请走调岗流程',
+  departmentId: '请走调岗流程',
+  positionId: '请走调岗流程',
+  mobile: '手机号变更请提交手机号变更申请',
+  idNumber: '身份证号不可编辑',
+  grade: '请走调岗流程',
+  managerId: '请走调岗流程',
+  workLocation: '请走调岗流程',
 };
 
 const EmployeeEditPage: React.FC = () => {
@@ -40,10 +42,10 @@ const EmployeeEditPage: React.FC = () => {
           gender: res.data.gender,
           email: res.data.email,
           birthday: res.data.birthday ? dayjs(res.data.birthday) : undefined,
+          householdAddress: res.data.householdAddress,
           residenceAddress: res.data.residenceAddress,
           emergencyContact: res.data.emergencyContact,
           emergencyPhone: res.data.emergencyPhone,
-          workLocation: res.data.workLocation,
         });
       }
     }).finally(() => setLoading(false));
@@ -83,6 +85,8 @@ const EmployeeEditPage: React.FC = () => {
         <Descriptions title="基础信息" column={2} bordered size="small" style={{ marginBottom: 16 }}>
           <Descriptions.Item label="工号">{detail.empNo}</Descriptions.Item>
           <Descriptions.Item label="在职状态">{detail.employmentStatus === 'regular' ? '正式' : detail.employmentStatus}</Descriptions.Item>
+          <Descriptions.Item label="入职日期">{detail.hireDate || '-'}</Descriptions.Item>
+          <Descriptions.Item label="创建时间">{detail.createdAt || '-'}</Descriptions.Item>
         </Descriptions>
 
         <Form.Item label="姓名" name="name"><Input /></Form.Item>
@@ -91,18 +95,31 @@ const EmployeeEditPage: React.FC = () => {
         </Form.Item>
         <Form.Item label="邮箱" name="email"><Input placeholder="email@example.com" /></Form.Item>
         <Form.Item label="生日" name="birthday"><DatePicker style={{ width: '100%' }} /></Form.Item>
+        <Form.Item label="户籍地址" name="householdAddress"><Input.TextArea rows={2} /></Form.Item>
         <Form.Item label="现居地址" name="residenceAddress"><Input.TextArea rows={2} /></Form.Item>
         <Form.Item label="紧急联系人" name="emergencyContact"><Input /></Form.Item>
         <Form.Item label="紧急电话" name="emergencyPhone"><Input /></Form.Item>
-        <Form.Item label="工作地点" name="workLocation"><Input placeholder="如：杭州" /></Form.Item>
 
         <Descriptions title="不可编辑（须走流程）" column={2} bordered size="small" style={{ marginBottom: 16 }}>
           {[
-            // TODO: org接口未完成 — department/position display 值由后端 JOIN 返回，独立 org 查询待联调
-          { label: '部门', value: detail.department, key: 'departmentId' },
+            { label: '部门', value: detail.department, key: 'departmentId' },
             { label: '职位', value: detail.position, key: 'positionId' },
-            { label: '手机号', value: detail.mobile, key: 'mobile' },
             { label: '职级', value: detail.grade, key: 'grade' },
+            { label: '直接汇报人', value: detail.managerName, key: 'managerId' },
+            { label: '工作地点', value: detail.workLocation, key: 'workLocation' },
+            { label: '手机号', value: detail.mobile, key: 'mobile' },
+            {
+              label: '入职类型',
+              value:
+                detail.employmentType === 'fulltime'
+                  ? '全职'
+                  : detail.employmentType === 'parttime'
+                    ? '兼职'
+                    : detail.employmentType === 'intern'
+                      ? '实习'
+                      : detail.employmentType,
+              key: 'employmentType',
+            },
           ].map((item) => (
             <Descriptions.Item label={item.label} key={item.key}>
               <Tooltip title={FLOW_HINTS[item.key] || '如需修改请联系 HR'}>

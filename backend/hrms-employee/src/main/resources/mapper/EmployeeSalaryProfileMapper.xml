@@ -3,7 +3,20 @@
 <mapper namespace="com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper">
 
     <select id="selectByEmployeeId" resultType="com.company.hrms.employee.entity.EmployeeSalaryProfile">
-        SELECT * FROM employee_salary_profile WHERE employee_id = #{employeeId}
+        SELECT id,
+               employee_id      AS employeeId,
+               scheme_id        AS schemeId,
+               base_salary      AS baseSalary,
+               allowance_base_json AS allowanceBaseJson,
+               ss_base          AS ssBase,
+               hf_base          AS hfBase,
+               performance_base AS performanceBase,
+               probation_ratio  AS probationRatio,
+               effective_date   AS effectiveDate,
+               created_at       AS createdAt,
+               updated_at       AS updatedAt
+        FROM employee_salary_profile
+        WHERE employee_id = #{employeeId}
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">

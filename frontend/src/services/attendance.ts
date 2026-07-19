@@ -333,6 +333,24 @@ export async function submitLeave(data: API.LeaveApplicationDTO) {
 }
 
 /**
+ * 撤销请假（仅待审批）— 管理端
+ */
+export async function cancelLeave(id: number) {
+  return request<API.Result<{ status: string }>>(`/api/v1/leaves/applications/${id}/cancel`, {
+    method: 'PUT',
+  });
+}
+
+/**
+ * 本人撤销请假（门户）
+ */
+export async function cancelMyLeave(id: number) {
+  return request<API.Result<{ status: string }>>(`/api/v1/profile/leave/applications/${id}/cancel`, {
+    method: 'PUT',
+  });
+}
+
+/**
  * 预览请假天数
  *
  * 根据起止时间按系统工作日/节假日规则计算实际请假天数，

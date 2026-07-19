@@ -11,12 +11,16 @@ import {
 } from '@/services/payroll';
 
 const statusLabel: Record<string, string> = {
+  DISTRIBUTED: '已发放',
+  APPROVED: '已通过',
   NORMAL: '已发放',
   ADJUSTED: '已调整',
   FROZEN: '已冻结',
 };
 
 const statusColor: Record<string, string> = {
+  DISTRIBUTED: 'green',
+  APPROVED: 'cyan',
   NORMAL: 'green',
   ADJUSTED: 'orange',
   FROZEN: 'blue',
@@ -174,7 +178,7 @@ const PortalPayslipPage: React.FC = () => {
     <Spin spinning={loading}>
       <Row gutter={[24, 24]}>
         <Col span={24}>
-          <Card title="近6月实发趋势" size="small">
+          <Card title="近6个月实发趋势" size="small">
             {trendData.length > 0 ? (
               <Line {...lineConfig} />
             ) : (
@@ -183,12 +187,13 @@ const PortalPayslipPage: React.FC = () => {
           </Card>
         </Col>
         <Col span={24}>
-          <Card title="我的工资条" size="small">
+          <Card title="历史工资条" size="small">
             <Table
               rowKey="period"
               columns={columns}
               dataSource={list}
               pagination={false}
+              locale={{ emptyText: '暂无已发放工资条' }}
             />
           </Card>
         </Col>

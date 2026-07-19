@@ -16,6 +16,7 @@ import com.company.hrms.common.approval.CreateApprovalRequest;
 import com.company.hrms.common.approval.CreateApprovalResult;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
+import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.module.attendance.dto.CalcDaysVO;
@@ -152,6 +153,7 @@ public class LeaveService {
             vo.setLeaveDays(la.getLeaveDays() != null ? la.getLeaveDays().doubleValue() : 0);
             vo.setReason(la.getReason());
             vo.setStatus(la.getStatus());
+            vo.setInstanceId(la.getInstanceId());
             voList.add(vo);
         }
 
@@ -221,9 +223,18 @@ public class LeaveService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void cancel(Long id) {
+        cancel(id, null);
+    }
+
+    /** 本人撤销时传入 employeeId 校验归属 */
+    @Transactional(rollbackFor = Exception.class)
+    public void cancel(Long id, Long employeeId) {
         LeaveApplication app = leaveApplicationMapper.selectById(id);
         if (app == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "请假申请不存在");
+        }
+        if (employeeId != null && !employeeId.equals(app.getEmployeeId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只能撤销本人的请假申请");
         }
         if (!"PENDING".equals(app.getStatus())) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "仅待审批状态的申请可撤销");
@@ -239,15 +250,15 @@ public class LeaveService {
             }
         }
 
+        // 先撤回审批实例（发起人字段存的是 employeeId），再改请假单状态，避免嵌套事务回滚污染
+        if (app.getInstanceId() != null) {
+            Long operatorId = SecurityUtils.getUserId();
+            // withdrawInstance 内部会同时用登录态 employeeId 做发起人校验
+            approvalEngineService.withdrawInstance(app.getInstanceId(),
+                    operatorId != null ? operatorId : app.getEmployeeId());
+        }
         app.setStatus("CANCELLED");
         leaveApplicationMapper.updateById(app);
-        if (app.getInstanceId() != null) {
-            try {
-                approvalEngineService.withdrawInstance(app.getInstanceId(), app.getEmployeeId());
-            } catch (Exception e) {
-                log.warn("撤回请假审批实例失败 id={} instanceId={}: {}", id, app.getInstanceId(), e.getMessage());
-            }
-        }
         log.info("撤销请假: id={}, empId={}", id, app.getEmployeeId());
     }
 

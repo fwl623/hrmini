@@ -1,5 +1,5 @@
 import { history } from '@umijs/max';
-import { ADMIN_ROLES, ROLES, type RoleCode } from '@/constants/roles';
+import { ADMIN_ROLES, ROLES, resolvePrimaryRole, type RoleCode } from '@/constants/roles';
 import { logout } from '@/services/auth';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { useUserStore } from '@/stores/userStore';
@@ -7,11 +7,30 @@ import { stopIdleDetector } from '@/utils/idleDetector';
 import { getAccessToken, clearTokens } from '@/utils/token';
 import { stopTokenRefresher } from '@/utils/tokenRefresher';
 
+/** 规范化角色列表（兼容异常返回） */
+export function normalizeRoles(roles: unknown): string[] {
+  if (!Array.isArray(roles)) {
+    return [];
+  }
+  return roles.map((r) => String(r)).filter(Boolean);
+}
+
+/**
+ * 登录后首页：
+ * - 有管理端角色（SYS_ADMIN / HR / 主管 / 财务）→ 管理后台工作台
+ * - 仅普通员工 → 员工门户
+ */
 export function getHomePath(roles: string[] = []): string {
-  const hasAdminRole = roles.some((role) => ADMIN_ROLES.includes(role as RoleCode));
-  if (!hasAdminRole && roles.includes(ROLES.EMPLOYEE)) {
+  const list = normalizeRoles(roles);
+  const hasAdminRole = list.some((role) => ADMIN_ROLES.includes(role as RoleCode));
+  if (hasAdminRole) {
+    return '/admin/workbench';
+  }
+  const primary = resolvePrimaryRole(list);
+  if (primary === ROLES.EMPLOYEE || list.includes(ROLES.EMPLOYEE)) {
     return '/portal/profile';
   }
+  // 无角色时也进登录后的管理端占位，由鉴权再拦
   return '/admin/workbench';
 }
 

@@ -128,7 +128,16 @@ public class DbApprovalService implements ApprovalEngineService {
     @Override
     @Transactional
     public boolean withdrawInstance(Long instanceId, Long operatorId) {
-        doWithdrawInstance(instanceId.longValue(), operatorId.longValue());
+        Long employeeId = null;
+        try {
+            var login = com.company.hrms.common.security.SecurityUtils.getLoginUser();
+            if (login != null) {
+                employeeId = login.getEmployeeId();
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+        doWithdrawInstance(instanceId.longValue(), operatorId.longValue(), employeeId);
         return true;
     }
 
@@ -391,11 +400,22 @@ public class DbApprovalService implements ApprovalEngineService {
 
     @Transactional
     public void doWithdrawInstance(long instanceId, long userId) {
+        doWithdrawInstance(instanceId, userId, null);
+    }
+
+    /**
+     * 撤回审批实例。initiatorId 可能存 userId 或 employeeId（请假等业务用 employeeId）。
+     */
+    @Transactional
+    public void doWithdrawInstance(long instanceId, long userId, Long employeeId) {
         ApprovalInstance instance = instanceMapper.selectById(instanceId);
         if (instance == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在");
         }
-        if (!instance.getInitiatorId().equals(userId)) {
+        Long initiator = instance.getInitiatorId();
+        boolean owner = initiator != null
+                && (initiator.equals(userId) || (employeeId != null && initiator.equals(employeeId)));
+        if (!owner) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅发起人可撤回");
         }
         if (!"PENDING".equalsIgnoreCase(instance.getStatus())) {
@@ -441,6 +461,58 @@ public class DbApprovalService implements ApprovalEngineService {
             return vo;
         }).collect(Collectors.toList());
         return pageOf(items, page, pageSize);
+    }
+
+    /**
+     * 发起人查看实例进度（兼容 initiatorId 存 userId 或 employeeId）
+     */
+    public ApprovalDtos.InstanceDetailVO getInstanceDetail(long instanceId, long userId, Long employeeId) {
+        ApprovalInstance instance = instanceMapper.selectById(instanceId);
+        if (instance == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "审批实例不存在");
+        }
+        Long initiator = instance.getInitiatorId();
+        boolean owner = initiator != null
+                && (initiator.equals(userId) || (employeeId != null && initiator.equals(employeeId)));
+        if (!owner) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该审批进度");
+        }
+
+        InstanceDisplay display = InstanceDisplay.from(instance);
+        List<ProcessNodeDef> nodeDefs = nodesOf(instance);
+        int current = instance.getCurrentNode() == null ? 1 : instance.getCurrentNode();
+        String instStatus = instance.getStatus() == null ? "" : instance.getStatus().toUpperCase(Locale.ROOT);
+
+        List<ApprovalDtos.NodeProgressVO> nodes = new ArrayList<>();
+        for (ProcessNodeDef n : nodeDefs) {
+            ApprovalDtos.NodeProgressVO np = new ApprovalDtos.NodeProgressVO();
+            np.setOrder(n.getOrder());
+            np.setLabel(n.getLabel());
+            if ("CANCELLED".equals(instStatus) || "WITHDRAWN".equals(instStatus)) {
+                np.setState(n.getOrder() < current ? "done" : "cancelled");
+            } else if ("APPROVED".equals(instStatus) || "COMPLETED".equals(instStatus)) {
+                np.setState("done");
+            } else if ("REJECTED".equals(instStatus)) {
+                np.setState(n.getOrder() < current ? "done" : (n.getOrder() == current ? "current" : "pending"));
+            } else {
+                // PENDING
+                if (n.getOrder() < current) np.setState("done");
+                else if (n.getOrder() == current) np.setState("current");
+                else np.setState("pending");
+            }
+            nodes.add(np);
+        }
+
+        ApprovalDtos.InstanceDetailVO vo = new ApprovalDtos.InstanceDetailVO();
+        vo.setInstanceId(instance.getId());
+        vo.setProcessType(instance.getProcessType());
+        vo.setTitle(display.title);
+        vo.setStatus(apiStatus(instance.getStatus()));
+        vo.setCurrentNodeLabel(labelOf(nodeDefs, current));
+        vo.setCreatedAt(fmt(instance.getCreatedAt()));
+        vo.setNodes(nodes);
+        vo.setTimeline(buildTimeline(instance.getId()));
+        return vo;
     }
 
     private void publishCompleted(ApprovalInstance instance, String result, String comment) {

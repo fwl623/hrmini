@@ -2,6 +2,7 @@ package com.company.hrms.employee.vo;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.Set;
 
 /**
@@ -38,6 +39,9 @@ public class ProfileVO {
 
     /** 职位名称 */
     private String position;
+
+    /** 基本工资（只读，来自薪资档案） */
+    private BigDecimal baseSalary;
 
     /** 职级 */
     private String grade;

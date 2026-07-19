@@ -17,6 +17,7 @@ import {
 } from '@/services/employee';
 import type { LoginLogVO, ProfileVO } from '@/services/employee';
 import MobileChangeModal from '@/components/MobileChangeModal';
+import { forceLogout } from '@/utils/authSession';
 
 const SecurityPage: React.FC = () => {
   const [pwdForm] = Form.useForm();
@@ -41,7 +42,13 @@ const SecurityPage: React.FC = () => {
     setLogLoading(true);
     try {
       const res = await getMyLoginLogs();
-      if (res.code === 0) setLoginLogs(res.data || []);
+      const raw = (res as any)?.data;
+      const list = Array.isArray(raw) ? raw : raw?.list || [];
+      if ((res as any)?.code === 0 || Array.isArray(list)) {
+        setLoginLogs(list);
+      }
+    } catch (err: any) {
+      message.error(err?.message || '加载登录日志失败');
     } finally {
       setLogLoading(false);
     }
@@ -64,8 +71,10 @@ const SecurityPage: React.FC = () => {
     try {
       const res = await changePassword(values);
       if (res.code === 0) {
-        message.success('密码修改成功');
+        message.success('密码已修改，请重新登录');
         pwdForm.resetFields();
+        // 后端已拉黑 Token；清本地态并跳转登录页
+        await forceLogout('密码已修改，请重新登录');
       } else {
         message.error(res.message);
       }

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 瀹℃壒涓績 + 鍏ヨ亴鐢宠 API
  * Base: /api/v1
  */
@@ -187,6 +187,25 @@ export async function cancelDelegation(id: number) {
   return request<API.Result<null>>(`${APPROVAL_PREFIX}/delegations/${id}`, {
     method: 'DELETE',
   });
+}
+
+/** GET /approvals/instances/:id — 发起人查看审批进度 */
+export async function fetchInstanceDetail(instanceId: number) {
+  const res = await request<
+    API.Result<{
+      instanceId: number;
+      processType: string;
+      title: string;
+      status: string;
+      currentNodeLabel?: string;
+      createdAt?: string;
+      nodes?: { order: number; label: string; state: string }[];
+      timeline?: ApprovalTimelineItem[];
+    }>
+  >(`${APPROVAL_PREFIX}/instances/${instanceId}`, {
+    method: 'GET',
+  });
+  return res.data;
 }
 
 /** POST /approvals/instances/:id/withdraw */

@@ -61,7 +61,7 @@ export async function verifyPassword(password: string) {
 
 /** 将 profile 转为 Umi initialState 用户结构 */
 export function toCurrentUser(profile: API.ProfileResponse): API.CurrentUser {
-  const roles = profile.roles ?? [];
+  const roles = Array.isArray(profile.roles) ? profile.roles.map(String) : [];
   const roleCode = resolvePrimaryRole(roles);
   return {
     userId: profile.userId,
@@ -69,7 +69,7 @@ export function toCurrentUser(profile: API.ProfileResponse): API.CurrentUser {
     username: profile.username,
     roles,
     roleCode,
-    permissions: profile.permissions ?? [],
+    permissions: Array.isArray(profile.permissions) ? profile.permissions.map(String) : [],
     dataScope: profile.dataScope,
     mustChangePassword: profile.mustChangePassword,
     passwordExpiredAt: profile.passwordExpiredAt,

@@ -78,8 +78,9 @@ public class ProfileController {
     // ==================== 账号安全 ====================
 
     @PutMapping("/security/password")
-    public Result<Void> changePassword(@Valid @RequestBody PasswordChangeDTO dto) {
-        employeeService.changePassword(SecurityUtils.getUserId(), dto);
+    public Result<Void> changePassword(@Valid @RequestBody PasswordChangeDTO dto,
+                                       jakarta.servlet.http.HttpServletRequest request) {
+        employeeService.changePassword(SecurityUtils.getUserId(), dto, extractBearer(request));
         return Result.success();
     }
 
@@ -95,5 +96,13 @@ public class ProfileController {
     @GetMapping("/security/login-logs")
     public Result<List<LoginLogVO>> listLoginLogs() {
         return Result.success(employeeService.listLoginLogs(SecurityUtils.getUserId()));
+    }
+
+    private static String extractBearer(jakarta.servlet.http.HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7).trim();
+        }
+        return null;
     }
 }

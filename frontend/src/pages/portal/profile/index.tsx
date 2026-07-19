@@ -99,6 +99,11 @@ const ProfilePage: React.FC = () => {
         <Descriptions column={2} bordered size="small">
           <Descriptions.Item label="部门">{profile.department || '-'}</Descriptions.Item>
           <Descriptions.Item label="职位">{profile.position || '-'}</Descriptions.Item>
+          <Descriptions.Item label="基本工资">
+            {profile.baseSalary != null
+              ? `¥${Number(profile.baseSalary).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : '-'}
+          </Descriptions.Item>
           <Descriptions.Item label="手机号">{profile.mobile}</Descriptions.Item>
           <Descriptions.Item label="身份证号">***（敏感信息）</Descriptions.Item>
         </Descriptions>

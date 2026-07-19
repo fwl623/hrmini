@@ -138,6 +138,68 @@ public class PayslipController {
     }
 
     /**
+     * 二次验证（密码）
+     * POST /profile/payslips/verify
+     * 验证通过后写入 Redis TTL 30 分钟，后续查看详情时免验证
+     */
+    @PostMapping("/profile/payslips/verify")
+    public Result<VerifyVO> verify(@RequestBody VerifyDTO dto) {
+        Long userId = SecurityUtils.getUserId();
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "用户不存在");
+        }
+        boolean verified = passwordEncoder.matches(dto.getPassword(), user.getPasswordHash());
+        if (verified) {
+            stringRedisTemplate.opsForValue().set(
+                    "hrms:payslip:verified:" + userId,
+                    "1",
+                    30,
+                    TimeUnit.MINUTES
+            );
+        }
+        VerifyVO vo = new VerifyVO();
+        vo.setVerified(verified);
+        return Result.success(vo);
+    }
+
+    /**
+     * 近6月趋势
+     * GET /profile/payslips/trend
+     * 须写在 {period} 之前，避免被路径变量误匹配
+     */
+    @GetMapping("/profile/payslips/trend")
+    public Result<List<PayrollTrendVO>> trend() {
+        Long empId = SecurityUtils.getCurrentUser().getEmployeeId();
+
+        // 计算近6个月的账期
+        YearMonth current = YearMonth.now();
+        List<String> periods = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            periods.add(current.minusMonths(i).toString());
+        }
+
+        // 查询所有已发放且在这6个账期内的批次
+        List<PayrollBatch> batches = batchMapper.selectList(
+                new LambdaQueryWrapper<PayrollBatch>()
+                        .eq(PayrollBatch::getStatus, "DISTRIBUTED")
+                        .in(PayrollBatch::getPeriod, periods)
+                        .orderByAsc(PayrollBatch::getPeriod));
+
+        List<PayrollTrendVO> trendList = new ArrayList<>();
+        for (PayrollBatch batch : batches) {
+            PayrollDetail detail = detailMapper.selectByBatchAndEmployee(batch.getId(), empId);
+            if (detail != null) {
+                PayrollTrendVO vo = new PayrollTrendVO();
+                vo.setPeriod(batch.getPeriod());
+                vo.setNetSalary(detail.getNetSalary() != null ? detail.getNetSalary().doubleValue() : 0);
+                trendList.add(vo);
+            }
+        }
+        return Result.success(trendList);
+    }
+
+    /**
      * 员工端详情
      * GET /profile/payslips/{period}
      * 查本人某期明细（需批次状态为 APPROVED 或 DISTRIBUTED）
@@ -175,68 +237,6 @@ public class PayslipController {
         viewLogMapper.insert(viewLog);
 
         return Result.success(buildPayslipDetailVO(detail, batch.getPeriod(), empId));
-    }
-
-    /**
-     * 二次验证（密码）
-     * POST /profile/payslips/verify
-     * 验证通过后写入 Redis TTL 30 分钟，后续查看详情时免验证
-     */
-    @PostMapping("/profile/payslips/verify")
-    public Result<VerifyVO> verify(@RequestBody VerifyDTO dto) {
-        Long userId = SecurityUtils.getUserId();
-        SysUser user = sysUserMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "用户不存在");
-        }
-        boolean verified = passwordEncoder.matches(dto.getPassword(), user.getPasswordHash());
-        if (verified) {
-            stringRedisTemplate.opsForValue().set(
-                    "hrms:payslip:verified:" + userId,
-                    "1",
-                    30,
-                    TimeUnit.MINUTES
-            );
-        }
-        VerifyVO vo = new VerifyVO();
-        vo.setVerified(verified);
-        return Result.success(vo);
-    }
-
-    /**
-     * 近6月趋势
-     * GET /profile/payslips/trend
-     * 聚合本人已发放批次
-     */
-    @GetMapping("/profile/payslips/trend")
-    public Result<List<PayrollTrendVO>> trend() {
-        Long empId = SecurityUtils.getCurrentUser().getEmployeeId();
-
-        // 计算近6个月的账期
-        YearMonth current = YearMonth.now();
-        List<String> periods = new ArrayList<>();
-        for (int i = 0; i < 6; i++) {
-            periods.add(current.minusMonths(i).toString());
-        }
-
-        // 查询所有已发放且在这6个账期内的批次
-        List<PayrollBatch> batches = batchMapper.selectList(
-                new LambdaQueryWrapper<PayrollBatch>()
-                        .eq(PayrollBatch::getStatus, "DISTRIBUTED")
-                        .in(PayrollBatch::getPeriod, periods)
-                        .orderByAsc(PayrollBatch::getPeriod));
-
-        List<PayrollTrendVO> trendList = new ArrayList<>();
-        for (PayrollBatch batch : batches) {
-            PayrollDetail detail = detailMapper.selectByBatchAndEmployee(batch.getId(), empId);
-            if (detail != null) {
-                PayrollTrendVO vo = new PayrollTrendVO();
-                vo.setPeriod(batch.getPeriod());
-                vo.setNetSalary(detail.getNetSalary() != null ? detail.getNetSalary().doubleValue() : 0);
-                trendList.add(vo);
-            }
-        }
-        return Result.success(trendList);
     }
 
     // ==================== 私有方法 ====================

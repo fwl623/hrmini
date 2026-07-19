@@ -31,7 +31,8 @@ public interface EmployeeService {
     void updateMyProfile(Long employeeId, ProfileUpdateDTO dto);
 
     // ===== 账号安全 =====
-    void changePassword(Long userId, PasswordChangeDTO dto);
+    /** accessToken 用于改密后拉黑当前会话，强制重新登录 */
+    void changePassword(Long userId, PasswordChangeDTO dto, String accessToken);
 
     /**
      * 首次绑定手机号；已有手机号须走 MOBILE_CHANGE 审批，不可直接绑定。

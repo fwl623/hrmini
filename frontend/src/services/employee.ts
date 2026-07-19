@@ -50,13 +50,21 @@ export interface EmployeeDetail {
   employmentType: string;
   employmentStatus: string;
   hireDate: string;
+  createdAt?: string;
   probationPayRatio?: number;
+  contractType?: string;
+  contractExpireDate?: string;
+  schemeId?: number;
+  schemeName?: string;
+  baseSalary?: number;
   idNumber?: string;
   birthday?: string;
   householdAddress?: string;
   residenceAddress?: string;
   emergencyContact?: string;
   emergencyPhone?: string;
+  bankAccount?: string;
+  bankName?: string;
   fieldPermissions?: Record<string, string>;
 }
 
@@ -65,10 +73,10 @@ export interface EmployeeEditParams {
   gender?: string;
   email?: string;
   birthday?: string;
+  householdAddress?: string;
   residenceAddress?: string;
   emergencyContact?: string;
   emergencyPhone?: string;
-  workLocation?: string;
 }
 
 /** 花名册分页+高级搜索 */
@@ -130,6 +138,8 @@ export interface ProfileVO {
   email: string;
   department?: string;
   position?: string;
+  /** 基本工资（只读） */
+  baseSalary?: number;
   grade?: string;
   hireDate?: string;
   residenceAddress?: string;

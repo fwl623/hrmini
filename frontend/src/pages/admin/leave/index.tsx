@@ -27,7 +27,7 @@ import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import { PlusOutlined } from '@ant-design/icons';
 
-import { getLeaveApplications, submitLeave, calcLeaveDays } from '@/services/attendance';
+import { getLeaveApplications, submitLeave, calcLeaveDays, cancelLeave } from '@/services/attendance';
 import { LEAVE_TYPE_OPTIONS, leaveTypeLabel } from '@/constants/leave';
 
 // ========== 共享常量 ==========
@@ -114,8 +114,11 @@ const AdminLeavePage: React.FC = () => {
 
   const handleCancelLeave = async (id: number) => {
     try {
-      // TODO: 对接后端撤销请假接口
-      // await cancelLeave(id);
+      const res = await cancelLeave(id);
+      if (res.code !== 0) {
+        message.error(res.message || '撤销失败');
+        return;
+      }
       message.success('已撤销');
       actionRef.current?.reload();
     } catch (err: any) {
