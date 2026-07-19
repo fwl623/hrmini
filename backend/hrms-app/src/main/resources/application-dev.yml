@@ -6,14 +6,14 @@ spring:
     # 本机 MySQL
     url: jdbc:mysql://localhost:3306/hrms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root
-    password: root
+    password: 159874
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
       host: localhost
       port: 6379
   flyway:
-    enabled: true
+    enabled: false
 
   # ---------- RabbitMQ ----------
   rabbitmq:
@@ -38,7 +38,6 @@ hrms:
   internal:
     token: hrms-dev-internal-token-change-me
   sms:
-    # 生产务必 false；联调开发码勿用于生产
     dev-enabled: true
     dev-code: "123456"
 

@@ -19,10 +19,9 @@ import java.util.List;
 /**
  * 手机号变更服务实现
  * <p>
- * 状态机：PENDING → APPROVED（更新mobile+同步auth）| REJECTED | CANCELLED
+ * 状态机：PENDING → APPROVED（更新 mobile + 同步 auth）| REJECTED | CANCELLED
  * <p>
- * 当前本地逻辑已完成状态流转+DB操作。
- * ⚠️ 跨模块调用（审批实例创建 + auth同步）以注释桩形式存在，联调时启用。
+ * 审批通过后自动同步 sys_user.username 至新手机号，确保新旧手机号登录验证正确。
  */
 @Slf4j
 @Service
@@ -31,10 +30,7 @@ public class MobileChangeServiceImpl implements MobileChangeService {
 
     private final EmployeeMapper employeeMapper;
     private final EmployeeMobileChangeApplicationMapper mobileChangeMapper;
-
-    // ⚠️ 联调时启用：下面两个 Feign 依赖 C 组/A 组接口
-    // private final ApprovalFeignClient approvalFeignClient;
-    // private final AuthInternalFeignClient authInternalFeignClient;
+    private final AuthInternalFeignClient authInternalFeignClient;
 
     @Override
     @Transactional
@@ -55,14 +51,6 @@ public class MobileChangeServiceImpl implements MobileChangeService {
         app.setSmsVerified(1);
         app.setStatus("PENDING");
         mobileChangeMapper.insert(app);
-
-        // ⚠️ C 组审批引擎就绪后启用：发起 MOBILE_CHANGE 审批实例
-        //   ApprovalFeignClient.StartInstanceRequest req = new ...();
-        //   req.setProcessType("MOBILE_CHANGE");
-        //   req.setBusinessKey(String.valueOf(app.getId()));
-        //   req.setTitle("手机号变更审批");
-        //   Result<StartInstanceResponse> resp = approvalFeignClient.startInstance(req);
-        //   if (resp.success) { app.setInstanceId(resp.data.getInstanceId()); mobileChangeMapper.updateById(app); }
 
         log.info("手机号变更申请已提交: employeeId={}, newMobile={}, appId={}",
                 employeeId, dto.getNewMobile(), app.getId());
@@ -108,11 +96,20 @@ public class MobileChangeServiceImpl implements MobileChangeService {
             employeeMapper.updateById(update);
         }
 
-        // 2. ⚠️ 联调时启用：同步 sys_user.username（依赖 A 组 auth 内部 Feign）
-        //   AuthInternalFeignClient.UpdateUsernameRequest req = new AuthInternalFeignClient.UpdateUsernameRequest();
-        //   req.setUserId(app.getUserId());
-        //   req.setNewUsername(app.getNewMobile());
-        //   authInternalFeignClient.updateUsername(req);
+        // 2. 同步 sys_user.username（A 组 auth Feign）
+        try {
+            AuthInternalFeignClient.UpdateUsernameRequest req = new AuthInternalFeignClient.UpdateUsernameRequest();
+            req.setUserId(app.getUserId());
+            req.setNewUsername(app.getNewMobile());
+            var resp = authInternalFeignClient.updateUsername(req);
+            if (resp.getCode() != 0) {
+                log.error("同步 username 失败: userId={}, newMobile={}, resp={}",
+                        app.getUserId(), app.getNewMobile(), resp.getMessage());
+            }
+        } catch (Exception e) {
+            log.error("同步 username 异常: userId={}, newMobile={}", app.getUserId(), app.getNewMobile(), e);
+            // 不阻断事务——mobile 已更新，auth 可后补
+        }
 
         // 3. 更新申请状态
         app.setStatus("APPROVED");

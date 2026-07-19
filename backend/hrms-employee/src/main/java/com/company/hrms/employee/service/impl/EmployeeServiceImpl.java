@@ -123,11 +123,14 @@ public class EmployeeServiceImpl implements EmployeeService {
 
         Employee update = new Employee();
         update.setId(employeeId);
-        if (dto.getName() != null) update.setName(dto.getName());
-        if (dto.getGender() != null) update.setGender(dto.getGender());
-        if (dto.getEmail() != null) update.setEmail(dto.getEmail());
-        if (dto.getWorkLocation() != null) update.setWorkLocation(dto.getWorkLocation());
-        employeeMapper.updateById(update);
+        boolean hasUpdate = false;
+        if (dto.getName() != null) { update.setName(dto.getName()); hasUpdate = true; }
+        if (dto.getGender() != null) { update.setGender(dto.getGender()); hasUpdate = true; }
+        if (dto.getEmail() != null) { update.setEmail(dto.getEmail()); hasUpdate = true; }
+        if (dto.getWorkLocation() != null) { update.setWorkLocation(dto.getWorkLocation()); hasUpdate = true; }
+        if (hasUpdate) {
+            employeeMapper.updateById(update);
+        }
 
         updatePersonal(employeeId, dto.getBirthday(), dto.getResidenceAddress(),
                 dto.getEmergencyContact(), dto.getEmergencyPhone());
