@@ -8,8 +8,10 @@ export const PROCESS_TYPE_LABEL: Record<string, string> = {
   MOBILE_CHANGE: '手机号变更',
   LEAVE: '请假',
   OVERTIME: '加班',
+  MAKEUP: '补卡',
   PUNCH_FIX: '补卡',
   PAYROLL: '薪资核算',
+  PAYROLL_BATCH: '薪资核算',
 };
 
 export function processTypeLabel(code?: string | null): string {
