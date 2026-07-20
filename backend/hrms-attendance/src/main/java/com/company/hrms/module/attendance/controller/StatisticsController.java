@@ -7,6 +7,7 @@ import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.Result;
 import com.company.hrms.module.attendance.dto.DepartmentStatisticsVO;
 import com.company.hrms.module.attendance.dto.PersonalStatisticsVO;
+import com.company.hrms.module.attendance.auth.AttendanceAccessGuard;
 import com.company.hrms.module.attendance.service.SummaryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,6 +36,7 @@ public class StatisticsController {
     public Result<PersonalStatisticsVO> personal(@RequestParam Long employeeId,
                                                   @RequestParam(required = false) String period,
                                                   @RequestParam(required = false) String month) {
+        AttendanceAccessGuard.requireHrOrDeptMgr();
         return Result.success(summaryService.getPersonalStatistics(employeeId, resolvePeriod(period, month)));
     }
 
@@ -47,6 +49,7 @@ public class StatisticsController {
     public Result<DepartmentStatisticsVO> department(@RequestParam(required = false) Long departmentId,
                                                       @RequestParam(required = false) String period,
                                                       @RequestParam(required = false) String month) {
+        AttendanceAccessGuard.requireHrOrDeptMgr();
         Long deptId = departmentId;
         if (deptId == null) {
             LoginUser user = SecurityUtils.requireLoginUser();

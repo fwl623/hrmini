@@ -12,6 +12,8 @@ import com.company.hrms.attendance.mapper.OvertimeLedgerMapper;
 import com.company.hrms.attendance.mapper.AttendanceSupplementMapper;
 import com.company.hrms.attendance.mapper.AttendanceRecordMapper;
 import com.company.hrms.attendance.entity.AttendanceRecord;
+import com.company.hrms.attendance.entity.AttendanceDailySummary;
+import com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper;
 import com.company.hrms.common.event.ApprovalCompletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +41,7 @@ public class ApprovalEventListener {
     private final OvertimeLedgerMapper overtimeLedgerMapper;
     private final AttendanceSupplementMapper attendanceSupplementMapper;
     private final AttendanceRecordMapper attendanceRecordMapper;
+    private final AttendanceDailySummaryMapper attendanceDailySummaryMapper;
 
     @EventListener
     @Transactional(rollbackFor = Exception.class)
@@ -112,8 +115,67 @@ public class ApprovalEventListener {
         if ("APPROVED".equals(result)) {
             sup.setStatus("APPROVED");
             attendanceSupplementMapper.updateById(sup);
-            log.info("补卡已通过: id={}", supplementId);
-            // TODO: 补卡通过后重写 attendance_record（需确认补卡时间格式）
+
+            // 写入打卡记录（补卡通过后生成一条新的打卡流水）
+            LocalDate punchDate = LocalDate.parse(sup.getMakeupDate());
+            AttendanceRecord record = new AttendanceRecord();
+            record.setEmployeeId(sup.getEmployeeId());
+            record.setPunchDate(punchDate);
+            record.setPunchTime(sup.getMakeupTime());
+            record.setPunchType(sup.getPunchType());
+            record.setPunchStatus("NORMAL"); // 补卡审批通过，视为正常
+            record.setSource("MAKEUP");
+            attendanceRecordMapper.insert(record);
+
+            // 更新日汇总：删除旧的当日汇总，重新聚合
+            attendanceDailySummaryMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceDailySummary>()
+                            .eq(AttendanceDailySummary::getEmployeeId, sup.getEmployeeId())
+                            .eq(AttendanceDailySummary::getSummaryDate, punchDate));
+
+            // 重新查询该员工当天的所有打卡记录，聚合日汇总
+            java.util.List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
+                            .eq(AttendanceRecord::getEmployeeId, sup.getEmployeeId())
+                            .eq(AttendanceRecord::getPunchDate, punchDate));
+
+            boolean hasIn = dayRecords.stream().anyMatch(r -> "IN".equals(r.getPunchType()));
+            boolean hasOut = dayRecords.stream().anyMatch(r -> "OUT".equals(r.getPunchType()));
+            String dayStatus = "ABSENT";
+            if (hasIn && hasOut) {
+                dayStatus = dayRecords.stream()
+                        .map(AttendanceRecord::getPunchStatus)
+                        .max(java.util.Comparator.comparingInt(s -> {
+                            if ("ABSENT_HALF".equals(s)) return 3;
+                            if ("LATE".equals(s)) return 2;
+                            if ("EARLY_LEAVE".equals(s)) return 2;
+                            return 1;
+                        }))
+                        .orElse("NORMAL");
+            } else if (hasIn) {
+                dayStatus = "MISSING_OUT";
+            } else if (hasOut) {
+                dayStatus = "MISSING_IN";
+            }
+
+            AttendanceDailySummary summary = new AttendanceDailySummary();
+            summary.setEmployeeId(sup.getEmployeeId());
+            summary.setSummaryDate(punchDate);
+            summary.setDayStatus(dayStatus);
+            dayRecords.stream().filter(r -> "IN".equals(r.getPunchType()))
+                    .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
+                    .ifPresent(r -> summary.setClockInTime(r.getPunchTime()));
+            dayRecords.stream().filter(r -> "OUT".equals(r.getPunchType()))
+                    .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
+                    .ifPresent(r -> summary.setClockOutTime(r.getPunchTime()));
+            summary.setLeaveDays(java.math.BigDecimal.ZERO);
+            summary.setOvertimeHours(java.math.BigDecimal.ZERO);
+            if (summary.getId() == null) {
+                attendanceDailySummaryMapper.insert(summary);
+            }
+
+            log.info("补卡已通过, 打卡记录已写入: id={}, empId={}, date={}",
+                    supplementId, sup.getEmployeeId(), punchDate);
         } else if ("REJECTED".equals(result)) {
             sup.setStatus("REJECTED");
             attendanceSupplementMapper.updateById(sup);
