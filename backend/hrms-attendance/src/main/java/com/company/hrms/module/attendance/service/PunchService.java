@@ -40,6 +40,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -64,6 +65,7 @@ public class PunchService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final ApprovalEngineService approvalEngineService;
+    private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
 
     /** Redis key 前缀：打卡幂等 */
     private static final String PUNCH_IDEMP_KEY = "hrms:punch:";
@@ -195,14 +197,14 @@ public class PunchService {
             wrapper.le(AttendanceRecord::getPunchDate, LocalDate.parse(dateTo));
         }
 
-        IPage<AttendanceRecord> page = attendanceRecordMapper.selectPage(
-                new Page<>(pageParam.getPage(), pageParam.getPageSize()), wrapper);
+        // 先查所有匹配记录（不分页），分组合并后再手动分页
+        List<AttendanceRecord> allRecords = attendanceRecordMapper.selectList(wrapper);
 
         // 按 employeeId + punchDate 分组，合并 IN/OUT
-        Map<String, List<AttendanceRecord>> grouped = page.getRecords().stream()
+        Map<String, List<AttendanceRecord>> grouped = allRecords.stream()
                 .collect(Collectors.groupingBy(r -> r.getEmployeeId() + "_" + r.getPunchDate()));
 
-        List<PunchRecordVO> voList = new ArrayList<>();
+        List<PunchRecordVO> allVoList = new ArrayList<>();
         for (Map.Entry<String, List<AttendanceRecord>> entry : grouped.entrySet()) {
             List<AttendanceRecord> recs = entry.getValue();
 
@@ -214,19 +216,36 @@ public class PunchService {
             vo.setClientIp(first.getClientIp());
             vo.setGpsJson(first.getGpsJson());
 
-            // TODO: 通过 Feign 调用员工服务获取 employeeName / departmentName
-            // 当前返回 ID 作为占位
-            vo.setEmployeeName(String.valueOf(first.getEmployeeId()));
-            vo.setDepartmentName("");
+            // 从 employee 表查询员工姓名和部门
+            try {
+                com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(first.getEmployeeId());
+                if (emp != null) {
+                    vo.setEmployeeName(emp.getName());
+                    vo.setDepartmentName(emp.getDepartmentName());
+                } else {
+                    vo.setEmployeeName(String.valueOf(first.getEmployeeId()));
+                    vo.setDepartmentName("");
+                }
+            } catch (Exception e) {
+                log.warn("查询员工信息失败: employeeId={}", first.getEmployeeId(), e);
+                vo.setEmployeeName(String.valueOf(first.getEmployeeId()));
+                vo.setDepartmentName("");
+            }
 
             for (AttendanceRecord r : recs) {
+                String timeStr = null;
+                if (r.getPunchTime() != null) {
+                    // JVM 默认 UTC，转换到 +08:00 显示
+                    timeStr = r.getPunchTime()
+                            .atZone(java.time.ZoneOffset.UTC)
+                            .withZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai"))
+                            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
+                }
                 if ("IN".equals(r.getPunchType())) {
-                    vo.setClockInTime(r.getPunchTime() != null
-                            ? r.getPunchTime().format(DateTimeFormatter.ofPattern("HH:mm")) : null);
+                    vo.setClockInTime(timeStr);
                     vo.setClockInStatus(r.getPunchStatus());
                 } else if ("OUT".equals(r.getPunchType())) {
-                    vo.setClockOutTime(r.getPunchTime() != null
-                            ? r.getPunchTime().format(DateTimeFormatter.ofPattern("HH:mm")) : null);
+                    vo.setClockOutTime(timeStr);
                     vo.setClockOutStatus(r.getPunchStatus());
                 }
             }
@@ -238,10 +257,19 @@ public class PunchService {
                 }
             }
 
-            voList.add(vo);
+            allVoList.add(vo);
         }
 
-        return PageResult.of(voList, page.getTotal(), pageParam);
+        // 手动分页：按 page 和 pageSize 截取
+        int page = Math.max(pageParam.getPage(), 1);
+        int pageSize = pageParam.getPageSize() > 0 ? pageParam.getPageSize() : 20;
+        int from = (page - 1) * pageSize;
+        int to = Math.min(from + pageSize, allVoList.size());
+        List<PunchRecordVO> voList = from >= allVoList.size()
+                ? Collections.emptyList()
+                : allVoList.subList(from, to);
+
+        return PageResult.of(voList, allVoList.size(), pageParam);
     }
 
     // ========== 补卡管理 ==========
@@ -272,12 +300,23 @@ public class PunchService {
         // 3. 补卡类型转换
         String punchType = dto.getType() != null ? dto.getType().toUpperCase() : "IN";
 
-        // 4. 插入补卡申请
+        // 4. 解析补卡时间（兼容 HH:mm 和 ISO 格式）
+        String punchTimeStr = dto.getPunchTime();
+        LocalDateTime makeupTime;
+        try {
+            makeupTime = LocalDateTime.parse(punchTimeStr, DateTimeFormatter.ISO_DATE_TIME);
+        } catch (DateTimeParseException e) {
+            // 前端可能只传 HH:mm，拼上 punchDate 转成 LocalDateTime
+            LocalTime time = LocalTime.parse(punchTimeStr, DateTimeFormatter.ofPattern("HH:mm"));
+            makeupTime = LocalDateTime.of(LocalDate.parse(dto.getPunchDate()), time);
+        }
+
+        // 5. 插入补卡申请
         AttendanceSupplement supplement = new AttendanceSupplement();
         supplement.setEmployeeId(employeeId);
         supplement.setMakeupDate(dto.getPunchDate());
         supplement.setPunchType(punchType);
-        supplement.setMakeupTime(LocalDateTime.parse(dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME));
+        supplement.setMakeupTime(makeupTime);
         supplement.setReason(dto.getReason());
         supplement.setStatus("PENDING");
         attendanceSupplementMapper.insert(supplement);
