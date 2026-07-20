@@ -249,15 +249,35 @@ public class PunchService {
 
         // 统计本月已发生数据（按 employee_id + punch_date + punch_type 去重）
         java.util.Set<String> uniqueKeys = new java.util.HashSet<>();
-        long clockedCount = 0, lateCount = 0, earlyLeaveCount = 0, absentCount = 0;
+        long lateCount = 0, earlyLeaveCount = 0;
+        // 按日期统计已打的打卡类型
+        java.util.Map<java.time.LocalDate, java.util.Set<String>> datePunchMap = new java.util.HashMap<>();
         for (AttendanceRecord r : allRecords) {
             String key = r.getEmployeeId() + "_" + r.getPunchDate() + "_" + r.getPunchType();
             if (uniqueKeys.add(key)) {
-                clockedCount++;
+                datePunchMap.computeIfAbsent(r.getPunchDate(), k -> new java.util.HashSet<>()).add(r.getPunchType());
                 if ("LATE".equals(r.getPunchStatus())) lateCount++;
                 if ("EARLY_LEAVE".equals(r.getPunchStatus())) earlyLeaveCount++;
-                if ("ABSENT_HALF".equals(r.getPunchStatus())) absentCount++;
             }
+        }
+        long clockedCount = uniqueKeys.size();
+
+        // 缺卡：遍历每个工作日到今天，检查缺少 IN 或 OUT
+        long absentCount = 0;
+        LocalDate checkDay = monthStart;
+        while (!checkDay.isAfter(today)) {
+            java.time.DayOfWeek dow = checkDay.getDayOfWeek();
+            int dowVal = dow.getValue();
+            if (workdaySet.contains(dowVal) && !holidayDates.contains(checkDay)) {
+                java.util.Set<String> types = datePunchMap.get(checkDay);
+                if (types == null) {
+                    absentCount += 2; // 全天无打卡
+                } else {
+                    if (!types.contains("IN")) absentCount++;
+                    if (!types.contains("OUT")) absentCount++;
+                }
+            }
+            checkDay = checkDay.plusDays(1);
         }
 
         return new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
