@@ -231,17 +231,13 @@ public class PunchService {
         List<com.company.hrms.attendance.entity.AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
                 employeeId, monthStart, today);
 
-        int shouldDays = 0; // 应出勤天数（排除请假）
+        int shouldDays = 0;
         int clockedCount = 0, lateCount = 0, earlyLeaveCount = 0;
         int missingInCount = 0, missingOutCount = 0;
 
         for (com.company.hrms.attendance.entity.AttendanceDailySummary ds : dailyList) {
             String status = ds.getDayStatus();
-            // Fix3: 请假天数不计入应出勤，也不会计入缺卡
-            if ("LEAVE".equals(status)) {
-                continue;
-            }
-            shouldDays++;
+            shouldDays++; // 所有有日汇总的工作日都计入应出勤（含请假）
             switch (status) {
                 case "NORMAL":
                     clockedCount += 2;
@@ -270,13 +266,16 @@ public class PunchService {
                     missingInCount++;
                     missingOutCount++;
                     break;
+                case "LEAVE":
+                    // 请假：不计入打卡数，也不计缺卡
+                    break;
                 default:
                     break;
             }
         }
 
-        long totalCount = shouldDays * 2L; // 应打卡 = (应出勤天数 - 请假天数) × 2
-        long absentCount = missingInCount + missingOutCount; // 缺卡 = 缺少的IN + 缺少的OUT
+        long totalCount = shouldDays * 2L;
+        long absentCount = missingInCount + missingOutCount;
 
         return new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
     }
