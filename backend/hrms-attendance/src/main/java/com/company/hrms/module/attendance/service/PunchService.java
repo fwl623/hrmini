@@ -87,26 +87,29 @@ public class PunchService {
      */
     @Transactional(rollbackFor = Exception.class)
     public String punch(Long employeeId, PunchDTO dto) {
-        LocalDate punchDate = LocalDate.now(CST);
-        LocalDateTime punchTime = LocalDateTime.now(CST);
+        // 判定和幂等键始终以服务器 CST 时间为准
+        LocalDate serverDate = LocalDate.now(CST);
+        LocalTime serverTime = LocalDateTime.now(CST).toLocalTime();
         String type = dto.getType() != null ? dto.getType().toUpperCase() : "IN";
 
-        // 如果请求携带了打卡时间，使用请求时间
+        // Redis 幂等校验（基于服务端日期，不受前端时间影响）
+        String idempKey = PUNCH_IDEMP_KEY + employeeId + ":" + serverDate.toString() + ":" + type;
+        Boolean success = stringRedisTemplate.opsForValue()
+                .setIfAbsent(idempKey, "1", getSecondsUntilEndOfDay(serverDate), TimeUnit.SECONDS);
+        if (Boolean.FALSE.equals(success)) {
+            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
+        }
+
+        // 存储时间优先用前端传的值（保留给用户看的原始时间），否则用服务端时间
+        LocalDateTime storeTime = LocalDateTime.now(CST);
+        LocalDate storeDate = serverDate;
         if (dto.getPunchTime() != null) {
             try {
-                punchTime = LocalDateTime.parse(dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME);
-                punchDate = punchTime.toLocalDate();
+                storeTime = LocalDateTime.parse(dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME);
+                storeDate = storeTime.toLocalDate();
             } catch (DateTimeParseException e) {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, "打卡时间格式错误");
             }
-        }
-
-        // 1. Redis 幂等校验
-        String idempKey = PUNCH_IDEMP_KEY + employeeId + ":" + punchDate.toString() + ":" + type;
-        Boolean success = stringRedisTemplate.opsForValue()
-                .setIfAbsent(idempKey, "1", getSecondsUntilEndOfDay(punchDate), TimeUnit.SECONDS);
-        if (Boolean.FALSE.equals(success)) {
-            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
         }
 
         try {
@@ -118,14 +121,14 @@ public class PunchService {
                 validateGps(group.getGpsRangeJson(), dto.getLatitude(), dto.getLongitude());
             }
 
-            // 4. 判定打卡状态
-            String punchStatus = judgePunchStatus(group, punchTime.toLocalTime(), type);
+            // 4. 判定打卡状态（用服务端 CST 时间，确保与考勤组工作时间比较正确）
+            String punchStatus = judgePunchStatus(group, serverTime, type);
 
-            // 5. 写入打卡记录
+            // 5. 写入打卡记录（存储时间用 storeTime/storeDate，保留前端传入值）
             AttendanceRecord record = new AttendanceRecord();
             record.setEmployeeId(employeeId);
-            record.setPunchDate(punchDate);
-            record.setPunchTime(punchTime);
+            record.setPunchDate(storeDate);
+            record.setPunchTime(storeTime);
             record.setPunchType(type);
             record.setPunchStatus(punchStatus);
             record.setSource("WEB");
@@ -143,7 +146,8 @@ public class PunchService {
             }
 
             attendanceRecordMapper.insert(record);
-            log.info("员工打卡: empId={}, type={}, status={}, time={}", employeeId, type, punchStatus, punchTime);
+            log.info("员工打卡: empId={}, type={}, status={}, serverTime={}, storeTime={}",
+                    employeeId, type, punchStatus, serverTime, storeTime);
             return punchStatus;
 
         } catch (Exception e) {
