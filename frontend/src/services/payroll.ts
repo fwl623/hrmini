@@ -192,6 +192,20 @@ export async function submitBatchApprove(id: number) {
 }
 
 /**
+ * 审批通过
+ *
+ * 对审批中的批次执行审批通过操作，状态变为 APPROVED。
+ *
+ * @param id - 批次唯一标识
+ * @returns 返回审批后的状态
+ */
+export async function approveBatch(id: number) {
+  return request<API.Result<{ status: string }>>(`${API_PREFIX}/batches/${id}/approve`, {
+    method: 'POST',
+  });
+}
+
+/**
  * 发放确认
  *
  * 对已通过审批的批次执行最终发放确认操作，状态变为 DISTRIBUTED。
