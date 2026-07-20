@@ -145,6 +145,21 @@ export default function ApprovalCenterPage() {
     });
   };
 
+  const promptResignAfterRegularizationFail = (employeeId?: number) => {
+    if (!employeeId || Number.isNaN(employeeId)) {
+      return;
+    }
+    Modal.confirm({
+      title: '试用不通过：是否立即发起正式离职？',
+      content: '转正评估「不通过」已审批完成。按 PRD 需走辞退/正式离职流程。',
+      okText: '去发起离职',
+      cancelText: '稍后处理',
+      onOk: () => {
+        history.push(`/admin/resignation?employeeId=${employeeId}&open=1`);
+      },
+    });
+  };
+
   const resolveRequestId = () => {
     const fromBiz =
       typeof biz.requestId === 'number'
@@ -170,9 +185,20 @@ export default function ApprovalCenterPage() {
       setHandoverOpen(false);
       setDrawerOpen(false);
       const requestId = isResignationRequest ? resolveRequestId() : undefined;
+      const regFailEmployeeId =
+        (selected?.processType === 'REGULARIZATION' ||
+          detail?.instance?.processType === 'REGULARIZATION') &&
+        String(biz.approvalResult || '').toUpperCase() === 'FAIL' &&
+        String(selected?.currentNodeLabel || '').includes('HR')
+          ? typeof biz.employeeId === 'number'
+            ? biz.employeeId
+            : Number(biz.employeeId) || undefined
+          : undefined;
       await loadList(tab);
       if (requestId) {
         promptStartFormalResignation(requestId);
+      } else if (regFailEmployeeId) {
+        promptResignAfterRegularizationFail(regFailEmployeeId);
       }
     } catch (e) {
       message.error((e as Error)?.message || '操作失败');
@@ -326,6 +352,36 @@ export default function ApprovalCenterPage() {
               </Descriptions>
             ) : null}
 
+            {detail?.instance?.processType === 'REGULARIZATION' ||
+            selected.processType === 'REGULARIZATION' ? (
+              <Descriptions size="small" column={1} bordered title="转正信息">
+                <Descriptions.Item label="员工">
+                  {(biz.employeeName as string) || selected.applicantName}
+                  {biz.employeeNo ? ` · ${biz.employeeNo}` : ''}
+                </Descriptions.Item>
+                <Descriptions.Item label="试用起止">
+                  {(biz.probationStartDate as string) || '-'} ~{' '}
+                  {(biz.probationEndDate as string) || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="表现评价">
+                  {(biz.performanceEvaluation as string) || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="评估结果">
+                  {({ PASS: '通过', EXTEND: '延长试用', FAIL: '不通过' } as Record<string, string>)[
+                    String(biz.approvalResult || '')
+                  ] ||
+                    (biz.approvalResult as string) ||
+                    '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="延长月数">
+                  {biz.extendMonths != null ? String(biz.extendMonths) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="转正后基本工资">
+                  {biz.salaryAdjustment != null ? String(biz.salaryAdjustment) : '不调薪'}
+                </Descriptions.Item>
+              </Descriptions>
+            ) : null}
+
             <ApprovalTimeline
               nodes={
                 timelineNodes.length > 0
@@ -388,10 +444,22 @@ export default function ApprovalCenterPage() {
                       action === 'APPROVE' && isResignationRequest
                         ? resolveRequestId()
                         : undefined;
+                    const regFailEmployeeId =
+                      action === 'APPROVE' &&
+                      (selected.processType === 'REGULARIZATION' ||
+                        detail?.instance?.processType === 'REGULARIZATION') &&
+                      String(biz.approvalResult || '').toUpperCase() === 'FAIL' &&
+                      String(selected.currentNodeLabel || '').includes('HR')
+                        ? typeof biz.employeeId === 'number'
+                          ? biz.employeeId
+                          : Number(biz.employeeId) || undefined
+                        : undefined;
                     setDrawerOpen(false);
                     await loadList(tab);
                     if (requestId) {
                       promptStartFormalResignation(requestId);
+                    } else if (regFailEmployeeId) {
+                      promptResignAfterRegularizationFail(regFailEmployeeId);
                     }
                   } catch (e) {
                     message.error((e as Error)?.message || '操作失败');

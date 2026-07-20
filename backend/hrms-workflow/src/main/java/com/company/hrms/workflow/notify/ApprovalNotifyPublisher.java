@@ -54,6 +54,50 @@ public class ApprovalNotifyPublisher {
         publish(RabbitConfig.ROUTING_NOTIFY, payload);
     }
 
+    /** SLA 逾期后升级：知会 escalateToUserId（通常为 HR） */
+    public void publishOverdueEscalation(long taskId, long assigneeId, String processType, Long escalateToUserId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", "APPROVAL_ESCALATION");
+        payload.put("eventType", "APPROVAL_ESCALATION");
+        payload.put("taskId", taskId);
+        payload.put("assigneeId", assigneeId);
+        payload.put("processType", processType);
+        payload.put("escalateToUserId", escalateToUserId);
+        payload.put("escalatedAt", LocalDateTime.now().toString());
+        log.info("[Escalation] taskId={} processType={} assignee={} escalateTo={}",
+                taskId, processType, assigneeId, escalateToUserId);
+        publish(RabbitConfig.ROUTING_NOTIFY, payload);
+    }
+
+    /** 每日扫描：待转正提醒 HR */
+    public void publishRegularizationPendingRemind(int pendingCount, long overdueCount, Long hrUserId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", "REGULARIZATION_PENDING_REMIND");
+        payload.put("eventType", "REGULARIZATION_PENDING_REMIND");
+        payload.put("pendingCount", pendingCount);
+        payload.put("overdueCount", overdueCount);
+        payload.put("hrUserId", hrUserId);
+        payload.put("remindedAt", LocalDateTime.now().toString());
+        log.info("[RegularizationRemind] pending={} overdue={} hrUserId={}",
+                pendingCount, overdueCount, hrUserId);
+        publish("hrms.regularization.remind", payload);
+    }
+
+    /** 转正 FAIL 完成后知会 HR 发起正式离职 */
+    public void publishRegularizationFailNeedResign(Long applicationId, Long employeeId, Long hrUserId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", "REGULARIZATION_FAIL_NEED_RESIGN");
+        payload.put("eventType", "REGULARIZATION_FAIL_NEED_RESIGN");
+        payload.put("applicationId", applicationId);
+        payload.put("employeeId", employeeId);
+        payload.put("hrUserId", hrUserId);
+        payload.put("nextAction", "START_RESIGNATION");
+        payload.put("notifiedAt", LocalDateTime.now().toString());
+        log.info("[RegularizationFail] appId={} employeeId={} → 引导 HR 发起离职 hrUserId={}",
+                applicationId, employeeId, hrUserId);
+        publish("hrms.regularization.fail", payload);
+    }
+
     /** 离职生效 → 通知考勤（字段对齐跨模块契约，消费方由 D 实现） */
     public void publishResignationEffected(long employeeId) {
         Map<String, Object> payload = new HashMap<>();
@@ -65,6 +109,45 @@ public class ApprovalNotifyPublisher {
         payload.put("effectDate", LocalDate.now().toString());
         payload.put("triggerSource", "RESIGNATION_EFFECT");
         publish("attendance.resignation.effected", payload);
+    }
+
+    /**
+     * 入职确认后欢迎信 + 知会 HR/部门负责人。
+     * MQ 关闭时降级为日志（可对接真实邮件服务）。
+     */
+    public void publishOnboardingWelcome(String email, String name, String mobile, String empNo,
+                                         Long employeeId, Long deptManagerUserId, Long hrUserId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("eventType", "ONBOARDING_WELCOME");
+        payload.put("type", "ONBOARDING_WELCOME");
+        payload.put("email", email);
+        payload.put("name", name);
+        payload.put("mobile", mobile);
+        payload.put("empNo", empNo);
+        payload.put("employeeId", employeeId);
+        payload.put("deptManagerUserId", deptManagerUserId);
+        payload.put("hrUserId", hrUserId);
+        payload.put("subject", "欢迎加入 — 入职账号已开通");
+        payload.put("body", "您好 " + (name == null ? "" : name)
+                + "，您的员工账号已开通。登录手机号：" + mobile
+                + (empNo == null ? "" : "，工号：" + empNo)
+                + "。初始密码为 Admin@123，请登录员工门户后及时修改。");
+        payload.put("sentAt", LocalDateTime.now().toString());
+        log.info("[WelcomeMail] to={} name={} empNo={} mobile={} notifyDeptMgr={} notifyHr={}",
+                email, name, empNo, mobile, deptManagerUserId, hrUserId);
+        publish("hrms.onboarding.welcome", payload);
+        if (deptManagerUserId != null) {
+            Map<String, Object> mgr = new HashMap<>(payload);
+            mgr.put("eventType", "ONBOARDING_NOTIFY_DEPT");
+            mgr.put("targetUserId", deptManagerUserId);
+            publish("hrms.onboarding.notify", mgr);
+        }
+        if (hrUserId != null) {
+            Map<String, Object> hr = new HashMap<>(payload);
+            hr.put("eventType", "ONBOARDING_NOTIFY_HR");
+            hr.put("targetUserId", hrUserId);
+            publish("hrms.onboarding.notify", hr);
+        }
     }
 
     /** 审批完成 */

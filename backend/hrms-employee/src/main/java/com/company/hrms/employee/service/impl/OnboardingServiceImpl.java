@@ -5,19 +5,21 @@ import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.employee.dto.OnboardingArchiveCommand;
 import com.company.hrms.employee.entity.Employee;
 import com.company.hrms.employee.entity.EmployeeContract;
-import com.company.hrms.employee.entity.EmployeeNoHistory;
 import com.company.hrms.employee.entity.EmployeePersonal;
 import com.company.hrms.employee.mapper.EmployeeContractMapper;
 import com.company.hrms.employee.mapper.EmployeeMapper;
-import com.company.hrms.employee.mapper.EmployeeNoHistoryMapper;
 import com.company.hrms.employee.mapper.EmployeePersonalMapper;
 import com.company.hrms.employee.service.OnboardingService;
 import com.company.hrms.module.auth.dto.InternalCreateUserRequest;
 import com.company.hrms.module.auth.service.InternalUserService;
+import com.company.hrms.module.org.entity.Department;
+import com.company.hrms.module.org.mapper.DepartmentMapper;
+import com.company.hrms.module.org.service.EmployeeIdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -38,8 +40,9 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final EmployeeMapper employeeMapper;
     private final EmployeePersonalMapper employeePersonalMapper;
     private final EmployeeContractMapper employeeContractMapper;
-    private final EmployeeNoHistoryMapper employeeNoHistoryMapper;
     private final InternalUserService internalUserService;
+    private final EmployeeIdGenerator employeeIdGenerator;
+    private final DepartmentMapper departmentMapper;
 
     @Override
     @Transactional
@@ -62,9 +65,9 @@ public class OnboardingServiceImpl implements OnboardingService {
                 : (cmd.getExpectedOnboardDate() != null ? cmd.getExpectedOnboardDate() : LocalDate.now());
         int probationMonths = cmd.getProbationMonths() == null || cmd.getProbationMonths() <= 0
                 ? 3 : cmd.getProbationMonths();
-        String year = String.valueOf(hireDate.getYear());
-        String deptCode = "D" + (cmd.getDepartmentId() == null ? "00" : cmd.getDepartmentId());
-        String empNo = year + deptCode + String.format("%03d", Math.abs(cmd.getApplicationId().intValue() % 1000));
+
+        String deptCode = resolveDeptCode(cmd.getDepartmentId());
+        String empNo = employeeIdGenerator.generate(deptCode);
 
         Employee emp = new Employee();
         emp.setEmployeeNo(empNo);
@@ -85,13 +88,7 @@ public class OnboardingServiceImpl implements OnboardingService {
         employeeMapper.insert(emp);
         Long employeeId = emp.getId();
 
-        EmployeeNoHistory noHistory = new EmployeeNoHistory();
-        noHistory.setEmployeeNo(empNo);
-        noHistory.setYear(year);
-        noHistory.setDeptCode(deptCode);
-        noHistory.setEmployeeId(employeeId);
-        noHistory.setReuseFlag(0);
-        employeeNoHistoryMapper.insert(noHistory);
+        employeeIdGenerator.bindEmployee(empNo, employeeId);
 
         String idNumber = cmd.getIdNumber() == null ? "" : cmd.getIdNumber();
         EmployeePersonal personal = new EmployeePersonal();
@@ -129,6 +126,28 @@ public class OnboardingServiceImpl implements OnboardingService {
         log.info("入职建档完成 applicationId={} employeeId={} empNo={} userId={}",
                 cmd.getApplicationId(), employeeId, empNo, userId);
         return employeeId;
+    }
+
+    /** 工号部门码须为 2 位；不足补 0，过长截断 */
+    private String resolveDeptCode(Long departmentId) {
+        String raw = null;
+        if (departmentId != null) {
+            Department dept = departmentMapper.selectById(departmentId);
+            if (dept != null && StringUtils.hasText(dept.getCode())) {
+                raw = dept.getCode().trim().toUpperCase();
+            }
+        }
+        if (!StringUtils.hasText(raw)) {
+            raw = departmentId == null ? "00" : String.format("%02d", Math.abs(departmentId % 100));
+        }
+        String alnum = raw.replaceAll("[^A-Za-z0-9]", "");
+        if (alnum.length() >= 2) {
+            return alnum.substring(0, 2).toUpperCase();
+        }
+        if (alnum.length() == 1) {
+            return ("0" + alnum).toUpperCase();
+        }
+        return "00";
     }
 
     private static String sha256(String raw) {

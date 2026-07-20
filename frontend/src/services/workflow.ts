@@ -93,6 +93,30 @@ export interface OnboardingForm {
   positionStandard?: boolean;
 }
 
+export interface OnboardingItem {
+  id: number;
+  status: string;
+  name: string;
+  gender?: string;
+  mobile?: string;
+  email?: string;
+  idNumber?: string;
+  departmentId?: number;
+  positionId?: number;
+  employmentType?: string;
+  probationMonths?: number;
+  probationSalaryRatio?: number;
+  managerId?: number;
+  baseSalary?: number;
+  expectedOnboardDate?: string;
+  employeeId?: number;
+  instanceId?: number;
+  createdAt?: string;
+  positionStandard?: boolean;
+  gradeMaxSalary?: number;
+  rejectReason?: string;
+}
+
 /** GET /approvals/tasks/stats */
 export async function fetchTaskStats() {
   const res = await request<API.Result<ApprovalTaskStats>>(`${APPROVAL_PREFIX}/tasks/stats`, {
@@ -226,7 +250,7 @@ export async function fetchMyInstances(params?: { page?: number; pageSize?: numb
   return res.data;
 }
 
-/** 鍏ヨ亴鍒楄〃锛堝惈 stats锛?*/
+/** 入职列表（含 stats） */
 export async function fetchOnboardingApplications(params?: {
   status?: string;
   page?: number;
@@ -234,25 +258,21 @@ export async function fetchOnboardingApplications(params?: {
 }) {
   const res = await request<
     API.Result<{
-      list: Array<{
-        id: number;
-        status: string;
-        name: string;
-        mobile?: string;
-        departmentId?: number;
-        positionId?: number;
-        baseSalary?: number;
-        expectedOnboardDate?: string;
-        employeeId?: number;
-        instanceId?: number;
-        createdAt?: string;
-      }>;
+      list: OnboardingItem[];
       total: number;
       stats?: Record<string, number>;
     }>
   >(`${ONBOARDING_PREFIX}`, {
     method: 'GET',
     params,
+  });
+  return res.data;
+}
+
+/** GET /onboarding/applications/:id */
+export async function fetchOnboardingApplication(id: number) {
+  const res = await request<API.Result<OnboardingItem>>(`${ONBOARDING_PREFIX}/${id}`, {
+    method: 'GET',
   });
   return res.data;
 }
