@@ -37,7 +37,7 @@ public class CurrentUserProvider {
     }
 
     /**
-     * 审批人展示：优先「职位+姓名」（职位在前、姓名紧跟），查不到再回退开发桩文案。
+     * 审批人展示：优先「职位+姓名」；无员工档案时识别 SYS_ADMIN / 种子账号，避免出现「用户1」。
      */
     public String displayName(long userId) {
         if (userId > 0) {
@@ -56,13 +56,32 @@ public class CurrentUserProvider {
             } catch (Exception ignored) {
                 // fall through
             }
+            try {
+                if (orgLookupMapper.countSysAdminRole(userId) > 0) {
+                    return "系统管理员";
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
         }
         return switch ((int) userId) {
+            case 1, 1005 -> "系统管理员";
             case 1001 -> "HR专员李四";
             case 1002 -> "部门经理王五";
             case 1003 -> "HR专员赵六";
             case 1004 -> "代审人孙七";
-            default -> "用户" + userId;
+            case 1008 -> "财务钱八";
+            default -> {
+                try {
+                    String username = orgLookupMapper.selectUsernameByUserId(userId);
+                    if (username != null && !username.isBlank()) {
+                        yield username.trim();
+                    }
+                } catch (Exception ignored) {
+                    // fall through
+                }
+                yield "用户" + userId;
+            }
         };
     }
 

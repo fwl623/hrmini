@@ -313,7 +313,7 @@ public class DbApprovalService implements ApprovalEngineService {
         if (instance == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "实例不存在");
         }
-        InstanceDisplay display = InstanceDisplay.from(instance);
+        InstanceDisplay display = displayOf(instance);
         List<ProcessNodeDef> nodes = nodesOf(instance);
 
         ApprovalDtos.TaskDetailVO detail = new ApprovalDtos.TaskDetailVO();
@@ -497,7 +497,7 @@ public class DbApprovalService implements ApprovalEngineService {
                 .eq(ApprovalInstance::getInitiatorId, userId)
                 .orderByDesc(ApprovalInstance::getId));
         List<ApprovalDtos.InstanceListItemVO> items = list.stream().map(inst -> {
-            InstanceDisplay d = InstanceDisplay.from(inst);
+            InstanceDisplay d = displayOf(inst);
             ApprovalDtos.InstanceListItemVO vo = new ApprovalDtos.InstanceListItemVO();
             vo.setInstanceId(inst.getId());
             vo.setTaskId(0L);
@@ -524,11 +524,11 @@ public class DbApprovalService implements ApprovalEngineService {
         Long initiator = instance.getInitiatorId();
         boolean owner = initiator != null
                 && (initiator.equals(userId) || (employeeId != null && initiator.equals(employeeId)));
-        if (!owner) {
+        if (!owner && !isHrOrAdmin()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该审批进度");
         }
 
-        InstanceDisplay display = InstanceDisplay.from(instance);
+        InstanceDisplay display = displayOf(instance);
         List<ProcessNodeDef> nodeDefs = nodesOf(instance);
         int current = instance.getCurrentNode() == null ? 1 : instance.getCurrentNode();
         String instStatus = instance.getStatus() == null ? "" : instance.getStatus().toUpperCase(Locale.ROOT);
@@ -755,7 +755,7 @@ public class DbApprovalService implements ApprovalEngineService {
         ApprovalInstance instance = instanceMapper.selectById(task.getInstanceId());
         InstanceDisplay d = instance == null
                 ? new InstanceDisplay()
-                : InstanceDisplay.from(instance);
+                : displayOf(instance);
         List<ProcessNodeDef> nodes = instance == null ? List.of() : nodesOf(instance);
         ApprovalDtos.TaskListItemVO vo = new ApprovalDtos.TaskListItemVO();
         vo.setTaskId(task.getId());
@@ -814,6 +814,15 @@ public class DbApprovalService implements ApprovalEngineService {
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    /** 列表/详情展示名实时解析，避免库里历史「用户1」桩文案残留 */
+    private InstanceDisplay displayOf(ApprovalInstance inst) {
+        InstanceDisplay d = InstanceDisplay.from(inst);
+        if (inst.getInitiatorId() != null && inst.getInitiatorId() > 0) {
+            d.applicantName = currentUserProvider.displayName(inst.getInitiatorId());
+        }
+        return d;
     }
 
     private static String labelOf(List<ProcessNodeDef> nodes, Integer order) {

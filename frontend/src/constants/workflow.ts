@@ -47,6 +47,16 @@ export const RESIGNATION_REASON_LABEL: Record<string, string> = {
   NEGOTIATED: '协商',
 };
 
+/** 用工类型 → 中文 */
+export const EMPLOYMENT_TYPE_LABEL: Record<string, string> = {
+  fulltime: '全职',
+  parttime: '兼职',
+  intern: '实习',
+  FULLTIME: '全职',
+  PARTTIME: '兼职',
+  INTERN: '实习',
+};
+
 export function processTypeLabel(code?: string | null): string {
   if (!code) return '-';
   const key = String(code).trim().toUpperCase();
@@ -74,6 +84,12 @@ export function resignationReasonLabel(code?: string | null): string {
   if (!code) return '-';
   const key = String(code).trim().toUpperCase();
   return RESIGNATION_REASON_LABEL[key] || code;
+}
+
+export function employmentTypeLabel(code?: string | null): string {
+  if (!code) return '-';
+  const key = String(code).trim();
+  return EMPLOYMENT_TYPE_LABEL[key] || EMPLOYMENT_TYPE_LABEL[key.toLowerCase()] || code;
 }
 
 /** 把时间线文案中的英文流程类型/操作码替换为中文（兼容历史数据） */

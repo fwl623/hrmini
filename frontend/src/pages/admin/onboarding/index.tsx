@@ -4,6 +4,7 @@ import {
   Col,
   DatePicker,
   Descriptions,
+  Drawer,
   Form,
   Input,
   InputNumber,
@@ -12,8 +13,10 @@ import {
   Select,
   Space,
   Statistic,
+  Steps,
   Table,
   Tag,
+  Timeline,
   TreeSelect,
   Typography,
   message,
@@ -27,10 +30,12 @@ import {
   confirmOnboardingApplication,
   createOnboardingApplication,
   deleteOnboardingApplication,
+  fetchInstanceDetail,
   fetchOnboardingApplications,
   submitOnboardingApplication,
   updateOnboardingApplication,
   withdrawOnboardingApplication,
+  type ApprovalTimelineItem,
   type OnboardingForm,
   type OnboardingItem,
 } from '@/services/workflow';
@@ -41,6 +46,7 @@ import {
   type PositionVO,
 } from '@/services/org';
 import { getEmployeeList, type EmployeeItem } from '@/services/employee';
+import { approvalActionLabel, localizeTimelineText } from '@/constants/workflow';
 
 interface TreeOption {
   title: string;
@@ -65,6 +71,22 @@ const STATUS_COLOR: Record<string, string> = {
   abandoned: 'default',
 };
 
+const STATUS_LABEL: Record<string, string> = {
+  draft: '草稿',
+  pending: '审批中',
+  approved_pending: '待入职',
+  onboarded: '已入职',
+  rejected: '已驳回',
+  abandoned: '已放弃',
+};
+
+const NODE_STATE_TO_STEP: Record<string, 'wait' | 'process' | 'finish' | 'error'> = {
+  pending: 'wait',
+  current: 'process',
+  done: 'finish',
+  cancelled: 'error',
+};
+
 function actionsForStatus(status: string) {
   return {
     edit: status === 'draft' || status === 'rejected',
@@ -76,6 +98,8 @@ function actionsForStatus(status: string) {
     remove: status === 'draft' || status === 'rejected',
     viewReject: status === 'rejected',
     regularize: status === 'onboarded',
+    viewProgress: status === 'pending' || status === 'approved_pending'
+      || status === 'onboarded' || status === 'rejected' || status === 'abandoned',
   };
 }
 
@@ -90,6 +114,13 @@ export default function OnboardingPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dateModal, setDateModal] = useState<{ id: number; date?: string } | null>(null);
   const [detailRow, setDetailRow] = useState<OnboardingItem | null>(null);
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [progressRow, setProgressRow] = useState<OnboardingItem | null>(null);
+  const [progressStatus, setProgressStatus] = useState('');
+  const [progressCurrent, setProgressCurrent] = useState('');
+  const [progressNodes, setProgressNodes] = useState<{ order: number; label: string; state: string }[]>([]);
+  const [progressTimeline, setProgressTimeline] = useState<ApprovalTimelineItem[]>([]);
   const [form] = Form.useForm();
   const [dateForm] = Form.useForm();
   const [deptTreeOptions, setDeptTreeOptions] = useState<TreeOption[]>([]);
@@ -229,6 +260,36 @@ export default function OnboardingPage() {
     positionStandard: v.positionStandard !== false,
   });
 
+  const openProgress = async (row: OnboardingItem) => {
+    if (!row.instanceId) {
+      message.warning(row.status === 'draft' ? '草稿尚未提交审批' : '暂无审批实例');
+      return;
+    }
+    setProgressRow(row);
+    setProgressOpen(true);
+    setProgressLoading(true);
+    setProgressStatus(row.status);
+    setProgressCurrent('');
+    setProgressNodes([]);
+    setProgressTimeline([]);
+    try {
+      const detail = await fetchInstanceDetail(row.instanceId);
+      setProgressNodes(detail?.nodes ?? []);
+      setProgressTimeline(detail?.timeline ?? []);
+      setProgressCurrent(detail?.currentNodeLabel || '');
+      if (detail?.status) setProgressStatus(detail.status);
+    } catch (e) {
+      message.error((e as Error)?.message || '加载审批进度失败');
+    } finally {
+      setProgressLoading(false);
+    }
+  };
+
+  const currentStepIndex = Math.max(
+    0,
+    progressNodes.findIndex((n) => n.state === 'current'),
+  );
+
   const columns: ColumnsType<OnboardingItem> = [
     { title: 'ID', dataIndex: 'id', width: 70 },
     { title: '姓名', dataIndex: 'name' },
@@ -239,7 +300,7 @@ export default function OnboardingPage() {
       width: 140,
       render: (s: string, row) => (
         <Space size={4}>
-          <Tag color={STATUS_COLOR[s] || 'default'}>{s}</Tag>
+          <Tag color={STATUS_COLOR[s] || 'default'}>{STATUS_LABEL[s] || s}</Tag>
           {s === 'rejected' && row.rejectReason ? (
             <Typography.Text type="danger" style={{ fontSize: 12 }} ellipsis>
               {row.rejectReason}
@@ -260,31 +321,37 @@ export default function OnboardingPage() {
     { title: '员工ID', dataIndex: 'employeeId', width: 90 },
     {
       title: '操作',
-      width: 380,
+      width: 420,
       render: (_, row) => {
         const a = actionsForStatus(row.status);
         return (
           <Space wrap>
+            {a.viewProgress && row.instanceId ? (
+              <Button type="link" onClick={(e) => { e.stopPropagation(); openProgress(row); }}>
+                审批进度
+              </Button>
+            ) : null}
             {a.edit && (
-              <Button type="link" onClick={() => openEdit(row)}>
+              <Button type="link" onClick={(e) => { e.stopPropagation(); openEdit(row); }}>
                 编辑
               </Button>
             )}
             {a.viewReject && (
-              <Button type="link" onClick={() => setDetailRow(row)}>
+              <Button type="link" onClick={(e) => { e.stopPropagation(); setDetailRow(row); }}>
                 驳回详情
               </Button>
             )}
             {a.submit && (
               <Button
                 type="link"
-                onClick={async () => {
+                onClick={async (e) => {
+                  e.stopPropagation();
                   try {
                     await submitOnboardingApplication(row.id);
                     message.success(row.status === 'rejected' ? '已重新提交审批' : '已提交审批');
                     load();
-                  } catch (e) {
-                    message.error((e as Error)?.message || '提交失败');
+                  } catch (err) {
+                    message.error((err as Error)?.message || '提交失败');
                   }
                 }}
               >
@@ -294,13 +361,14 @@ export default function OnboardingPage() {
             {a.withdraw && (
               <Button
                 type="link"
-                onClick={async () => {
+                onClick={async (e) => {
+                  e.stopPropagation();
                   try {
                     await withdrawOnboardingApplication(row.id);
                     message.success('已撤回');
                     load();
-                  } catch (e) {
-                    message.error((e as Error)?.message || '撤回失败');
+                  } catch (err) {
+                    message.error((err as Error)?.message || '撤回失败');
                   }
                 }}
               >
@@ -310,7 +378,8 @@ export default function OnboardingPage() {
             {a.changeDate && (
               <Button
                 type="link"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setDateModal({ id: row.id, date: row.expectedOnboardDate });
                   dateForm.setFieldsValue({
                     expectedOnboardDate: row.expectedOnboardDate
@@ -325,13 +394,14 @@ export default function OnboardingPage() {
             {a.confirm && (
               <Button
                 type="link"
-                onClick={async () => {
+                onClick={async (e) => {
+                  e.stopPropagation();
                   try {
                     await confirmOnboardingApplication(row.id);
                     message.success('已确认入职（账号已开通）');
                     load();
-                  } catch (e) {
-                    message.error((e as Error)?.message || '确认失败');
+                  } catch (err) {
+                    message.error((err as Error)?.message || '确认失败');
                   }
                 }}
               >
@@ -342,13 +412,14 @@ export default function OnboardingPage() {
               <Button
                 type="link"
                 danger
-                onClick={async () => {
+                onClick={async (e) => {
+                  e.stopPropagation();
                   try {
                     await abandonOnboardingApplication(row.id);
                     message.success('已放弃入职');
                     load();
-                  } catch (e) {
-                    message.error((e as Error)?.message || '操作失败');
+                  } catch (err) {
+                    message.error((err as Error)?.message || '操作失败');
                   }
                 }}
               >
@@ -358,7 +429,8 @@ export default function OnboardingPage() {
             {a.regularize && row.employeeId && (
               <Button
                 type="link"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   history.push(`/admin/regularization?employeeId=${row.employeeId}`);
                 }}
               >
@@ -369,13 +441,14 @@ export default function OnboardingPage() {
               <Button
                 type="link"
                 danger
-                onClick={async () => {
+                onClick={async (e) => {
+                  e.stopPropagation();
                   try {
                     await deleteOnboardingApplication(row.id);
                     message.success('已删除');
                     load();
-                  } catch (e) {
-                    message.error((e as Error)?.message || '删除失败');
+                  } catch (err) {
+                    message.error((err as Error)?.message || '删除失败');
                   }
                 }}
               >
@@ -409,7 +482,18 @@ export default function OnboardingPage() {
       </Row>
 
       <Card loading={loading}>
-        <Table rowKey="id" columns={columns} dataSource={list} pagination={false} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={list}
+          pagination={false}
+          onRow={(row) => ({
+            onClick: () => {
+              if (row.instanceId) openProgress(row);
+            },
+            style: row.instanceId ? { cursor: 'pointer' } : undefined,
+          })}
+        />
       </Card>
 
       <Modal
@@ -600,6 +684,88 @@ export default function OnboardingPage() {
           </Descriptions>
         )}
       </Modal>
+
+      <Drawer
+        title={progressRow ? `审批进度 · ${progressRow.name}` : '审批进度'}
+        open={progressOpen}
+        onClose={() => setProgressOpen(false)}
+        width={480}
+        destroyOnClose
+      >
+        {progressLoading ? (
+          <Typography.Text type="secondary">加载中…</Typography.Text>
+        ) : (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <div>
+              <Typography.Text type="secondary">入职申请 </Typography.Text>
+              <Typography.Text strong>{progressRow?.name || '-'}</Typography.Text>
+              <div style={{ marginTop: 8 }}>
+                <Tag color={STATUS_COLOR[progressRow?.status || ''] || 'default'}>
+                  {STATUS_LABEL[progressRow?.status || '']
+                    || STATUS_LABEL[progressStatus]
+                    || progressStatus
+                    || '-'}
+                </Tag>
+                {progressCurrent ? (
+                  <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
+                    当前节点：{progressCurrent}
+                  </Typography.Text>
+                ) : null}
+              </div>
+            </div>
+
+            <Card size="small" title="审批流程" type="inner">
+              {progressNodes.length > 0 ? (
+                <Steps
+                  direction="vertical"
+                  size="small"
+                  current={currentStepIndex >= 0 ? currentStepIndex : progressNodes.length}
+                  items={progressNodes.map((n) => ({
+                    title: n.label,
+                    status: NODE_STATE_TO_STEP[n.state] || 'wait',
+                  }))}
+                />
+              ) : (
+                <Typography.Text type="secondary">暂无审批节点（可能尚未提交）</Typography.Text>
+              )}
+            </Card>
+
+            <Card size="small" title="审批动态" type="inner">
+              {progressTimeline.length > 0 ? (
+                <Timeline
+                  items={progressTimeline.map((t, i) => ({
+                    key: i,
+                    children: (
+                      <>
+                        <Typography.Text>
+                          {localizeTimelineText(t.displayText)
+                            || `${t.assignee || '-'} · ${approvalActionLabel(t.action || t.node)}`}
+                        </Typography.Text>
+                        {t.comment ? (
+                          <div>
+                            <Typography.Text type="secondary">
+                              {localizeTimelineText(t.comment)}
+                            </Typography.Text>
+                          </div>
+                        ) : null}
+                        {t.time ? (
+                          <div>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              {t.time}
+                            </Typography.Text>
+                          </div>
+                        ) : null}
+                      </>
+                    ),
+                  }))}
+                />
+              ) : (
+                <Typography.Text type="secondary">暂无审批记录</Typography.Text>
+              )}
+            </Card>
+          </Space>
+        )}
+      </Drawer>
     </Space>
   );
 }

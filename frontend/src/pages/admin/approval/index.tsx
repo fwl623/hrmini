@@ -22,6 +22,7 @@ import type { ApprovalTimelineNode } from '@/components/ApprovalTimeline';
 import ProcessStatusTag from '@/components/ProcessStatusTag';
 import {
   approvalActionLabel,
+  employmentTypeLabel,
   localizeTimelineText,
   processTypeLabel,
   resignationReasonLabel,
@@ -363,7 +364,11 @@ export default function ApprovalCenterPage() {
                 <Descriptions.Item label="预计入职日">{bizText(biz.expectedOnboardDate)}</Descriptions.Item>
                 <Descriptions.Item label="部门">{bizText(biz.departmentName)}</Descriptions.Item>
                 <Descriptions.Item label="职位">{bizText(biz.positionName)}</Descriptions.Item>
-                <Descriptions.Item label="用工类型">{bizText(biz.employmentType)}</Descriptions.Item>
+                <Descriptions.Item label="用工类型">
+                  {employmentTypeLabel(
+                    typeof biz.employmentType === 'string' ? biz.employmentType : undefined,
+                  )}
+                </Descriptions.Item>
                 <Descriptions.Item label="试用期月数">{bizText(biz.probationMonths)}</Descriptions.Item>
                 <Descriptions.Item label="基本工资">{bizText(biz.baseSalary)}</Descriptions.Item>
                 <Descriptions.Item label="直属上级">{bizText(biz.managerName)}</Descriptions.Item>

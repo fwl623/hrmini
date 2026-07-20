@@ -89,6 +89,16 @@ public interface OrgLookupMapper {
             """)
     java.util.Map<String, Object> selectEmployeeNameAndPositionByUserId(@Param("userId") Long userId);
 
+    @Select("SELECT username FROM sys_user WHERE id = #{userId} LIMIT 1")
+    String selectUsernameByUserId(@Param("userId") Long userId);
+
+    @Select("""
+            SELECT COUNT(1) FROM sys_user_role ur
+            INNER JOIN sys_role r ON r.id = ur.role_id
+            WHERE ur.user_id = #{userId} AND r.code = 'SYS_ADMIN'
+            """)
+    int countSysAdminRole(@Param("userId") Long userId);
+
     /** 按 employeeId 查员工姓名与职位名（交接人展示） */
     @Select("""
             SELECT e.name AS name, p.name AS positionName
