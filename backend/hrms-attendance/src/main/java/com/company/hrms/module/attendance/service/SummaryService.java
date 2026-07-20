@@ -404,6 +404,7 @@ public class SummaryService {
         }
 
         // 加载该员工当月已审批通过的请假记录
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
         List<com.company.hrms.attendance.entity.LeaveApplication> approvedLeaves =
                 leaveApplicationMapper.selectList(
                         new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
@@ -411,14 +412,21 @@ public class SummaryService {
                                 .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
                                 .ge(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, start.atStartOfDay())
                                 .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, end.plusDays(1).atStartOfDay()));
-        // 构建请假日期集合
+        // 构建请假日期集合（Fix1: 排除未来日期；Fix2: 结束时间为午夜00:00时不包含结束日）
         java.util.Set<java.time.LocalDate> leaveDateSet = new java.util.HashSet<>();
         for (com.company.hrms.attendance.entity.LeaveApplication la : approvedLeaves) {
             java.time.LocalDate laStart = la.getStartTime().toLocalDate();
             java.time.LocalDate laEnd = la.getEndTime().toLocalDate();
+            // Fix2: 如果结束时间是午夜00:00，endDate 减一天（请假实际到前一天结束）
+            if (la.getEndTime().toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+                laEnd = laEnd.minusDays(1);
+            }
             java.time.LocalDate d = laStart;
             while (!d.isAfter(laEnd)) {
-                leaveDateSet.add(d);
+                // Fix1: 只标记已过去的日期，未来日期不显示请假
+                if (!d.isAfter(today)) {
+                    leaveDateSet.add(d);
+                }
                 d = d.plusDays(1);
             }
         }

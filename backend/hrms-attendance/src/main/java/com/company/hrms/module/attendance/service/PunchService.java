@@ -231,15 +231,20 @@ public class PunchService {
         List<com.company.hrms.attendance.entity.AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
                 employeeId, monthStart, today);
 
-        int shouldDays = dailyList.size(); // 有日汇总的天数 = 应该出勤的天数
+        int shouldDays = 0; // 应出勤天数（排除请假）
         int clockedCount = 0, lateCount = 0, earlyLeaveCount = 0;
-        int missingInCount = 0, missingOutCount = 0, leaveCount = 0;
+        int missingInCount = 0, missingOutCount = 0;
 
         for (com.company.hrms.attendance.entity.AttendanceDailySummary ds : dailyList) {
             String status = ds.getDayStatus();
+            // Fix3: 请假天数不计入应出勤，也不会计入缺卡
+            if ("LEAVE".equals(status)) {
+                continue;
+            }
+            shouldDays++;
             switch (status) {
                 case "NORMAL":
-                    clockedCount += 2; // 正常：有IN+OUT
+                    clockedCount += 2;
                     break;
                 case "LATE":
                     clockedCount += 2;
@@ -250,30 +255,27 @@ public class PunchService {
                     earlyLeaveCount++;
                     break;
                 case "MISSING_IN":
-                    clockedCount++; // 只有OUT
+                    clockedCount++;
                     missingInCount++;
                     break;
                 case "MISSING_OUT":
-                    clockedCount++; // 只有IN
+                    clockedCount++;
                     missingOutCount++;
                     break;
                 case "ABSENT_HALF":
                     clockedCount++;
-                    missingInCount++; // 算缺一次
+                    missingInCount++;
                     break;
                 case "ABSENT":
                     missingInCount++;
                     missingOutCount++;
-                    break;
-                case "LEAVE":
-                    leaveCount++;
                     break;
                 default:
                     break;
             }
         }
 
-        long totalCount = shouldDays * 2L; // 应打卡 = 工作天数 × 2
+        long totalCount = shouldDays * 2L; // 应打卡 = (应出勤天数 - 请假天数) × 2
         long absentCount = missingInCount + missingOutCount; // 缺卡 = 缺少的IN + 缺少的OUT
 
         return new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
