@@ -235,27 +235,56 @@ public class SummaryService {
      * 个人统计（8 项指标）
      */
     public PersonalStatisticsVO getPersonalStatistics(Long employeeId, String period) {
+        PersonalStatisticsVO vo = new PersonalStatisticsVO();
+        vo.setEmployeeId(employeeId);
+        vo.setPeriod(period);
+
+        // 查询员工姓名和部门
+        try {
+            com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(employeeId);
+            if (emp != null) {
+                vo.setEmployeeName(emp.getName());
+                // departmentName 是 JOIN 字段，selectById 不返回，用 search 查
+                List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
+                        null, null, null, null, null, null, null,
+                        " AND e.id = " + employeeId);
+                if (!empList.isEmpty() && empList.get(0).getDepartmentName() != null) {
+                    vo.setDepartmentName(empList.get(0).getDepartmentName());
+                }
+            } else {
+                vo.setEmployeeName(String.valueOf(employeeId));
+            }
+        } catch (Exception e) {
+            vo.setEmployeeName(String.valueOf(employeeId));
+        }
+
         AttendanceMonthlySummary ms = monthlySummaryMapper.selectByEmployeeAndPeriod(employeeId, period);
         if (ms == null) {
-            return new PersonalStatisticsVO(employeeId, period, 0, BigDecimal.ZERO, 0, 0,
-                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+            vo.setShouldAttendDays(0);
+            vo.setActualAttendDays(BigDecimal.ZERO);
+            vo.setLateCount(0);
+            vo.setEarlyLeaveCount(0);
+            vo.setAbsentDays(BigDecimal.ZERO);
+            vo.setLeaveDays(BigDecimal.ZERO);
+            vo.setOvertimeHours(BigDecimal.ZERO);
+            vo.setAnnualBalance(BigDecimal.ZERO);
+            return vo;
         }
-        // 查年假余额
+
+        vo.setShouldAttendDays(ms.getShouldAttendDays() != null ? ms.getShouldAttendDays() : 0);
+        vo.setActualAttendDays(ms.getActualAttendDays() != null ? ms.getActualAttendDays() : BigDecimal.ZERO);
+        vo.setLateCount(ms.getLateCount() != null ? ms.getLateCount() : 0);
+        vo.setEarlyLeaveCount(ms.getEarlyLeaveCount() != null ? ms.getEarlyLeaveCount() : 0);
+        vo.setAbsentDays(ms.getAbsentDays() != null ? ms.getAbsentDays() : BigDecimal.ZERO);
+        vo.setLeaveDays(ms.getLeaveDays() != null ? ms.getLeaveDays() : BigDecimal.ZERO);
+        vo.setOvertimeHours(ms.getOvertimeHours() != null ? ms.getOvertimeHours() : BigDecimal.ZERO);
+
+        // 年假余额
         com.company.hrms.attendance.entity.LeaveBalance lb = null;
         // TODO: 通过 LeaveBalanceMapper 查询年假余额
-        BigDecimal annualBalance = BigDecimal.ZERO;
+        vo.setAnnualBalance(BigDecimal.ZERO);
 
-        return new PersonalStatisticsVO(
-                employeeId, period,
-                ms.getShouldAttendDays() != null ? ms.getShouldAttendDays() : 0,
-                ms.getActualAttendDays() != null ? ms.getActualAttendDays() : BigDecimal.ZERO,
-                ms.getLateCount() != null ? ms.getLateCount() : 0,
-                ms.getEarlyLeaveCount() != null ? ms.getEarlyLeaveCount() : 0,
-                ms.getAbsentDays() != null ? ms.getAbsentDays() : BigDecimal.ZERO,
-                ms.getLeaveDays() != null ? ms.getLeaveDays() : BigDecimal.ZERO,
-                ms.getOvertimeHours() != null ? ms.getOvertimeHours() : BigDecimal.ZERO,
-                annualBalance
-        );
+        return vo;
     }
 
     /**
