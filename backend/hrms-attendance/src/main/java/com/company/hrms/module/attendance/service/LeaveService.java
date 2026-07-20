@@ -166,6 +166,9 @@ public class LeaveService {
      */
     @Transactional(rollbackFor = Exception.class)
     public LeaveApplication submit(Long employeeId, LeaveApplicationDTO dto) {
+        if (dto.getDays() == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "请假天数不能为空");
+        }
         BigDecimal days = BigDecimal.valueOf(dto.getDays());
 
         // 年假/调休需校验余额
@@ -251,10 +254,9 @@ public class LeaveService {
             }
         }
 
-        // 先撤回审批实例（发起人字段存的是 employeeId），再改请假单状态，避免嵌套事务回滚污染
+        // 先撤回审批实例，再改请假单状态。本人撤：发起人校验；HR 代撤：引擎侧放行 HR/管理员
         if (app.getInstanceId() != null) {
             Long operatorId = SecurityUtils.getUserId();
-            // withdrawInstance 内部会同时用登录态 employeeId 做发起人校验
             approvalEngineService.withdrawInstance(app.getInstanceId(),
                     operatorId != null ? operatorId : app.getEmployeeId());
         }

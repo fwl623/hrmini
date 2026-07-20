@@ -127,14 +127,16 @@ const LeavePage: React.FC = () => {
   const handleCancel = async (id: number) => {
     try {
       const res = await cancelMyLeave(id);
-      if (res.code !== 0) {
-        message.error(res.message || '撤销失败');
+      if (!res || res.code !== 0) {
+        message.error(res?.message || '撤销失败');
         return;
       }
       message.success('已撤销');
       await loadData();
     } catch (err: any) {
-      message.error(err?.message || '撤销失败');
+      if (err?.name !== 'BizError') {
+        message.error(err?.message || '撤销失败');
+      }
     }
   };
 

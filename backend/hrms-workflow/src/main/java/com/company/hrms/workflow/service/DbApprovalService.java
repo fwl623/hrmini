@@ -6,8 +6,11 @@ import com.company.hrms.common.approval.ApprovalStatusDTO;
 import com.company.hrms.common.approval.CreateApprovalRequest;
 import com.company.hrms.common.approval.CreateApprovalResult;
 import com.company.hrms.common.event.ApprovalCompletedEvent;
+import com.company.hrms.common.enums.RoleCode;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
+import com.company.hrms.common.security.LoginUser;
+import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.workflow.dto.ApprovalDtos;
 import com.company.hrms.workflow.entity.ApprovalInstance;
@@ -432,6 +435,7 @@ public class DbApprovalService implements ApprovalEngineService {
 
     /**
      * 撤回审批实例。initiatorId 可能存 userId 或 employeeId（请假等业务用 employeeId）。
+     * HR_STAFF / SYS_ADMIN 可代撤（管理端撤销请假等，BUG-025）。
      */
     @Transactional
     public void doWithdrawInstance(long instanceId, long userId, Long employeeId) {
@@ -442,8 +446,8 @@ public class DbApprovalService implements ApprovalEngineService {
         Long initiator = instance.getInitiatorId();
         boolean owner = initiator != null
                 && (initiator.equals(userId) || (employeeId != null && initiator.equals(employeeId)));
-        if (!owner) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "仅发起人可撤回");
+        if (!owner && !isHrOrAdmin()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅发起人或 HR 可撤回");
         }
         if (!"PENDING".equalsIgnoreCase(instance.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID);
@@ -676,6 +680,19 @@ public class DbApprovalService implements ApprovalEngineService {
                 }
             }
             return null;
+        }
+    }
+
+    private static boolean isHrOrAdmin() {
+        try {
+            LoginUser login = SecurityUtils.getLoginUser();
+            if (login == null) {
+                return false;
+            }
+            return login.hasRole(RoleCode.HR_STAFF.name())
+                    || login.hasRole(RoleCode.SYS_ADMIN.name());
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
