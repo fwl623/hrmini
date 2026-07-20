@@ -37,6 +37,7 @@ import {
   getAttendanceCalendar,
   getPunchFixQuota,
   getTodayPunchStatus,
+  getMonthlyPunchStatus,
   portalPunch,
 } from '@/services/attendance';
 
@@ -102,7 +103,7 @@ const AttendancePunchPage: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<API.AttendanceCalendarDay | null>(null);
 
   // 本月打卡统计
-  const [monthTotal, setMonthTotal] = useState({ should: 0, actual: 0, late: 0 });
+  const [monthTotal, setMonthTotal] = useState({ should: 0, actual: 0, late: 0, early: 0, absent: 0 });
 
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -136,7 +137,9 @@ const AttendancePunchPage: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [statusRes, quotaRes] = await Promise.all([getTodayPunchStatus(), getPunchFixQuota()]);
+      const [statusRes, quotaRes, monthlyRes] = await Promise.all([
+        getTodayPunchStatus(), getPunchFixQuota(), getMonthlyPunchStatus()
+      ]);
       const data = statusRes.data as any;
       if (data) {
         setTodayStatus(data);
@@ -150,6 +153,17 @@ const AttendancePunchPage: React.FC = () => {
         } else {
           setRecords([]);
         }
+      }
+      // 本月统计
+      const mData = monthlyRes.data as any;
+      if (mData) {
+        setMonthTotal({
+          should: mData.totalCount || 0,
+          actual: mData.clockedCount || 0,
+          late: mData.lateCount || 0,
+          early: mData.earlyLeaveCount || 0,
+          absent: mData.absentCount || 0,
+        });
       }
       if (quotaRes.data) setQuota(quotaRes.data);
     } catch {
@@ -293,33 +307,33 @@ const AttendancePunchPage: React.FC = () => {
           <Row gutter={[16, 16]}>
             <Col xs={12} sm={6}>
               <Statistic
-                title="今日已打卡"
-                value={todayStatus.clockedCount}
-                suffix={`/ ${todayStatus.totalCount}`}
+                title="本月已打卡"
+                value={monthTotal.actual}
+                suffix={`/ ${monthTotal.should}`}
                 valueStyle={{ color: '#1890ff' }}
               />
             </Col>
             <Col xs={12} sm={6}>
               <Statistic
-                title="今日迟到"
-                value={todayStatus.lateCount}
-                valueStyle={{ color: todayStatus.lateCount > 0 ? '#faad14' : undefined }}
+                title="本月迟到"
+                value={monthTotal.late}
+                valueStyle={{ color: monthTotal.late > 0 ? '#faad14' : undefined }}
                 prefix={<ClockCircleOutlined />}
               />
             </Col>
             <Col xs={12} sm={6}>
               <Statistic
-                title="今日早退"
-                value={todayStatus.earlyLeaveCount}
-                valueStyle={{ color: todayStatus.earlyLeaveCount > 0 ? '#faad14' : undefined }}
+                title="本月早退"
+                value={monthTotal.early}
+                valueStyle={{ color: monthTotal.early > 0 ? '#faad14' : undefined }}
                 prefix={<ClockCircleOutlined />}
               />
             </Col>
             <Col xs={12} sm={6}>
               <Statistic
-                title="今日缺卡"
-                value={todayStatus.absentCount}
-                valueStyle={{ color: todayStatus.absentCount > 0 ? '#ff4d4f' : undefined }}
+                title="本月缺卡"
+                value={monthTotal.absent}
+                valueStyle={{ color: monthTotal.absent > 0 ? '#ff4d4f' : undefined }}
                 prefix={<CloseCircleOutlined />}
               />
             </Col>
