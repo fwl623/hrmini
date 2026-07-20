@@ -67,6 +67,7 @@ public class PunchService {
     private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper monthlySummaryMapper;
     private final com.company.hrms.attendance.mapper.WorkdayConfigMapper workdayConfigMapper;
     private final com.company.hrms.attendance.mapper.HolidayCalendarMapper holidayCalendarMapper;
+    private final com.company.hrms.attendance.mapper.LeaveApplicationMapper leaveApplicationMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final ApprovalEngineService approvalEngineService;
@@ -221,63 +222,99 @@ public class PunchService {
     // ========== 本月打卡统计 ==========
 
     /**
-     * 获取本月打卡统计（读日汇总表，数据更准确）
+     * 获取本月打卡统计
+     * 动态计算当月工作日天数，逐日检查打卡记录，不依赖日汇总表
      */
     public TodayPunchVO getMonthlyStatus(Long employeeId) {
         LocalDate today = LocalDate.now(CST);
         LocalDate monthStart = today.withDayOfMonth(1);
 
-        // 查本月日汇总数据
-        List<com.company.hrms.attendance.entity.AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
-                employeeId, monthStart, today);
+        // 1. 工作日配置
+        List<com.company.hrms.attendance.entity.WorkdayConfig> wkConfigs = workdayConfigMapper.selectList(null);
+        java.util.Set<Integer> workdaySet = wkConfigs.stream()
+                .filter(w -> w.getIsWorkday() == 1)
+                .map(com.company.hrms.attendance.entity.WorkdayConfig::getDayOfWeek)
+                .collect(java.util.stream.Collectors.toSet());
+        List<com.company.hrms.attendance.entity.HolidayCalendar> holidays = holidayCalendarMapper.selectList(null);
+        java.util.Set<java.time.LocalDate> holidayDates = holidays.stream()
+                .map(com.company.hrms.attendance.entity.HolidayCalendar::getHolidayDate)
+                .collect(java.util.stream.Collectors.toSet());
 
-        int shouldDays = 0;
-        int clockedCount = 0, lateCount = 0, earlyLeaveCount = 0;
-        int missingInCount = 0, missingOutCount = 0;
-
-        for (com.company.hrms.attendance.entity.AttendanceDailySummary ds : dailyList) {
-            String status = ds.getDayStatus();
-            shouldDays++; // 所有有日汇总的工作日都计入应出勤（含请假）
-            switch (status) {
-                case "NORMAL":
-                    clockedCount += 2;
-                    break;
-                case "LATE":
-                    clockedCount += 2;
-                    lateCount++;
-                    break;
-                case "EARLY_LEAVE":
-                    clockedCount += 2;
-                    earlyLeaveCount++;
-                    break;
-                case "MISSING_IN":
-                    clockedCount++;
-                    missingInCount++;
-                    break;
-                case "MISSING_OUT":
-                    clockedCount++;
-                    missingOutCount++;
-                    break;
-                case "ABSENT_HALF":
-                    clockedCount++;
-                    missingInCount++;
-                    break;
-                case "ABSENT":
-                    missingInCount++;
-                    missingOutCount++;
-                    break;
-                case "LEAVE":
-                    // 请假：不计入打卡数，也不计缺卡
-                    break;
-                default:
-                    break;
+        // 2. 本月打卡记录（去重：同天同类型只算一次）
+        List<AttendanceRecord> allRecords = attendanceRecordMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
+                        .eq(AttendanceRecord::getEmployeeId, employeeId)
+                        .ge(AttendanceRecord::getPunchDate, monthStart)
+                        .le(AttendanceRecord::getPunchDate, today));
+        java.util.Map<java.time.LocalDate, java.util.Set<String>> dateTypeMap = new java.util.HashMap<>();
+        java.util.Set<String> dedupKeys = new java.util.HashSet<>();
+        for (AttendanceRecord r : allRecords) {
+            String key = r.getEmployeeId() + "_" + r.getPunchDate() + "_" + r.getPunchType();
+            if (dedupKeys.add(key)) {
+                dateTypeMap.computeIfAbsent(r.getPunchDate(), k -> new java.util.HashSet<>()).add(r.getPunchType());
             }
         }
 
-        long totalCount = shouldDays * 2L;
-        long absentCount = missingInCount + missingOutCount;
+        // 3. 已审批请假日期集合（仅工作日、已过去）
+        java.util.Set<java.time.LocalDate> approvedLeaveDates = new java.util.HashSet<>();
+        List<com.company.hrms.attendance.entity.LeaveApplication> approvedLeaves =
+                leaveApplicationMapper.selectList(
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
+                                .eq(com.company.hrms.attendance.entity.LeaveApplication::getEmployeeId, employeeId)
+                                .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
+                                .ge(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, monthStart.atStartOfDay())
+                                .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, today.plusDays(1).atStartOfDay()));
+        for (com.company.hrms.attendance.entity.LeaveApplication la : approvedLeaves) {
+            java.time.LocalDate laStart = la.getStartTime().toLocalDate();
+            java.time.LocalDate laEnd = la.getEndTime().toLocalDate();
+            if (la.getEndTime().toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+                laEnd = laEnd.minusDays(1);
+            }
+            java.time.LocalDate d = laStart;
+            while (!d.isAfter(laEnd) && !d.isAfter(today)) {
+                if (workdaySet.contains(d.getDayOfWeek().getValue()) && !holidayDates.contains(d)) {
+                    approvedLeaveDates.add(d);
+                }
+                d = d.plusDays(1);
+            }
+        }
 
-        return new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
+        // 4. 遍历月初到今天每个工作日，统计打卡
+        int shouldDays = 0, clockedCount = 0, lateCount = 0, earlyLeaveCount = 0;
+        int missingInCount = 0, missingOutCount = 0;
+
+        LocalDate current = monthStart;
+        while (!current.isAfter(today)) {
+            // 非工作日跳过
+            if (!workdaySet.contains(current.getDayOfWeek().getValue()) || holidayDates.contains(current)) {
+                current = current.plusDays(1);
+                continue;
+            }
+            shouldDays++;
+            // 已审批请假：不计打卡、不计缺卡
+            if (approvedLeaveDates.contains(current)) {
+                current = current.plusDays(1);
+                continue;
+            }
+            // 检查当天打卡
+            java.util.Set<String> types = dateTypeMap.get(current);
+            if (types == null) {
+                missingInCount++;
+                missingOutCount++;
+            } else {
+                boolean hasIn = types.contains("IN");
+                boolean hasOut = types.contains("OUT");
+                if (hasIn && hasOut) { clockedCount += 2; }
+                else if (hasIn) { clockedCount++; missingOutCount++; }
+                else if (hasOut) { clockedCount++; missingInCount++; }
+            }
+            current = current.plusDays(1);
+        }
+
+        return new TodayPunchVO(
+                clockedCount, shouldDays * 2L,
+                lateCount, earlyLeaveCount,
+                missingInCount + missingOutCount);
     }
 
     // ========== 打卡记录分页 ==========

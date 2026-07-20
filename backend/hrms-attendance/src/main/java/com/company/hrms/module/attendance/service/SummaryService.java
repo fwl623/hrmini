@@ -466,8 +466,13 @@ public class SummaryService {
             } else if (leaveDateSet.contains(current)) {
                 // 无汇总但有已审批请假 → 标记为 LEAVE
                 day.setDayStatus("LEAVE");
+            } else if (!current.isAfter(today)
+                    && workdaySet.contains(current.getDayOfWeek().getValue())
+                    && !holidayDates.contains(current)) {
+                // Fix3: 已过去的工作日，无汇总、无请假 → 缺勤
+                day.setDayStatus("ABSENT");
             } else {
-                // 无汇总记录 → 非工作日或尚未生成汇总
+                // 非工作日或未来日期
                 day.setDayStatus("--");
             }
 
