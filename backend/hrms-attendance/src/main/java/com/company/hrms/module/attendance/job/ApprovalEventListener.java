@@ -116,13 +116,22 @@ public class ApprovalEventListener {
             sup.setStatus("APPROVED");
             attendanceSupplementMapper.updateById(sup);
 
-            // 写入打卡记录（补卡通过后生成一条新的打卡流水）
             LocalDate punchDate = LocalDate.parse(sup.getMakeupDate());
+            String punchType = sup.getPunchType();
+
+            // 先删除该员工当天同类型的旧打卡记录（补卡替换旧的，避免重复）
+            attendanceRecordMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
+                            .eq(AttendanceRecord::getEmployeeId, sup.getEmployeeId())
+                            .eq(AttendanceRecord::getPunchDate, punchDate)
+                            .eq(AttendanceRecord::getPunchType, punchType));
+
+            // 写入新的打卡记录（补卡通过后生成）
             AttendanceRecord record = new AttendanceRecord();
             record.setEmployeeId(sup.getEmployeeId());
             record.setPunchDate(punchDate);
             record.setPunchTime(sup.getMakeupTime());
-            record.setPunchType(sup.getPunchType());
+            record.setPunchType(punchType);
             record.setPunchStatus("NORMAL"); // 补卡审批通过，视为正常
             record.setSource("MAKEUP");
             attendanceRecordMapper.insert(record);
@@ -133,7 +142,7 @@ public class ApprovalEventListener {
                             .eq(AttendanceDailySummary::getEmployeeId, sup.getEmployeeId())
                             .eq(AttendanceDailySummary::getSummaryDate, punchDate));
 
-            // 重新查询该员工当天的所有打卡记录，聚合日汇总
+            // 重新查询该员工当天的所有打卡记录（已经清理了重复的），聚合日汇总
             java.util.List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectList(
                     new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
                             .eq(AttendanceRecord::getEmployeeId, sup.getEmployeeId())

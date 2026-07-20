@@ -104,6 +104,13 @@ public class PunchService {
             throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
         }
 
+        // DB 层防重：即使 Redis key 被误删也不会重复打卡
+        boolean alreadyPunched = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, serverDate)
+                .stream().anyMatch(r -> type.equals(r.getPunchType()));
+        if (alreadyPunched) {
+            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
+        }
+
         // 存储时间优先用前端传的值，否则用服务端时间
         // 前端传的是 ISO 8601 UTC 时间（如 "2026-07-20T11:47:00.000Z"），需转成 CST
         LocalDateTime storeTime = LocalDateTime.now(CST);
