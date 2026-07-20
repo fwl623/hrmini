@@ -291,8 +291,9 @@ public class PunchService {
                 continue;
             }
             shouldDays++;
-            // 已审批请假：不计打卡、不计缺卡
-            if (approvedLeaveDates.contains(current)) {
+            // 已审批请假：仅当天无打卡记录时才不计打卡、不计缺卡
+            // （如果员工请假但实际来打了卡，应正常统计）
+            if (approvedLeaveDates.contains(current) && dateTypeMap.get(current) == null) {
                 current = current.plusDays(1);
                 continue;
             }
