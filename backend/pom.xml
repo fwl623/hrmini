@@ -26,6 +26,7 @@
         <module>hrms-workflow</module>
         <module>hrms-attendance</module>
         <module>hrms-payroll</module>
+        <module>hrms-ai</module>
         <module>hrms-app</module>
     </modules>
 
@@ -95,6 +96,11 @@
             <dependency>
                 <groupId>com.company.hrms</groupId>
                 <artifactId>hrms-payroll</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.company.hrms</groupId>
+                <artifactId>hrms-ai</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

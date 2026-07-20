@@ -128,6 +128,14 @@ export default defineConfig({
         },
         { path: 'personal/resignation', component: './portal/resignation' },
         { path: 'personal/security', component: './portal/security' },
+
+        // AI 智能助理
+        { path: 'ai/chat', component: './admin/ai/chat', access: 'canUseAiAssistant' },
+        {
+          path: 'ai/knowledge',
+          component: './admin/ai/knowledge',
+          access: 'canManageAiKnowledge',
+        },
       ],
     },
     {
@@ -143,6 +151,7 @@ export default defineConfig({
         { path: 'payslips', component: './portal/payslips', access: 'canViewOwnPayslip' },
         { path: 'resignation', component: './portal/resignation' },
         { path: 'security', component: './portal/security' },
+        { path: 'ai/chat', component: './portal/ai/chat', access: 'canUseAiAssistant' },
       ],
     },
   ],

@@ -34,17 +34,17 @@ export default function access(initialState: API.InitialState) {
       roleCode !== ROLES.SYS_ADMIN &&
       (has('payroll:view') ||
         roleIn(roleCode, [ROLES.HR_STAFF, ROLES.FINANCE, ROLES.FINANCE_MANAGER])),
-    /** 门户本人工资条 */
+    /** 门户本人工资条（含 SYS_ADMIN 本人；≠ 管理端薪资全量） */
     canViewOwnPayslip:
-      roleCode !== ROLES.SYS_ADMIN &&
-      (roleCode === ROLES.EMPLOYEE ||
-        roles.includes(ROLES.EMPLOYEE) ||
-        roleIn(roleCode, [
-          ROLES.HR_STAFF,
-          ROLES.FINANCE,
-          ROLES.FINANCE_MANAGER,
-          ROLES.DEPT_MANAGER,
-        ])),
+      roleCode === ROLES.SYS_ADMIN ||
+      roleCode === ROLES.EMPLOYEE ||
+      roles.includes(ROLES.EMPLOYEE) ||
+      roleIn(roleCode, [
+        ROLES.HR_STAFF,
+        ROLES.FINANCE,
+        ROLES.FINANCE_MANAGER,
+        ROLES.DEPT_MANAGER,
+      ]),
     /** 审批中心：HR/主管/财务经理（专员不可进） */
     canApprove:
       has('approval:handle') ||
@@ -83,6 +83,10 @@ export default function access(initialState: API.InitialState) {
     canViewEmployee:
       !isFinanceFamily &&
       (has('menu:employee') || isHr || roleCode === ROLES.DEPT_MANAGER),
+    /** 已登录即可使用 AI 对话 */
+    canUseAiAssistant: true,
+    /** 仅 SYS_ADMIN 管理知识库 */
+    canManageAiKnowledge: roleCode === ROLES.SYS_ADMIN,
     hasPermission: (code: string) => has(code),
   };
 }

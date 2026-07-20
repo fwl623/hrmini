@@ -3,6 +3,7 @@ import { Outlet, history, useAccess, useLocation, useModel } from '@umijs/max';
 import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import React, { useMemo } from 'react';
+import AiFloatBall from '@/components/AiAssistant/AiFloatBall';
 import { ADMIN_ROLES, type RoleCode } from '@/constants/roles';
 import { forceLogout } from '@/utils/authSession';
 import './layout.css';
@@ -10,6 +11,7 @@ import './layout.css';
 const { Header, Sider, Content } = Layout;
 
 const ALL_PORTAL_MENU: MenuProps['items'] = [
+  { key: '/portal/ai/chat', label: '助理小R' },
   { key: '/portal/profile', label: '我的档案' },
   { key: '/portal/attendance', label: '考勤打卡' },
   { key: '/portal/leave', label: '我的请假' },
@@ -99,6 +101,7 @@ const PortalLayout: React.FC = () => {
           <Outlet />
         </Content>
       </Layout>
+      <AiFloatBall />
     </Layout>
   );
 };

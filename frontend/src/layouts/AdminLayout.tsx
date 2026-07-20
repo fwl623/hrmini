@@ -3,6 +3,7 @@ import { Outlet, history, useAccess, useLocation, useModel } from '@umijs/max';
 import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import React, { useMemo } from 'react';
+import AiFloatBall from '@/components/AiAssistant/AiFloatBall';
 import { forceLogout } from '@/utils/authSession';
 import './layout.css';
 
@@ -52,12 +53,23 @@ const AdminLayout: React.FC = () => {
     attendance: access.canManageAttendance,
     payroll: access.canViewPayroll,
     system: access.canManageSystem,
+    ai: access.canUseAiAssistant,
+    aiKnowledge: access.canManageAiKnowledge,
     portal: true,
     portalPayslip: access.canViewOwnPayslip,
   };
 
   const menuItems: MenuItem[] = useMemo(() => {
     const raw: AccessMenuItem[] = [
+      {
+        key: '/admin/ai',
+        label: '助理小R',
+        accessKey: 'ai',
+        children: [
+          { key: '/admin/ai/chat', label: '智能对话' },
+          { key: '/admin/ai/knowledge', label: '知识库管理', accessKey: 'aiKnowledge' },
+        ],
+      },
       { key: '/admin/workbench', label: '工作台', accessKey: 'workbench' },
       {
         key: '/admin/org',
@@ -247,6 +259,7 @@ const AdminLayout: React.FC = () => {
           <Outlet />
         </Content>
       </Layout>
+      <AiFloatBall />
     </Layout>
   );
 };

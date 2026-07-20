@@ -7,6 +7,105 @@ servers:
   - url: http://localhost:8080/api/v1
   - url: http://39.101.67.167:8080/api/v1
 paths:
+  /ai/capabilities:
+    get:
+      tags: [AI]
+      summary: 当前角色可用快捷问题与可推送路由
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 成功
+  /ai/chat/stream:
+    post:
+      tags: [AI]
+      summary: AI 流式对话（SSE）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                conversationId:
+                  type: string
+      responses:
+        "200":
+          description: text/event-stream；事件 data 为 JSON（type=delta|final|done|error）
+  /ai/knowledge/docs:
+    get:
+      tags: [AI]
+      summary: 知识库文档列表（仅 SYS_ADMIN）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 成功
+        "403":
+          description: 非 SYS_ADMIN
+    post:
+      tags: [AI]
+      summary: 上传知识库文档（仅 SYS_ADMIN）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+      responses:
+        "200":
+          description: 成功，返回文档元数据
+  /ai/knowledge/docs/{id}/enabled:
+    put:
+      tags: [AI]
+      summary: 启停知识库文档（仅 SYS_ADMIN）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: enabled
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: 成功
+  /ai/knowledge/docs/{id}:
+    delete:
+      tags: [AI]
+      summary: 删除知识库文档及向量（仅 SYS_ADMIN）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: 成功
   /workbench/summary:
     get:
       tags: [Workbench]
