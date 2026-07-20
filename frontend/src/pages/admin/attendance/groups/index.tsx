@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Card,
   Button,
@@ -6,6 +6,7 @@ import {
   Form,
   Input,
   Select,
+  TreeSelect,
   TimePicker,
   InputNumber,
   Space,
@@ -19,6 +20,8 @@ import { ProTable } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 
 import { createGroup, getGroups, getGroupDetail, updateGroup, deleteGroup } from '@/services/attendance';
+import { getDeptTree } from '@/services/org';
+import { getEmployeeList } from '@/services/employee';
 
 /** 班次类型下拉选项 */
 const SHIFT_TYPE_OPTIONS = [
@@ -33,6 +36,15 @@ const AttendanceGroupPage: React.FC = () => {
   const [editingGroup, setEditingGroup] = React.useState<any>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = React.useState(false);
+  const [deptTree, setDeptTree] = useState<any[]>([]);
+  const [empList, setEmpList] = useState<any[]>([]);
+
+  useEffect(() => {
+    getDeptTree().then((res: any) => setDeptTree(res.data || [])).catch(() => {});
+    getEmployeeList({ page: 1, pageSize: 200 }).then((res: any) => {
+      setEmpList(res.data?.list || []);
+    }).catch(() => {});
+  }, []);
 
   // ---------- 表格列定义 ----------
   const columns: any[] = [
@@ -77,7 +89,7 @@ const AttendanceGroupPage: React.FC = () => {
 
   const handleEdit = async (record: any) => {
     setEditingGroup(record);
-    // 回填表单（将 API 字段名映射为表单字段名）
+    const scope = record.applicableScope || { departmentIds: [], positionIds: [], employeeIds: [] };
     form.setFieldsValue({
       name: record.name,
       shiftType: record.shiftType,
@@ -87,9 +99,8 @@ const AttendanceGroupPage: React.FC = () => {
       restEnd: record.lunchEndTime ? dayjs(record.lunchEndTime, 'HH:mm') : undefined,
       lateThreshold: record.lateThresholdMinutes ?? 15,
       earlyLeaveThreshold: record.earlyLeaveThresholdMinutes ?? 15,
-      applicableScope: record.applicableScope
-        ? JSON.stringify(record.applicableScope)
-        : undefined,
+      departmentIds: scope.departmentIds || [],
+      employeeIds: scope.employeeIds || [],
     });
     setModalOpen(true);
   };
@@ -109,17 +120,12 @@ const AttendanceGroupPage: React.FC = () => {
       const values = await form.validateFields();
       setSaving(true);
 
-      // 解析适用范围 JSON
-      let applicableScope = { departmentIds: [], positionIds: [], employeeIds: [] };
-      if (values.applicableScope) {
-        try {
-          applicableScope = JSON.parse(values.applicableScope);
-        } catch {
-          message.error('适用范围 JSON 格式错误');
-          setSaving(false);
-          return;
-        }
-      }
+      // 组装适用范围
+      const applicableScope = {
+        departmentIds: values.departmentIds || [],
+        positionIds: [],
+        employeeIds: values.employeeIds || [],
+      };
 
       // 构造 API 请求数据（字段名映射：表单 → API 契约）
       const payload: any = {
@@ -221,10 +227,30 @@ const AttendanceGroupPage: React.FC = () => {
               <InputNumber min={0} max={120} />
             </Form.Item>
           </Space>
-          <Form.Item name="applicableScope" label="适用范围">
-            <Input.TextArea
-              placeholder='{"departmentIds": [1,2], "positionIds": [], "employeeIds": []}'
-              rows={2}
+          <Form.Item name="departmentIds" label="适用部门">
+            <TreeSelect
+              treeData={deptTree}
+              fieldNames={{ label: 'name', value: 'id' }}
+              treeCheckable
+              showCheckedStrategy="SHOW_PARENT"
+              placeholder="选择适用部门"
+              allowClear
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+          <Form.Item name="employeeIds" label="适用员工">
+            <Select
+              mode="multiple"
+              placeholder="搜索并选择员工"
+              allowClear
+              showSearch
+              filterOption={(input, option) =>
+                (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+              }
+              options={empList.map((e: any) => ({
+                label: `${e.name} (${e.empNo || e.employeeId})`,
+                value: e.employeeId,
+              }))}
             />
           </Form.Item>
         </Form>
