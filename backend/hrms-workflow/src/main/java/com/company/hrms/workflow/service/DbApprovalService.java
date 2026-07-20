@@ -280,6 +280,13 @@ public class DbApprovalService implements ApprovalEngineService {
             } catch (Exception ignored) {
                 biz.put("needHandoverConfirm", false);
             }
+        } else if ("RESIGNATION_REQUEST".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long requestId = Long.parseLong(instance.getBusinessKey());
+                biz.putAll(resignationService.requestBusinessDetail(requestId));
+            } catch (Exception ignored) {
+                // ignore
+            }
         }
         detail.setBusinessDetail(biz);
 

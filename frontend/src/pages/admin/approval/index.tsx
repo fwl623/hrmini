@@ -14,6 +14,7 @@ import {
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { history } from '@umijs/max';
 import { useCallback, useEffect, useState } from 'react';
 import ApprovalActions from '@/components/ApprovalActions';
 import ApprovalTimeline from '@/components/ApprovalTimeline';
@@ -38,7 +39,8 @@ type TabKey = 'todo' | 'done' | 'mine';
 
 /**
  * 审批中心：列表 + 详情 Drawer（Timeline + Actions + 催办）
- * 正式离职第一岗：同意前须确认工作交接人。
+ * - 正式离职第一岗：同意前须确认工作交接人
+ * - 员工离职申请（RESIGNATION_REQUEST）同意后：提示是否立即发起正式离职
  */
 export default function ApprovalCenterPage() {
   const [tab, setTab] = useState<TabKey>('todo');
@@ -128,6 +130,33 @@ export default function ApprovalCenterPage() {
     [resigningEmployeeId],
   );
 
+  const promptStartFormalResignation = (requestId?: number) => {
+    if (!requestId || Number.isNaN(requestId)) {
+      return;
+    }
+    Modal.confirm({
+      title: '是否立即发起正式离职？',
+      content: '员工离职申请已通过。立即发起后将进入：部门负责人确认交接 → HR 终审 → 待离职 → 已离职。',
+      okText: '立即发起',
+      cancelText: '稍后处理',
+      onOk: () => {
+        history.push(`/admin/resignation?requestId=${requestId}`);
+      },
+    });
+  };
+
+  const resolveRequestId = () => {
+    const fromBiz =
+      typeof biz.requestId === 'number'
+        ? biz.requestId
+        : Number(biz.requestId || biz.businessKey) || 0;
+    return fromBiz > 0 ? fromBiz : undefined;
+  };
+
+  const isResignationRequest =
+    selected?.processType === 'RESIGNATION_REQUEST' ||
+    detail?.instance?.processType === 'RESIGNATION_REQUEST';
+
   const doApprove = async (comment?: string, handoverId?: number) => {
     if (!selected?.taskId) return;
     setActing(true);
@@ -140,7 +169,11 @@ export default function ApprovalCenterPage() {
       message.success('已同意');
       setHandoverOpen(false);
       setDrawerOpen(false);
+      const requestId = isResignationRequest ? resolveRequestId() : undefined;
       await loadList(tab);
+      if (requestId) {
+        promptStartFormalResignation(requestId);
+      }
     } catch (e) {
       message.error((e as Error)?.message || '操作失败');
       throw e;
@@ -277,6 +310,22 @@ export default function ApprovalCenterPage() {
               </Descriptions>
             ) : null}
 
+            {detail?.instance?.processType === 'RESIGNATION_REQUEST' ||
+            selected.processType === 'RESIGNATION_REQUEST' ? (
+              <Descriptions size="small" column={1} bordered title="员工离职申请">
+                <Descriptions.Item label="申请人">
+                  {(biz.employeeName as string) || selected.applicantName}
+                  {biz.employeeNo ? ` · ${biz.employeeNo}` : ''}
+                </Descriptions.Item>
+                <Descriptions.Item label="期望离职日">
+                  {(biz.expectedResignDate as string) || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="原因">{(biz.reasonCategory as string) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="类型">{(biz.resignationType as string) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="说明">{(biz.reasonDetail as string) || '-'}</Descriptions.Item>
+              </Descriptions>
+            ) : null}
+
             <ApprovalTimeline
               nodes={
                 timelineNodes.length > 0
@@ -335,8 +384,15 @@ export default function ApprovalCenterPage() {
                         targetUserId: payload.targetUserId,
                       });
                     }
+                    const requestId =
+                      action === 'APPROVE' && isResignationRequest
+                        ? resolveRequestId()
+                        : undefined;
                     setDrawerOpen(false);
                     await loadList(tab);
+                    if (requestId) {
+                      promptStartFormalResignation(requestId);
+                    }
                   } catch (e) {
                     message.error((e as Error)?.message || '操作失败');
                     throw e;

@@ -76,11 +76,9 @@ public interface AssigneeResolver {
         );
     }
 
+    /** 员工离职申请：默认 HR 单节点（业务侧应写入真实 assigneeUserId） */
     static List<ProcessNodeDef> resignationRequestNodes() {
-        return List.of(
-                node(1, "直接上级审批", "SUPERVISOR"),
-                node(2, "HR 审批", "HR_STAFF")
-        );
+        return List.of(node(1, "HR 审批", "HR_STAFF"));
     }
 
     static List<ProcessNodeDef> resignationNodes() {

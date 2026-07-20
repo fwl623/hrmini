@@ -8,29 +8,39 @@ import {
   Select,
   Space,
   Table,
+  Tabs,
   Typography,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
-import { useAccess, useSearchParams } from '@umijs/max';
+import { history, useAccess, useLocation, useSearchParams } from '@umijs/max';
 import { useCallback, useEffect, useState } from 'react';
 import {
   createResignation,
+  fetchResignationRequests,
   fetchResignationStats,
   fetchResignations,
   type ResignationItem,
+  type ResignationRequestItem,
   type ResignationStats,
 } from '@/services/lifecycle';
 import { getEmployeeDetail, getEmployeeList } from '@/services/employee';
 
 /**
- * HR/管理员离职管理：仅发起正式离职（PRD §5.4）
- * 支持 ?employeeId=&name=&open=1 从花名册「更多-离职」带入
+ * HR/管理员离职管理（PRD §5.4 双通道）
+ * - Tab「员工申请」：审批通过后可发起正式离职
+ * - Tab「正式离职」：正式单列表；也可直提（线下协商占位）
+ * - 支持 ?requestId= 从审批中心跳转
+ * - 支持 ?employeeId=&name=&open=1 从花名册「更多-离职」带入
+ * 工作交接人由部门负责人在审批中心确认。
  */
 export default function AdminResignationPage() {
   const access = useAccess();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState('requests');
+  const [requests, setRequests] = useState<ResignationRequestItem[]>([]);
   const [resignations, setResignations] = useState<ResignationItem[]>([]);
   const [stats, setStats] = useState<ResignationStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -38,15 +48,18 @@ export default function AdminResignationPage() {
   const [form] = Form.useForm();
   const [empOptions, setEmpOptions] = useState<{ label: string; value: number }[]>([]);
   const [empLoading, setEmpLoading] = useState(false);
+  const [linkRequest, setLinkRequest] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [list, st] = await Promise.all([
+      const [r, s, st] = await Promise.all([
+        fetchResignationRequests({ page: 1, pageSize: 50 }),
         fetchResignations({ page: 1, pageSize: 50 }),
         fetchResignationStats(),
       ]);
-      setResignations(list?.list ?? []);
+      setRequests(r?.list ?? []);
+      setResignations(s?.list ?? []);
       setStats(st ?? null);
     } catch (e) {
       message.error((e as Error)?.message || '加载失败');
@@ -59,6 +72,35 @@ export default function AdminResignationPage() {
     load();
   }, [load]);
 
+  /** 支持从审批中心跳转：?requestId=xx */
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    const requestId = Number(q.get('requestId') || 0);
+    if (!requestId) return;
+    const openFromQuery = async () => {
+      try {
+        const data = await fetchResignationRequests({ page: 1, pageSize: 100 });
+        const row = (data?.list ?? []).find((x) => x.id === requestId);
+        if (!row) {
+          message.warning('未找到对应离职申请');
+          return;
+        }
+        if (row.status !== 'APPROVED') {
+          message.warning('该申请尚未审批通过，无法发起正式离职');
+          setTab('requests');
+          return;
+        }
+        openFormalFromRequest(row);
+      } catch (e) {
+        message.error((e as Error)?.message || '加载申请失败');
+      }
+    };
+    openFromQuery();
+    history.replace('/admin/resignation');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
+  /** 支持从花名册「更多-离职」带入：?employeeId=&name=&open=1 */
   useEffect(() => {
     if (!access.canManageResignation) return;
     const employeeId = searchParams.get('employeeId');
@@ -69,6 +111,7 @@ export default function AdminResignationPage() {
     if (!Number.isFinite(id) || id <= 0) return;
 
     (async () => {
+      setLinkRequest(false);
       form.resetFields();
       const nameFromQuery = searchParams.get('name');
       let label = nameFromQuery ? decodeURIComponent(nameFromQuery) : `员工#${id}`;
@@ -87,6 +130,7 @@ export default function AdminResignationPage() {
         reasonCategory: 'VOLUNTARY',
         resignationType: 'resignation',
       });
+      setTab('resignations');
       setOpen(true);
       setSearchParams({}, { replace: true });
     })();
@@ -114,9 +158,54 @@ export default function AdminResignationPage() {
     }
   }, []);
 
+  const openFormalFromRequest = (row: ResignationRequestItem) => {
+    setLinkRequest(true);
+    setEmpOptions([
+      {
+        label: `${row.employeeName || '员工'} · 申请#${row.id}`,
+        value: row.employeeId,
+      },
+    ]);
+    form.resetFields();
+    form.setFieldsValue({
+      employeeId: row.employeeId,
+      requestId: row.id,
+      resignationDate: dayjs(row.expectedResignDate || undefined).isValid()
+        ? dayjs(row.expectedResignDate)
+        : dayjs().add(14, 'day'),
+      reasonCategory: row.reasonCategory || 'VOLUNTARY',
+      resignationType: row.resignationType || 'resignation',
+      reasonDetail: row.reasonDetail,
+    });
+    setOpen(true);
+    setTab('resignations');
+  };
+
+  const reqCols: ColumnsType<ResignationRequestItem> = [
+    { title: 'ID', dataIndex: 'id', width: 80 },
+    { title: '员工', dataIndex: 'employeeName' },
+    { title: '期望离职日', dataIndex: 'expectedResignDate', width: 120 },
+    { title: '类型', dataIndex: 'resignationType', width: 120 },
+    { title: '状态', dataIndex: 'status', width: 120 },
+    { title: '提交时间', dataIndex: 'createdAt', width: 180 },
+    {
+      title: '操作',
+      width: 160,
+      render: (_, row) =>
+        row.status === 'APPROVED' && access.canManageResignation ? (
+          <Button type="link" onClick={() => openFormalFromRequest(row)}>
+            发起正式离职
+          </Button>
+        ) : (
+          '-'
+        ),
+    },
+  ];
+
   const resignCols: ColumnsType<ResignationItem> = [
     { title: 'ID', dataIndex: 'id', width: 80 },
     { title: '员工', dataIndex: 'employeeName' },
+    { title: '关联申请', dataIndex: 'requestId', width: 100 },
     { title: '离职日', dataIndex: 'resignationDate', width: 120 },
     { title: '原因', dataIndex: 'reasonCategory', width: 100 },
     { title: '类型', dataIndex: 'resignationType', width: 120 },
@@ -135,6 +224,7 @@ export default function AdminResignationPage() {
             type="primary"
             danger
             onClick={() => {
+              setLinkRequest(false);
               form.resetFields();
               setEmpOptions([]);
               form.setFieldsValue({
@@ -145,37 +235,56 @@ export default function AdminResignationPage() {
               setOpen(true);
             }}
           >
-            发起离职申请
+            发起正式离职
           </Button>
         )}
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        正式离职审批中 {stats?.approving ?? '-'} · 待离职 {stats?.pendingResign ?? '-'} · 本月已离职{' '}
-        {stats?.resignedThisMonth ?? '-'}
-        <br />
-        员工线下协商后由 HR 发起；部门负责人在审批中心确认交接安排后同意，再交 HR 终审。
+        待审申请 {stats?.pendingRequest ?? '-'} · 正式离职审批中 {stats?.approving ?? '-'} · 待离职{' '}
+        {stats?.pendingResign ?? '-'} · 本月已离职 {stats?.resignedThisMonth ?? '-'}
       </Typography.Paragraph>
       <Card loading={loading}>
-        <Table rowKey="id" columns={resignCols} dataSource={resignations} pagination={false} />
+        <Tabs
+          activeKey={tab}
+          onChange={setTab}
+          items={[
+            {
+              key: 'requests',
+              label: '员工申请',
+              children: (
+                <Table rowKey="id" columns={reqCols} dataSource={requests} pagination={false} />
+              ),
+            },
+            {
+              key: 'resignations',
+              label: '正式离职',
+              children: (
+                <Table rowKey="id" columns={resignCols} dataSource={resignations} pagination={false} />
+              ),
+            },
+          ]}
+        />
       </Card>
 
       <Modal
-        title="发起离职申请"
+        title={linkRequest ? '基于员工申请发起正式离职' : '发起正式离职'}
         open={open}
-        okText="提交申请"
+        okText="提交"
         onCancel={() => setOpen(false)}
         onOk={async () => {
           try {
             const v = await form.validateFields();
             await createResignation({
               employeeId: v.employeeId,
+              requestId: linkRequest ? v.requestId : undefined,
               resignationDate: v.resignationDate.format('YYYY-MM-DD'),
               reasonCategory: v.reasonCategory,
               resignationType: v.resignationType,
               reasonDetail: v.reasonDetail,
             });
-            message.success('已发起正式离职，等待部门负责人在审批中心确认交接并审批');
+            message.success('已发起正式离职，等待部门负责人确认交接并审批');
             setOpen(false);
+            setTab('resignations');
             load();
           } catch (e) {
             if ((e as { errorFields?: unknown })?.errorFields) return;
@@ -185,21 +294,25 @@ export default function AdminResignationPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical">
+          {linkRequest ? (
+            <Form.Item name="requestId" label="关联申请 ID" hidden>
+              <Input />
+            </Form.Item>
+          ) : null}
           <Form.Item
             name="employeeId"
             label="离职员工"
             rules={[{ required: true, message: '请选择离职员工' }]}
-            extra="按姓名 / 部门 / 工号搜索"
           >
             <Select
               showSearch
-              placeholder="输入姓名、部门或工号搜索"
+              disabled={linkRequest}
+              placeholder="按姓名 / 部门 / 工号搜索"
               filterOption={false}
-              notFoundContent={empLoading ? '搜索中…' : '无匹配员工'}
+              notFoundContent={empLoading ? '搜索中…' : '请输入关键词搜索'}
               loading={empLoading}
               onSearch={searchEmployees}
               options={empOptions}
-              style={{ width: '100%' }}
             />
           </Form.Item>
           <Form.Item
@@ -210,7 +323,7 @@ export default function AdminResignationPage() {
               {
                 validator: (_, value) => {
                   if (!value) return Promise.resolve();
-                  if (value.startOf('day').isBefore(dayjs().startOf('day'))) {
+                  if (value.isBefore(dayjs().startOf('day'))) {
                     return Promise.reject(new Error('离职日须 ≥ 今天'));
                   }
                   return Promise.resolve();
@@ -218,13 +331,16 @@ export default function AdminResignationPage() {
               },
             ]}
           >
-            <DatePicker style={{ width: '100%' }} disabledDate={(d) => !!d && d < dayjs().startOf('day')} />
+            <DatePicker
+              style={{ width: '100%' }}
+              disabledDate={(d) => !!d && d < dayjs().startOf('day')}
+            />
           </Form.Item>
           <Form.Item name="reasonCategory" label="离职原因" rules={[{ required: true }]}>
             <Select
               options={[
-                { value: 'VOLUNTARY', label: '主动' },
-                { value: 'INVOLUNTARY', label: '被动' },
+                { value: 'VOLUNTARY', label: '自愿' },
+                { value: 'INVOLUNTARY', label: '非自愿' },
                 { value: 'NEGOTIATED', label: '协商' },
               ]}
             />
@@ -234,14 +350,17 @@ export default function AdminResignationPage() {
               options={[
                 { value: 'resignation', label: '辞职' },
                 { value: 'dismissal', label: '辞退' },
-                { value: 'contract_expiry', label: '合同到期不续签' },
+                { value: 'contract_expiry', label: '合同到期' },
                 { value: 'other', label: '其他' },
               ]}
             />
           </Form.Item>
-          <Form.Item name="reasonDetail" label="详细说明" rules={[{ required: true, message: '请填写详细说明' }]}>
+          <Form.Item name="reasonDetail" label="说明">
             <Input.TextArea rows={3} placeholder="详细离职说明" />
           </Form.Item>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            工作交接人由部门负责人在审批中心确认，本页不采集。
+          </Typography.Paragraph>
         </Form>
       </Modal>
     </Space>
