@@ -52,13 +52,9 @@ public class BatchController {
 
     @PostMapping("/{id}/calculate")
     public Result<Map<String, String>> calculate(@PathVariable Long id) {
-        PayrollBatch batch = calculateService.getBatch(id);
-        if (!"DRAFT".equals(batch.getStatus())) {
-            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "仅草稿状态可开始计算");
-        }
-        // 发 MQ 异步核算，状态由 CalculateService.calculate() 内部处理
-        payrollEventPublisher.sendCalculate(id, batch.getPeriod());
-        return Result.success(Map.of("message", "计算任务已提交"));
+        // 同步核算，直接调用计算结果，不依赖 MQ
+        calculateService.calculate(id);
+        return Result.success(Map.of("message", "计算完成"));
     }
 
     @GetMapping("/{id}/details")
