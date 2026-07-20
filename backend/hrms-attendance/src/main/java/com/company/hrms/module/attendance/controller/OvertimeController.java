@@ -67,4 +67,15 @@ public class OvertimeController {
         OvertimeApplication app = overtimeService.submit(employeeId, dto);
         return Result.success(Map.of("id", app.getId(), "status", app.getStatus()));
     }
+
+    /**
+     * 加班台账查询
+     * GET /api/v1/overtime/ledger?period=2026-07&page=1&size=20
+     */
+    @GetMapping("/ledger")
+    public Result<PageResult<com.company.hrms.module.attendance.dto.OvertimeLedgerVO>> ledger(
+            PageParam pageParam, @RequestParam String period) {
+        AttendanceAccessGuard.requireHrStaff();
+        return Result.success(overtimeService.pageLedger(pageParam, period));
+    }
 }

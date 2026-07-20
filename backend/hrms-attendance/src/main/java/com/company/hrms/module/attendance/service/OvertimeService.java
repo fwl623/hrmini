@@ -33,6 +33,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,7 @@ public class OvertimeService {
     private final WorkdayConfigMapper workdayConfigMapper;
     private final HolidayCalendarMapper holidayCalendarMapper;
     private final ApprovalEngineService approvalEngineService;
+    private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
 
     /**
      * 加班列表（分页）
@@ -176,5 +178,66 @@ public class OvertimeService {
 
         // 休息日 → 2.0 倍
         return 20;
+    }
+
+    // ========== 加班台账查询 ==========
+
+    // ========== 加班台账查询 ==========
+
+    /**
+     * 加班台账分页查询
+     */
+    public PageResult<com.company.hrms.module.attendance.dto.OvertimeLedgerVO> pageLedger(
+            PageParam pageParam, String period) {
+        List<OvertimeLedger> allRecords = overtimeLedgerMapper.selectByPeriod(period);
+
+        // 查询员工姓名和部门
+        Map<Long, String> nameMap = new HashMap<>();
+        Map<Long, String> deptMap = new HashMap<>();
+        for (OvertimeLedger l : allRecords) {
+            Long empId = l.getEmployeeId();
+            if (!nameMap.containsKey(empId)) {
+                try {
+                    com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(empId);
+                    if (emp != null) {
+                        nameMap.put(empId, emp.getName());
+                        deptMap.put(empId, emp.getDepartmentName());
+                    } else {
+                        nameMap.put(empId, String.valueOf(empId));
+                    }
+                } catch (Exception e) {
+                    nameMap.put(empId, String.valueOf(empId));
+                }
+            }
+        }
+
+        List<com.company.hrms.module.attendance.dto.OvertimeLedgerVO> voList = allRecords.stream()
+                .map(l -> {
+                    com.company.hrms.module.attendance.dto.OvertimeLedgerVO vo =
+                            new com.company.hrms.module.attendance.dto.OvertimeLedgerVO();
+                    vo.setId(l.getId());
+                    vo.setEmployeeId(l.getEmployeeId());
+                    vo.setEmployeeName(nameMap.getOrDefault(l.getEmployeeId(), String.valueOf(l.getEmployeeId())));
+                    vo.setDepartmentName(deptMap.get(l.getEmployeeId()));
+                    vo.setPeriod(l.getPeriod());
+                    vo.setTotalHours(l.getTotalHours());
+                    vo.setRateType(l.getRateType());
+                    vo.setLedgerDate(l.getLedgerDate() != null ? l.getLedgerDate().toString() : null);
+                    vo.setCreatedAt(l.getCreatedAt() != null
+                            ? l.getCreatedAt().toString().replace("T", " ") : null);
+                    return vo;
+                })
+                .collect(Collectors.toList());
+
+        // 手动分页
+        int page = Math.max(pageParam.getPage(), 1);
+        int pageSize = pageParam.getPageSize() > 0 ? pageParam.getPageSize() : 20;
+        int from = (page - 1) * pageSize;
+        int to = Math.min(from + pageSize, voList.size());
+        List<com.company.hrms.module.attendance.dto.OvertimeLedgerVO> paged = from >= voList.size()
+                ? Collections.emptyList()
+                : voList.subList(from, to);
+
+        return PageResult.of(paged, voList.size(), pageParam);
     }
 }

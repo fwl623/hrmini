@@ -22,13 +22,16 @@ import {
   Space,
   Alert,
   Typography,
+  Modal,
+  Table,
+  InputNumber,
 } from 'antd';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, OrderedListOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
-import { getOvertimeApplications, submitOvertime } from '@/services/attendance';
+import { getOvertimeApplications, submitOvertime, getOvertimeLedger } from '@/services/attendance';
 
 // ========== 共享常量 ==========
 
@@ -54,6 +57,38 @@ const AdminOvertimePage: React.FC = () => {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState('');
+
+  // 加班台账
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [ledgerPeriod, setLedgerPeriod] = useState(dayjs().format('YYYY-MM'));
+  const [ledgerData, setLedgerData] = useState<any[]>([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerTotal, setLedgerTotal] = useState(0);
+
+  const rateTypeLabel: Record<number, string> = { 15: '1.5倍(工作日)', 20: '2.0倍(休息日)', 30: '3.0倍(节假日)' };
+
+  const loadLedger = async (page = 1, pageSize = 20) => {
+    setLedgerLoading(true);
+    try {
+      const res = await getOvertimeLedger({ period: ledgerPeriod, page, pageSize });
+      setLedgerData((res.data as any)?.list || []);
+      setLedgerTotal((res.data as any)?.total || 0);
+    } catch (err: any) {
+      message.error(err?.message || '加载加班台账失败');
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
+  const ledgerColumns = [
+    { title: '员工ID', dataIndex: 'employeeId', width: 80 },
+    { title: '姓名', dataIndex: 'employeeName', width: 100 },
+    { title: '部门', dataIndex: 'departmentName', width: 120 },
+    { title: '加班日期', dataIndex: 'ledgerDate', width: 110 },
+    { title: '加班时长(h)', dataIndex: 'totalHours', width: 100 },
+    { title: '倍率', dataIndex: 'rateType', width: 120, render: (v: number) => rateTypeLabel[v] || v },
+    { title: '创建时间', dataIndex: 'createdAt', width: 160 },
+  ];
 
   // ---------- 时长计算 ----------
 
@@ -142,16 +177,28 @@ const AdminOvertimePage: React.FC = () => {
     <Card
       title="加班管理"
       extra={
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => {
-            setDrawerOpen(true);
-            form.resetFields();
-          }}
-        >
-          新建加班
-        </Button>
+        <Space>
+          <Button
+            icon={<OrderedListOutlined />}
+            onClick={() => {
+              setLedgerPeriod(dayjs().format('YYYY-MM'));
+              setLedgerOpen(true);
+              loadLedger();
+            }}
+          >
+            加班台账
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setDrawerOpen(true);
+              form.resetFields();
+            }}
+          >
+            新建加班
+          </Button>
+        </Space>
       }
     >
       <ProTable<any>
@@ -263,6 +310,38 @@ const AdminOvertimePage: React.FC = () => {
           </Form.Item>
         </Form>
       </Drawer>
+
+      {/* 加班台账 Modal */}
+      <Modal
+        title={`加班台账 - ${ledgerPeriod}`}
+        open={ledgerOpen}
+        onCancel={() => setLedgerOpen(false)}
+        footer={null}
+        width={900}
+      >
+        <Space style={{ marginBottom: 16 }}>
+          <Input
+            placeholder="账期 YYYY-MM"
+            value={ledgerPeriod}
+            onChange={(e) => setLedgerPeriod(e.target.value)}
+            style={{ width: 140 }}
+          />
+          <Button type="primary" onClick={() => loadLedger()}>查询</Button>
+        </Space>
+        <Table
+          rowKey="id"
+          columns={ledgerColumns}
+          dataSource={ledgerData}
+          loading={ledgerLoading}
+          pagination={{
+            total: ledgerTotal,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: (page, pageSize) => loadLedger(page, pageSize),
+          }}
+          size="small"
+        />
+      </Modal>
     </Card>
   );
 };

@@ -34,4 +34,10 @@ public interface OvertimeLedgerMapper extends BaseMapper<OvertimeLedger> {
     @Select("SELECT * FROM overtime_ledger WHERE employee_id = #{employeeId} AND period = #{period}")
     List<OvertimeLedger> selectByEmployeeAndPeriod(@Param("employeeId") Long employeeId,
                                                    @Param("period") String period);
+
+    /**
+     * 根据账期查询所有加班台账记录
+     */
+    @Select("SELECT * FROM overtime_ledger WHERE period = #{period} ORDER BY employee_id, ledger_date")
+    List<OvertimeLedger> selectByPeriod(@Param("period") String period);
 }

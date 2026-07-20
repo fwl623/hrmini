@@ -409,6 +409,26 @@ export async function submitOvertime(data: API.OvertimeApplicationDTO) {
   });
 }
 
+// ========== 加班台账 ==========
+
+/**
+ * 查询加班台账
+ *
+ * 按账期分页查询加班批准台账，用于薪资核算时核对加班数据。
+ *
+ * @param params - 查询参数
+ * @param params.period - 账期，格式 "YYYY-MM"，如 "2026-07"
+ * @param params.page - 当前页码
+ * @param params.pageSize - 每页条数
+ * @returns 返回分页后的加班台账列表
+ */
+export async function getOvertimeLedger(params: { period: string; page?: number; pageSize?: number }) {
+  return request<API.Result<API.Page<API.OvertimeLedgerVO>>>(`/api/v1/overtime/ledger`, {
+    method: 'GET',
+    params,
+  });
+}
+
 // ========== 月考勤汇总 & 统计 ==========
 
 /**
