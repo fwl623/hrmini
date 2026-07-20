@@ -69,6 +69,26 @@ public class OvertimeService {
         IPage<OvertimeApplication> page = overtimeApplicationMapper.selectPage(
                 new Page<>(pageParam.getPage(), pageParam.getPageSize()), wrapper);
 
+        // 收集所有员工ID，用 search() 批量查询（含部门 JOIN）
+        java.util.Set<Long> empIds = page.getRecords().stream()
+                .map(OvertimeApplication::getEmployeeId)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Map<Long, String> nameMap = new java.util.HashMap<>();
+        java.util.Map<Long, String> deptMap = new java.util.HashMap<>();
+        if (!empIds.isEmpty()) {
+            String idList = empIds.stream().map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(","));
+            List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
+                    null, null, null, null, null, null, null,
+                    " AND e.id IN (" + idList + ")");
+            for (com.company.hrms.employee.entity.Employee emp : empList) {
+                if (emp != null && emp.getId() != null) {
+                    nameMap.put(emp.getId(), emp.getName());
+                    deptMap.put(emp.getId(), emp.getDepartmentName());
+                }
+            }
+        }
+
         List<OvertimeApplicationVO> voList = new ArrayList<>();
         for (OvertimeApplication oa : page.getRecords()) {
             OvertimeApplicationVO vo = new OvertimeApplicationVO();
@@ -81,20 +101,8 @@ public class OvertimeService {
                     ? oa.getStartTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
             vo.setEndTime(oa.getEndTime() != null
                     ? oa.getEndTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
-
-            // 查询员工姓名和部门
-            try {
-                com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(oa.getEmployeeId());
-                if (emp != null) {
-                    vo.setEmployeeName(emp.getName());
-                    vo.setDepartment(emp.getDepartmentName());
-                } else {
-                    vo.setEmployeeName(String.valueOf(oa.getEmployeeId()));
-                }
-            } catch (Exception e) {
-                vo.setEmployeeName(String.valueOf(oa.getEmployeeId()));
-            }
-
+            vo.setEmployeeName(nameMap.getOrDefault(oa.getEmployeeId(), String.valueOf(oa.getEmployeeId())));
+            vo.setDepartment(deptMap.get(oa.getEmployeeId()));
             voList.add(vo);
         }
         return PageResult.of(voList, page.getTotal(), pageParam);
