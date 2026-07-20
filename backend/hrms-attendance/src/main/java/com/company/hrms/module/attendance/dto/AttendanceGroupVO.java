@@ -33,6 +33,9 @@ public class AttendanceGroupVO {
     /** 适用范围列表 */
     private List<AttendanceGroupScope> scopes;
 
+    /** 适用范围（DTO 格式，用于前端回显） */
+    private ApplicableScopeDTO applicableScope;
+
     /** 成员数量 */
     private Integer memberCount;
 
@@ -59,6 +62,26 @@ public class AttendanceGroupVO {
         vo.setUpdatedAt(group.getUpdatedAt() != null ? group.getUpdatedAt().toString().replace("T", " ") : null);
         vo.setScopes(scopes);
         vo.setMemberCount(memberCount);
+
+        // 从 scopes 构建 applicableScope（前端回显用）
+        if (scopes != null && !scopes.isEmpty()) {
+            ApplicableScopeDTO scope = new ApplicableScopeDTO();
+            List<Long> deptIds = new java.util.ArrayList<>();
+            List<Long> posIds = new java.util.ArrayList<>();
+            List<Long> empIds = new java.util.ArrayList<>();
+            for (AttendanceGroupScope s : scopes) {
+                switch (s.getScopeType()) {
+                    case "DEPARTMENT" -> deptIds.add(s.getScopeId());
+                    case "POSITION" -> posIds.add(s.getScopeId());
+                    case "EMPLOYEE" -> empIds.add(s.getScopeId());
+                }
+            }
+            if (!deptIds.isEmpty()) scope.setDepartmentIds(deptIds);
+            if (!posIds.isEmpty()) scope.setPositionIds(posIds);
+            if (!empIds.isEmpty()) scope.setEmployeeIds(empIds);
+            vo.setApplicableScope(scope);
+        }
+
         return vo;
     }
 }

@@ -11,6 +11,7 @@ import com.company.hrms.module.attendance.auth.AttendanceAccessGuard;
 import com.company.hrms.module.attendance.service.SummaryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,6 +37,17 @@ public class MonthlySummaryController {
                                         @RequestParam String period) {
         AttendanceAccessGuard.requireHrStaff();
         return Result.success(summaryService.getMonthlySummary(pageParam, period));
+    }
+
+    /**
+     * 手动生成月汇总
+     * POST /api/v1/attendance/monthly-summary/generate?period=2026-07
+     */
+    @PostMapping("/monthly-summary/generate")
+    public Result<Void> generate(@RequestParam String period) {
+        AttendanceAccessGuard.requireHrStaff();
+        summaryService.generateMonthlySummary(period);
+        return Result.success();
     }
 
     /**

@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -211,9 +212,13 @@ public class PunchService {
         // 先查所有匹配记录（不分页），分组合并后再手动分页
         List<AttendanceRecord> allRecords = attendanceRecordMapper.selectList(wrapper);
 
-        // 按 employeeId + punchDate 分组，合并 IN/OUT
+        // 按 employeeId + punchDate 分组，合并 IN/OUT（LinkedHashMap 保留 SQL 排序）
         Map<String, List<AttendanceRecord>> grouped = allRecords.stream()
-                .collect(Collectors.groupingBy(r -> r.getEmployeeId() + "_" + r.getPunchDate()));
+                .collect(Collectors.groupingBy(
+                        r -> r.getEmployeeId() + "_" + r.getPunchDate(),
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
 
         List<PunchRecordVO> allVoList = new ArrayList<>();
         for (Map.Entry<String, List<AttendanceRecord>> entry : grouped.entrySet()) {

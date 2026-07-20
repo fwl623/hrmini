@@ -12,7 +12,7 @@ public class PageParam {
     private int page = 1;
 
     @Min(1)
-    @Max(100)
+    @Max(1000)
     private int pageSize = 20;
 
     public int getPage() {

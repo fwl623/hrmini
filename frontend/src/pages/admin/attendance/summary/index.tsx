@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { Card, Button, Tag, message, Switch, Modal, Input } from 'antd';
+import { Card, Button, Tag, message, Switch, Modal, Input, Space } from 'antd';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 
-import { getMonthlySummary, updateMonthlySummaryLock } from '@/services/attendance';
+import { getMonthlySummary, updateMonthlySummaryLock, generateMonthlySummary } from '@/services/attendance';
 
 const MonthlySummaryPage: React.FC = () => {
   const actionRef = useRef<ActionType>();
@@ -33,12 +33,23 @@ const MonthlySummaryPage: React.FC = () => {
     } catch (err: any) { message.error(err?.message || '操作失败'); }
   };
 
+  const handleGenerate = async () => {
+    try {
+      await generateMonthlySummary(period);
+      message.success('汇总生成成功');
+      actionRef.current?.reload();
+    } catch (err: any) { message.error(err?.message || '生成失败'); }
+  };
+
   return (
     <Card title={`月考勤汇总 - ${period}`}
       extra={
-        <Button type={locked ? 'default' : 'primary'} danger={!locked} onClick={() => setLockModalOpen(true)}>
-          {locked ? '已锁定' : '锁定月汇总'}
-        </Button>
+        <Space>
+          <Button onClick={handleGenerate}>生成汇总</Button>
+          <Button type={locked ? 'default' : 'primary'} danger={!locked} onClick={() => setLockModalOpen(true)}>
+            {locked ? '已锁定' : '锁定月汇总'}
+          </Button>
+        </Space>
       }>
       <ProTable<any>
         rowKey="employeeId"

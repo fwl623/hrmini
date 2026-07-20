@@ -448,6 +448,21 @@ export async function updateMonthlySummaryLock(data: { period: string; locked: b
   });
 }
 
+/**
+ * 手动生成月考勤汇总
+ *
+ * 根据打卡记录重新生成指定月份的考勤汇总数据。
+ *
+ * @param period - 汇总周期，格式 "YYYY-MM"，如 "2026-07"
+ * @returns 无返回数据，仅表示操作成功或失败
+ */
+export async function generateMonthlySummary(period: string) {
+  return request<API.Result<null>>(`/api/v1/attendance/monthly-summary/generate`, {
+    method: 'POST',
+    params: { period },
+  });
+}
+
 // ========== 考勤统计 ==========
 
 /**

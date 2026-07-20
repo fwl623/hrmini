@@ -65,6 +65,9 @@ public class AttendanceGroupService {
                         .eq(AttendanceGroup::getDeleted, 0)
                         .orderByDesc(AttendanceGroup::getCreatedAt)
         );
+        // 填充每个组的成员数
+        page.getRecords().forEach(group ->
+                group.setMemberCount(attendanceGroupMapper.countMemberByGroupId(group.getId())));
         return PageResult.of(page.getRecords(), page.getTotal(), pageParam);
     }
 
@@ -241,7 +244,12 @@ public class AttendanceGroupService {
         attendanceGroupScopeMapper.deleteByGroupId(groupId);
         attendanceGroupMemberMapper.deleteByGroupId(groupId);
 
-        // 2. 插入 scope 记录
+        // 2. 如果指定了员工，先清理这些员工在其他考勤组的成员关系（实现换组）
+        if (scope.getEmployeeIds() != null && !scope.getEmployeeIds().isEmpty()) {
+            attendanceGroupMemberMapper.deleteByEmployeeIds(scope.getEmployeeIds());
+        }
+
+        // 3. 插入 scope 记录
         List<AttendanceGroupScope> scopes = new ArrayList<>();
 
         if (scope.getDepartmentIds() != null) {
@@ -278,7 +286,7 @@ public class AttendanceGroupService {
             scopes.forEach(attendanceGroupScopeMapper::insert);
         }
 
-        // 3. 物化 member（当前仅直接指定的 employeeIds）
+        // 4. 物化 member（当前仅直接指定的 employeeIds）
         // TODO: 后续通过 Feign 调用员工服务，根据 departmentIds/positionIds 解析员工 ID 并合并
         if (scope.getEmployeeIds() != null && !scope.getEmployeeIds().isEmpty()) {
             List<AttendanceGroupMember> members = scope.getEmployeeIds().stream()

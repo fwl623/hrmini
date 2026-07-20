@@ -24,6 +24,11 @@ public interface AttendanceGroupMemberMapper extends BaseMapper<AttendanceGroupM
     int deleteByGroupId(@Param("groupId") Long groupId);
 
     /**
+     * 批量删除指定员工在所有考勤组中的成员关系（用于换组）
+     */
+    int deleteByEmployeeIds(@Param("employeeIds") List<Long> employeeIds);
+
+    /**
      * 批量插入成员
      */
     int batchInsert(@Param("list") List<AttendanceGroupMember> list);

@@ -141,6 +141,10 @@ public class AttendanceGroup {
     @TableField("deleted")
     private Integer deleted;
 
+    /** 成员数量（非数据库字段，列表查询时动态填充） */
+    @TableField(exist = false)
+    private Integer memberCount;
+
     /**
      * 创建时间
      * 格式：yyyy-MM-dd HH:mm:ss

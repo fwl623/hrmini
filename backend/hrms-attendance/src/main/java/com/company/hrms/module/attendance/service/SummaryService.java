@@ -118,6 +118,22 @@ public class SummaryService {
         }
     }
 
+    /**
+     * 手动生成指定月份的考勤汇总
+     * 遍历该月每一天，将打卡记录聚合为日汇总，再聚合为月汇总
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void generateMonthlySummary(String period) {
+        LocalDate start = LocalDate.parse(period + "-01");
+        LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
+        LocalDate current = start;
+        while (!current.isAfter(end)) {
+            runDailySummary(current);
+            current = current.plusDays(1);
+        }
+        log.info("手动生成月考勤汇总完成: period={}", period);
+    }
+
     // ========== 日终聚合 ==========
 
     /**

@@ -14,7 +14,7 @@ import {
   Tag,
   message,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined } from '@ant-design/icons';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
@@ -43,7 +43,10 @@ const AttendanceGroupPage: React.FC = () => {
     getDeptTree().then((res: any) => setDeptTree(res.data || [])).catch(() => {});
     getEmployeeList({ page: 1, pageSize: 200 }).then((res: any) => {
       setEmpList(res.data?.list || []);
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('加载员工列表失败', err);
+      message.warning('员工列表加载失败，无法选择适用员工');
+    });
   }, []);
 
   // ---------- 表格列定义 ----------
@@ -64,6 +67,14 @@ const AttendanceGroupPage: React.FC = () => {
     { title: '午休', render: (_: any, r: any) => `${r.lunchStartTime ?? '-'} ~ ${r.lunchEndTime ?? '-'}`, width: 140 },
     { title: '迟到阈值(min)', dataIndex: 'lateThresholdMinutes', width: 120 },
     { title: '早退阈值(min)', dataIndex: 'earlyLeaveThresholdMinutes', width: 120 },
+    {
+      title: '成员',
+      dataIndex: 'memberCount',
+      width: 70,
+      render: (count: number) => (
+        <span><TeamOutlined style={{ marginRight: 4 }} />{count ?? 0}</span>
+      ),
+    },
     {
       title: '操作',
       width: 120,
@@ -89,19 +100,26 @@ const AttendanceGroupPage: React.FC = () => {
 
   const handleEdit = async (record: any) => {
     setEditingGroup(record);
-    const scope = record.applicableScope || { departmentIds: [], positionIds: [], employeeIds: [] };
-    form.setFieldsValue({
-      name: record.name,
-      shiftType: record.shiftType,
-      onDuty: record.workStartTime ? dayjs(record.workStartTime, 'HH:mm') : undefined,
-      offDuty: record.workEndTime ? dayjs(record.workEndTime, 'HH:mm') : undefined,
-      restStart: record.lunchStartTime ? dayjs(record.lunchStartTime, 'HH:mm') : undefined,
-      restEnd: record.lunchEndTime ? dayjs(record.lunchEndTime, 'HH:mm') : undefined,
-      lateThreshold: record.lateThresholdMinutes ?? 15,
-      earlyLeaveThreshold: record.earlyLeaveThresholdMinutes ?? 15,
-      departmentIds: scope.departmentIds || [],
-      employeeIds: scope.employeeIds || [],
-    });
+    try {
+      const res = await getGroupDetail(record.id);
+      const detail = res.data;
+      const scope = detail?.applicableScope || { departmentIds: [], positionIds: [], employeeIds: [] };
+      form.setFieldsValue({
+        name: detail?.name,
+        shiftType: detail?.shiftType,
+        onDuty: detail?.workStartTime ? dayjs(detail.workStartTime, 'HH:mm') : undefined,
+        offDuty: detail?.workEndTime ? dayjs(detail.workEndTime, 'HH:mm') : undefined,
+        restStart: detail?.lunchStartTime ? dayjs(detail.lunchStartTime, 'HH:mm') : undefined,
+        restEnd: detail?.lunchEndTime ? dayjs(detail.lunchEndTime, 'HH:mm') : undefined,
+        lateThreshold: detail?.lateThresholdMinutes ?? 15,
+        earlyLeaveThreshold: detail?.earlyLeaveThresholdMinutes ?? 15,
+        departmentIds: scope.departmentIds || [],
+        employeeIds: scope.employeeIds || [],
+      });
+    } catch (err) {
+      message.error('获取考勤组详情失败');
+      return;
+    }
     setModalOpen(true);
   };
 

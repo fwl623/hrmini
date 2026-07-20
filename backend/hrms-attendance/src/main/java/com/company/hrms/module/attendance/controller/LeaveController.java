@@ -76,7 +76,7 @@ public class LeaveController {
      */
     @PostMapping("/leaves/applications")
     public Result<Map<String, Object>> submit(@Valid @RequestBody LeaveApplicationDTO dto) {
-        AttendanceAccessGuard.requireHrStaff();
+        AttendanceAccessGuard.requireEmployee();
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
         if (employeeId == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");
