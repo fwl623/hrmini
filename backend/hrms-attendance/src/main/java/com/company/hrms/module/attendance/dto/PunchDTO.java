@@ -15,4 +15,6 @@ public class PunchDTO {
     private Double latitude;
     /** GPS 经度 */
     private Double longitude;
+    /** 客户端 IP（服务端自动填充，前端不传） */
+    private String clientIp;
 }

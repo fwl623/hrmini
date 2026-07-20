@@ -4,6 +4,7 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -56,6 +57,9 @@ const nodeStateToStep: Record<string, 'wait' | 'process' | 'finish' | 'error'> =
   cancelled: 'error',
 };
 
+/** 需附件的请假类型 */
+const ATTACHMENT_REQUIRED_TYPES = ['sick', 'marriage', 'maternity'];
+
 const LeavePage: React.FC = () => {
   const [balances, setBalances] = useState<{ leaveType: string; balance: number }[]>([]);
   const [records, setRecords] = useState<API.LeaveApplicationVO[]>([]);
@@ -63,6 +67,8 @@ const LeavePage: React.FC = () => {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const [previewDays, setPreviewDays] = useState<number | null>(null);
+  const [selectedLeaveType, setSelectedLeaveType] = useState<string>('');
+  const [needAttachment, setNeedAttachment] = useState(false);
 
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressLoading, setProgressLoading] = useState(false);
@@ -101,9 +107,24 @@ const LeavePage: React.FC = () => {
     }
   };
 
+  const handleTypeChange = (value: string) => {
+    setSelectedLeaveType(value);
+    const days = previewDays || form.getFieldValue('days') || 1;
+    const needsAtt = ATTACHMENT_REQUIRED_TYPES.includes(value)
+      && (value === 'sick' ? (days > 1) : true);
+    setNeedAttachment(needsAtt);
+  };
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      // 病假>1天 或 婚假/产假 需上传附件
+      const needsAtt = ATTACHMENT_REQUIRED_TYPES.includes(values.leaveType)
+        && (values.leaveType === 'sick' ? ((previewDays || values.days || 1) > 1) : true);
+      if (needsAtt && !values.attachment) {
+        message.warning('该请假类型需要上传证明材料');
+        return;
+      }
       setSubmitting(true);
       await submitLeave({
         leaveType: values.leaveType,
@@ -111,6 +132,7 @@ const LeavePage: React.FC = () => {
         endTime: values.endTime.toISOString(),
         days: previewDays || values.days || 1,
         reason: values.reason,
+        attachment: values.attachment || undefined,
       });
       message.success('请假申请已提交');
       setModalOpen(false);
@@ -269,6 +291,20 @@ const LeavePage: React.FC = () => {
           )}
           <Form.Item name="reason" label="请假原因" rules={[{ required: true, max: 512 }]}>
             <Input.TextArea rows={3} maxLength={512} showCount />
+          </Form.Item>
+          {needAttachment && (
+            <Alert
+              type="warning"
+              showIcon
+              message="该请假类型需上传证明材料"
+              description="病假超过1天需上传医院证明，婚假需结婚证，产假需医院证明"
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <Form.Item name="attachment" label="证明材料（附件URL）"
+            rules={needAttachment ? [{ required: true, message: '该请假类型需上传证明材料' }] : []}
+          >
+            <Input placeholder="请输入附件URL（或使用上传组件）" />
           </Form.Item>
         </Form>
       </Modal>

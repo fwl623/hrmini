@@ -382,6 +382,35 @@ export default function ApprovalCenterPage() {
               </Descriptions>
             ) : null}
 
+            {(detail?.instance?.processType === 'LEAVE' || selected?.processType === 'LEAVE') &&
+            biz.leaveType ? (
+              <Descriptions size="small" column={1} bordered title="请假信息">
+                <Descriptions.Item label="请假类型">
+                  {({ANNUAL:'年假',SICK:'病假',PERSONAL:'事假',MARRIAGE:'婚假',MATERNITY:'产假',BEREAVEMENT:'丧假',COMP_OFF:'调休'}as Record<string,string>)[String(biz.leaveType)]||String(biz.leaveType)}
+                </Descriptions.Item>
+                <Descriptions.Item label="天数">{String(biz.days)} 天</Descriptions.Item>
+                <Descriptions.Item label="摘要">{String(biz.businessSummary||'')}</Descriptions.Item>
+              </Descriptions>
+            ) : null}
+
+            {(detail?.instance?.processType === 'OVERTIME' || selected?.processType === 'OVERTIME') &&
+            biz.hours ? (
+              <Descriptions size="small" column={1} bordered title="加班信息">
+                <Descriptions.Item label="加班日期">{String(biz.overtimeDate||'')}</Descriptions.Item>
+                <Descriptions.Item label="加班时长">{String(biz.hours)} 小时</Descriptions.Item>
+                <Descriptions.Item label="摘要">{String(biz.businessSummary||'')}</Descriptions.Item>
+              </Descriptions>
+            ) : null}
+
+            {(detail?.instance?.processType === 'MAKEUP' || selected?.processType === 'MAKEUP') &&
+            biz.makeupDate ? (
+              <Descriptions size="small" column={1} bordered title="补卡信息">
+                <Descriptions.Item label="补卡日期">{String(biz.makeupDate)}</Descriptions.Item>
+                <Descriptions.Item label="补卡类型">{biz.punchType === 'IN' ? '上班卡' : '下班卡'}</Descriptions.Item>
+                <Descriptions.Item label="摘要">{String(biz.businessSummary||'')}</Descriptions.Item>
+              </Descriptions>
+            ) : null}
+
             <ApprovalTimeline
               nodes={
                 timelineNodes.length > 0

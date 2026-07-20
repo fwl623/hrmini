@@ -11,6 +11,7 @@ import com.company.hrms.module.attendance.dto.QuotaVO;
 import com.company.hrms.module.attendance.dto.TodayPunchVO;
 import com.company.hrms.module.attendance.auth.AttendanceAccessGuard;
 import com.company.hrms.module.attendance.service.PunchService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,6 +33,7 @@ import java.util.Map;
 public class PunchController {
 
     private final PunchService punchService;
+    private final jakarta.servlet.http.HttpServletRequest httpRequest;
 
     /**
      * 员工打卡
@@ -43,6 +45,12 @@ public class PunchController {
     @PostMapping("/punch")
     public Result<Map<String, String>> punch(@RequestBody PunchDTO dto) {
         Long employeeId = requireEmployeeId();
+        // 填充客户端 IP，供 IP 白名单校验使用
+        String ip = httpRequest.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isBlank()) {
+            ip = httpRequest.getRemoteAddr();
+        }
+        dto.setClientIp(ip);
         String punchStatus = punchService.punch(employeeId, dto);
         return Result.success(Map.of("punchStatus", punchStatus));
     }
