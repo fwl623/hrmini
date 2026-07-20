@@ -2,6 +2,7 @@ package com.company.hrms.module.attendance.job;
 
 import com.company.hrms.attendance.entity.LeaveApplication;
 import com.company.hrms.attendance.entity.LeaveBalance;
+import com.company.hrms.attendance.entity.AttendanceMonthlySummary;
 import com.company.hrms.attendance.entity.OvertimeApplication;
 import com.company.hrms.attendance.entity.OvertimeLedger;
 import com.company.hrms.attendance.entity.AttendanceSupplement;
@@ -42,6 +43,7 @@ public class ApprovalEventListener {
     private final AttendanceSupplementMapper attendanceSupplementMapper;
     private final AttendanceRecordMapper attendanceRecordMapper;
     private final AttendanceDailySummaryMapper attendanceDailySummaryMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper attendanceMonthlySummaryMapper;
 
     @EventListener
     @Transactional(rollbackFor = Exception.class)
@@ -206,14 +208,40 @@ public class ApprovalEventListener {
 
             // 写入加班台账
             LocalDate overtimeDate = LocalDate.parse(app.getOvertimeDate());
+            String period = overtimeDate.format(DateTimeFormatter.ofPattern("yyyy-MM"));
             OvertimeLedger ledger = new OvertimeLedger();
             ledger.setEmployeeId(app.getEmployeeId());
             ledger.setApplicationId(app.getId());
-            ledger.setPeriod(overtimeDate.format(DateTimeFormatter.ofPattern("yyyy-MM")));
+            ledger.setPeriod(period);
             ledger.setTotalHours(app.getHours());
             ledger.setRateType(calculateRateType(overtimeDate));
             ledger.setLedgerDate(overtimeDate);
             overtimeLedgerMapper.insert(ledger);
+
+            // 更新日汇总：该日加班时长累加
+            Long empId = app.getEmployeeId();
+            AttendanceDailySummary daily = attendanceDailySummaryMapper.selectByEmployeeAndDate(empId, overtimeDate);
+            if (daily != null) {
+                java.math.BigDecimal currentOt = daily.getOvertimeHours() != null
+                        ? daily.getOvertimeHours() : java.math.BigDecimal.ZERO;
+                daily.setOvertimeHours(currentOt.add(app.getHours()));
+                attendanceDailySummaryMapper.updateById(daily);
+            }
+
+            // 重新聚合月考勤汇总的加班时长
+            java.time.LocalDate monthStart = overtimeDate.withDayOfMonth(1);
+            java.time.LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+            java.util.List<AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
+                    empId, monthStart, monthEnd);
+            java.math.BigDecimal totalOt = java.math.BigDecimal.ZERO;
+            for (AttendanceDailySummary ds : dailyList) {
+                if (ds.getOvertimeHours() != null) totalOt = totalOt.add(ds.getOvertimeHours());
+            }
+            AttendanceMonthlySummary monthly = attendanceMonthlySummaryMapper.selectByEmployeeAndPeriod(empId, period);
+            if (monthly != null) {
+                monthly.setOvertimeHours(totalOt);
+                attendanceMonthlySummaryMapper.updateById(monthly);
+            }
 
             log.info("加班已通过, 台账已写入: id={}, hours={}", applicationId, app.getHours());
         } else if ("REJECTED".equals(result)) {
