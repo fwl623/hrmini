@@ -11,6 +11,7 @@ import com.company.hrms.employee.mapper.EmployeeMapper;
 import com.company.hrms.employee.mapper.EmployeeSalaryHistoryMapper;
 import com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper;
 import com.company.hrms.employee.service.SalaryService;
+import com.company.hrms.employee.vo.SalaryHistoryVO;
 import com.company.hrms.employee.vo.SalaryProfileVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 薪资档案服务实现
@@ -69,11 +71,26 @@ public class SalaryServiceImpl implements SalaryService {
         if (emp == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "员工不存在");
         }
+        if (dto.getSchemeId() == null || dto.getBaseSalary() == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "账套与基本工资不能为空");
+        }
 
-        // 查询现有薪资档案
         EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(employeeId);
         if (profile == null) {
-            throw new BusinessException(ErrorCode.SALARY_PROFILE_MISSING);
+            // 无档案时允许 HR/财务首次创建
+            EmployeeSalaryProfile created = new EmployeeSalaryProfile();
+            created.setEmployeeId(employeeId);
+            created.setSchemeId(dto.getSchemeId());
+            created.setBaseSalary(dto.getBaseSalary());
+            created.setAllowanceBaseJson(dto.getAllowanceBaseJson());
+            created.setSsBase(dto.getSsBase() != null ? dto.getSsBase() : dto.getBaseSalary());
+            created.setHfBase(dto.getHfBase() != null ? dto.getHfBase() : dto.getBaseSalary());
+            created.setPerformanceBase(dto.getPerformanceBase());
+            created.setProbationRatio(dto.getProbationRatio() != null ? dto.getProbationRatio() : java.math.BigDecimal.ONE);
+            created.setEffectiveDate(LocalDate.now());
+            salaryProfileMapper.insert(created);
+            log.info("薪资档案新建: employeeId={}, operatorId={}", employeeId, SecurityUtils.getUserId());
+            return;
         }
 
         // 记录调薪历史（仅 baseSalary 变更时记录）
@@ -100,5 +117,23 @@ public class SalaryServiceImpl implements SalaryService {
         salaryProfileMapper.updateById(profile);
 
         log.info("薪资档案更新: employeeId={}, operatorId={}", employeeId, SecurityUtils.getUserId());
+    }
+
+    @Override
+    public List<SalaryHistoryVO> listHistory(Long employeeId) {
+        employeeMapper.selectById(employeeId);
+        return salaryHistoryMapper.selectByEmployeeId(employeeId).stream().map(h -> {
+            SalaryHistoryVO vo = new SalaryHistoryVO();
+            vo.setId(h.getId());
+            vo.setEmployeeId(h.getEmployeeId());
+            vo.setFieldName(h.getFieldName());
+            vo.setOldValue(h.getOldValue());
+            vo.setNewValue(h.getNewValue());
+            vo.setEffectiveDate(h.getEffectiveDate());
+            vo.setReason(h.getReason());
+            vo.setOperatorId(h.getOperatorId());
+            vo.setCreatedAt(h.getCreatedAt());
+            return vo;
+        }).toList();
     }
 }

@@ -14,6 +14,7 @@ import com.company.hrms.employee.service.SalaryService;
 import com.company.hrms.employee.service.SensitiveFieldService;
 import com.company.hrms.employee.vo.EmployeeDetailVO;
 import com.company.hrms.employee.vo.EmployeeListVO;
+import com.company.hrms.employee.vo.SalaryHistoryVO;
 import com.company.hrms.employee.vo.SalaryProfileVO;
 import com.company.hrms.employee.vo.SensitiveFieldVO;
 import com.company.hrms.employee.vo.TransferHistoryVO;
@@ -70,6 +71,12 @@ public class EmployeeController {
                                       @Valid @RequestBody SalaryProfileUpdateDTO dto) {
         salaryService.updateProfile(id, dto);
         return Result.success();
+    }
+
+    /** 调薪历史（与薪资档案同权限：HR_STAFF / FINANCE / FINANCE_MANAGER） */
+    @GetMapping("/{id}/salary/history")
+    public Result<List<SalaryHistoryVO>> getSalaryHistory(@PathVariable Long id) {
+        return Result.success(salaryService.listHistory(id));
     }
 
     @GetMapping("/{id}/sensitive/{field}")

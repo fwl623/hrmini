@@ -5,14 +5,42 @@
  *
  * 可见性与后端 FieldPermissionFilter 对齐：
  * - 合同/账套/试用比例：仅 HR_STAFF
- * - 基本工资：HR_STAFF、FINANCE
+ * - 基本工资：HR_STAFF、FINANCE、FINANCE_MANAGER
  * - 银行信息：HR_STAFF、SYS_ADMIN
  * - SYS_ADMIN 不可看薪资金额与合同明细（PRD）
+ * - 薪资档案编辑：HR_STAFF / FINANCE / FINANCE_MANAGER（对齐 JwtAuthFilter）
  */
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useModel } from '@umijs/max';
-import { Alert, Card, Tabs, Descriptions, Tag, Button, Spin, Space, message, Typography, Table } from 'antd';
-import { getEmployeeDetail, getTransferHistory, type TransferHistoryItem } from '@/services/employee';
+import {
+  Alert,
+  Card,
+  Tabs,
+  Descriptions,
+  Tag,
+  Button,
+  Spin,
+  Space,
+  message,
+  Typography,
+  Table,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+} from 'antd';
+import {
+  getEmployeeDetail,
+  getTransferHistory,
+  getSalaryProfile,
+  getSalaryHistory,
+  updateSalaryProfile,
+  type TransferHistoryItem,
+  type SalaryHistoryItem,
+  type SalaryProfile,
+} from '@/services/employee';
+import { getSchemes } from '@/services/payroll';
 import SensitiveField from '@/components/SensitiveField';
 import type { EmployeeDetail } from '@/services/employee';
 import { ROLES } from '@/constants/roles';
@@ -31,6 +59,22 @@ const CONTRACT_TYPE_MAP: Record<string, string> = {
   LABOR: '劳务合同',
 };
 
+const FIELD_NAME_MAP: Record<string, string> = {
+  baseSalary: '基本工资',
+  ssBase: '社保基数',
+  hfBase: '公积金基数',
+  performanceBase: '绩效基数',
+  probationRatio: '试用期比例',
+};
+
+function formatMoney(v?: number | null) {
+  if (v == null) return '-';
+  return `¥${Number(v).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 function maskOrValue(canView: boolean, value: React.ReactNode, empty: React.ReactNode = '-') {
   if (!canView) {
     return <Typography.Text type="secondary">无权限</Typography.Text>;
@@ -48,6 +92,13 @@ const EmployeeDetailPage: React.FC = () => {
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<TransferHistoryItem[]>([]);
+  const [salaryHistory, setSalaryHistory] = useState<SalaryHistoryItem[]>([]);
+  const [salaryModalOpen, setSalaryModalOpen] = useState(false);
+  const [salaryLoading, setSalaryLoading] = useState(false);
+  const [salarySaving, setSalarySaving] = useState(false);
+  const [schemeOptions, setSchemeOptions] = useState<{ label: string; value: number }[]>([]);
+  const [salaryCreateMode, setSalaryCreateMode] = useState(false);
+  const [salaryForm] = Form.useForm();
 
   const roleCode = initialState?.currentUser?.roleCode;
   const canSeeContract = roleCode === ROLES.HR_STAFF;
@@ -56,18 +107,144 @@ const EmployeeDetailPage: React.FC = () => {
     roleCode === ROLES.FINANCE ||
     roleCode === ROLES.FINANCE_MANAGER;
   const canSeeBank = roleCode === ROLES.HR_STAFF || roleCode === ROLES.SYS_ADMIN;
+  const canEditSalary = canSeeSalary;
+
+  const reloadDetail = async () => {
+    if (!id) return;
+    const tasks: Promise<unknown>[] = [
+      getEmployeeDetail(Number(id)).then((detailRes) => {
+        if (detailRes.code === 0) setDetail(detailRes.data);
+      }),
+      getTransferHistory(Number(id)).then((histRes) => {
+        if (histRes.code === 0) setHistory(histRes.data ?? []);
+      }),
+    ];
+    if (canSeeSalary) {
+      tasks.push(
+        getSalaryHistory(Number(id))
+          .then((res) => {
+            if (res.code === 0) setSalaryHistory(res.data ?? []);
+          })
+          .catch(() => setSalaryHistory([])),
+      );
+    } else {
+      setSalaryHistory([]);
+    }
+    await Promise.all(tasks);
+  };
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    Promise.all([getEmployeeDetail(Number(id)), getTransferHistory(Number(id))])
-      .then(([detailRes, histRes]) => {
-        if (detailRes.code === 0) setDetail(detailRes.data);
-        if (histRes.code === 0) setHistory(histRes.data ?? []);
-      })
+    reloadDetail()
       .catch(() => message.error('加载失败'))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, canSeeSalary]);
+
+  const openSalaryModal = async () => {
+    if (!id) return;
+    setSalaryModalOpen(true);
+    setSalaryLoading(true);
+    setSalaryCreateMode(false);
+    try {
+      const schemesRes = await getSchemes().catch(() => null);
+      const list = ((schemesRes?.data as { list?: { id: number; name: string }[] } | undefined)?.list) ?? [];
+      if (list.length > 0) {
+        setSchemeOptions(
+          list.map((s) => ({
+            label: s.name || `账套#${s.id}`,
+            value: s.id,
+          })),
+        );
+      }
+
+      let profile: SalaryProfile | null = null;
+      try {
+        const profileRes = await getSalaryProfile(Number(id), { skipErrorHandler: true });
+        if (profileRes.code === 0) {
+          profile = profileRes.data;
+        }
+      } catch (err: any) {
+        const code = err?.info?.code;
+        if (code === 50003) {
+          setSalaryCreateMode(true);
+          salaryForm.setFieldsValue({
+            schemeId: list[0]?.id,
+            baseSalary: undefined,
+            ssBase: undefined,
+            hfBase: undefined,
+            performanceBase: undefined,
+            probationRatio: 1,
+            allowanceBaseJson: undefined,
+          });
+          return;
+        }
+        message.error(err?.info?.message || err?.message || '加载薪资档案失败');
+        setSalaryModalOpen(false);
+        return;
+      }
+
+      if (!profile) {
+        message.error('加载薪资档案失败');
+        setSalaryModalOpen(false);
+        return;
+      }
+
+      salaryForm.setFieldsValue({
+        schemeId: profile.schemeId,
+        baseSalary: profile.baseSalary,
+        ssBase: profile.ssBase,
+        hfBase: profile.hfBase,
+        performanceBase: profile.performanceBase,
+        probationRatio: profile.probationRatio,
+        allowanceBaseJson: profile.allowanceBaseJson,
+      });
+
+      if (list.length === 0 && profile.schemeId != null) {
+        setSchemeOptions([
+          {
+            label: profile.schemeName || `账套#${profile.schemeId}`,
+            value: profile.schemeId,
+          },
+        ]);
+      }
+    } catch {
+      message.error('加载薪资档案失败');
+      setSalaryModalOpen(false);
+    } finally {
+      setSalaryLoading(false);
+    }
+  };
+
+  const saveSalaryProfile = async () => {
+    if (!id) return;
+    try {
+      const values = await salaryForm.validateFields();
+      setSalarySaving(true);
+      const res = await updateSalaryProfile(Number(id), {
+        schemeId: values.schemeId,
+        baseSalary: values.baseSalary,
+        ssBase: values.ssBase,
+        hfBase: values.hfBase,
+        performanceBase: values.performanceBase,
+        probationRatio: values.probationRatio,
+        allowanceBaseJson: values.allowanceBaseJson || undefined,
+      });
+      if (res.code === 0) {
+        message.success(salaryCreateMode ? '薪资档案已创建' : '薪资档案已保存');
+        setSalaryModalOpen(false);
+        setSalaryCreateMode(false);
+        await reloadDetail();
+      } else {
+        message.error(res.message || '保存失败');
+      }
+    } catch (e: any) {
+      if (e?.errorFields) return;
+      message.error(e?.message || '保存失败');
+    } finally {
+      setSalarySaving(false);
+    }
+  };
 
   if (loading) return <Spin style={{ display: 'block', marginTop: 100 }} />;
   if (!detail) return <div style={{ textAlign: 'center', marginTop: 100 }}>员工不存在</div>;
@@ -149,6 +326,13 @@ const EmployeeDetailPage: React.FC = () => {
               message="系统管理员按规范不可查看薪资与合同明细。请使用 HR（13800001001）或财务账号查看。"
             />
           )}
+          {canEditSalary && (
+            <div style={{ marginBottom: 12, textAlign: 'right' }}>
+              <Button type="primary" onClick={openSalaryModal}>
+                编辑薪资档案
+              </Button>
+            </div>
+          )}
           <Descriptions column={2} bordered size="small">
             <Descriptions.Item label="合同类型">
               {maskOrValue(
@@ -200,6 +384,51 @@ const EmployeeDetailPage: React.FC = () => {
               )}
             </Descriptions.Item>
           </Descriptions>
+          {canSeeSalary && (
+            <>
+              <Typography.Title level={5} style={{ marginTop: 24 }}>
+                调薪历史
+              </Typography.Title>
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={false}
+                locale={{ emptyText: '暂无调薪记录' }}
+                dataSource={salaryHistory}
+                columns={
+                  [
+                    { title: '生效日期', dataIndex: 'effectiveDate', width: 120 },
+                    {
+                      title: '变更字段',
+                      dataIndex: 'fieldName',
+                      width: 120,
+                      render: (v: string) => FIELD_NAME_MAP[v] || v || '-',
+                    },
+                    {
+                      title: '变更前',
+                      dataIndex: 'oldValue',
+                      width: 120,
+                      render: (v: number) => formatMoney(v),
+                    },
+                    {
+                      title: '变更后',
+                      dataIndex: 'newValue',
+                      width: 120,
+                      render: (v: number) => formatMoney(v),
+                    },
+                    { title: '原因', dataIndex: 'reason', ellipsis: true },
+                    {
+                      title: '操作人',
+                      dataIndex: 'operatorId',
+                      width: 100,
+                      render: (v?: number) => (v != null ? `用户#${v}` : '-'),
+                    },
+                    { title: '记录时间', dataIndex: 'createdAt', width: 180 },
+                  ] as ColumnsType<SalaryHistoryItem>
+                }
+              />
+            </>
+          )}
         </>
       ),
     },
@@ -247,6 +476,69 @@ const EmployeeDetailPage: React.FC = () => {
       }
     >
       <Tabs items={tabItems} />
+
+      <Modal
+        title={salaryCreateMode ? '新建薪资档案' : '编辑薪资档案'}
+        open={salaryModalOpen}
+        onCancel={() => {
+          setSalaryModalOpen(false);
+          setSalaryCreateMode(false);
+        }}
+        onOk={saveSalaryProfile}
+        confirmLoading={salarySaving}
+        destroyOnClose
+        width={560}
+      >
+        <Spin spinning={salaryLoading}>
+          <Alert
+            type={salaryCreateMode ? 'warning' : 'info'}
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={
+              salaryCreateMode
+                ? '该员工尚无薪资档案，填写后保存将自动创建。'
+                : '修改基本工资会自动写入调薪历史；账套、社保/公积金基数等一并保存。'
+            }
+          />
+          <Form form={salaryForm} layout="vertical" preserve={false}>
+            <Form.Item name="schemeId" label="薪资账套" rules={[{ required: true, message: '请选择账套' }]}>
+              <Select
+                options={schemeOptions}
+                placeholder="选择账套"
+                showSearch
+                optionFilterProp="label"
+              />
+            </Form.Item>
+            <Form.Item
+              name="baseSalary"
+              label="基本工资"
+              rules={[{ required: true, message: '请输入基本工资' }]}
+              extra={salaryCreateMode ? '首次创建不写调薪历史' : '变更后会写入调薪历史'}
+            >
+              <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="元" />
+            </Form.Item>
+            <Form.Item name="ssBase" label="社保基数" extra="不填则默认等于基本工资">
+              <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="hfBase" label="公积金基数" extra="不填则默认等于基本工资">
+              <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="performanceBase" label="绩效基数">
+              <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+              name="probationRatio"
+              label="试用期比例"
+              extra="范围 0.80 ~ 1.00"
+            >
+              <InputNumber min={0.8} max={1} step={0.01} precision={2} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="allowanceBaseJson" label="津贴基数 JSON" extra="可选，JSON 字符串">
+              <Input.TextArea rows={2} placeholder='例如 {"meal":500}' />
+            </Form.Item>
+          </Form>
+        </Spin>
+      </Modal>
     </Card>
   );
 };

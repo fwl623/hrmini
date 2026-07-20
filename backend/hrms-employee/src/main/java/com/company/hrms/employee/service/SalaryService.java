@@ -1,7 +1,10 @@
 package com.company.hrms.employee.service;
 
 import com.company.hrms.employee.dto.SalaryProfileUpdateDTO;
+import com.company.hrms.employee.vo.SalaryHistoryVO;
 import com.company.hrms.employee.vo.SalaryProfileVO;
+
+import java.util.List;
 
 /**
  * 薪资档案服务接口
@@ -18,4 +21,7 @@ public interface SalaryService {
 
     /** 更新薪资档案 + 记录调薪历史 */
     void updateProfile(Long employeeId, SalaryProfileUpdateDTO dto);
+
+    /** 调薪历史列表（按生效日倒序） */
+    List<SalaryHistoryVO> listHistory(Long employeeId);
 }

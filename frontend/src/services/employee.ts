@@ -105,11 +105,60 @@ export async function updateEmployee(id: number, data: EmployeeEditParams): Prom
 }
 
 /** 薪资档案 */
-export async function getSalaryProfile(id: number): Promise<Result<any>> {
-  return request(`/api/v1/employees/${id}/salary`, { method: 'GET' });
+export interface SalaryProfile {
+  id?: number;
+  employeeId: number;
+  schemeId?: number;
+  schemeName?: string;
+  baseSalary?: number;
+  allowanceBaseJson?: string;
+  ssBase?: number;
+  hfBase?: number;
+  performanceBase?: number;
+  probationRatio?: number;
 }
-export async function updateSalaryProfile(id: number, data: any): Promise<Result<void>> {
+
+export interface SalaryProfileUpdateParams {
+  schemeId?: number;
+  baseSalary?: number;
+  allowanceBaseJson?: string;
+  ssBase?: number;
+  hfBase?: number;
+  performanceBase?: number;
+  probationRatio?: number;
+}
+
+export async function getSalaryProfile(
+  id: number,
+  options?: { skipErrorHandler?: boolean },
+): Promise<Result<SalaryProfile>> {
+  return request(`/api/v1/employees/${id}/salary`, {
+    method: 'GET',
+    skipErrorHandler: options?.skipErrorHandler,
+  });
+}
+export async function updateSalaryProfile(
+  id: number,
+  data: SalaryProfileUpdateParams,
+): Promise<Result<void>> {
   return request(`/api/v1/employees/${id}/salary`, { method: 'PUT', data });
+}
+
+/** 调薪历史 */
+export interface SalaryHistoryItem {
+  id: number;
+  employeeId: number;
+  fieldName?: string;
+  oldValue?: number;
+  newValue?: number;
+  effectiveDate?: string;
+  reason?: string;
+  operatorId?: number;
+  createdAt?: string;
+}
+
+export async function getSalaryHistory(id: number): Promise<Result<SalaryHistoryItem[]>> {
+  return request(`/api/v1/employees/${id}/salary/history`, { method: 'GET' });
 }
 
 /** 敏感字段 */

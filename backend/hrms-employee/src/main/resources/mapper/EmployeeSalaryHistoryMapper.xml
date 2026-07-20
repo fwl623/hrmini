@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.company.hrms.employee.mapper.EmployeeSalaryHistoryMapper">
+
+    <select id="selectByEmployeeId" resultType="com.company.hrms.employee.entity.EmployeeSalaryHistory">
+        SELECT id,
+               employee_id    AS employeeId,
+               field_name     AS fieldName,
+               old_value      AS oldValue,
+               new_value      AS newValue,
+               effective_date AS effectiveDate,
+               reason,
+               operator_id    AS operatorId,
+               created_at     AS createdAt
+        FROM employee_salary_history
+        WHERE employee_id = #{employeeId}
+        ORDER BY effective_date DESC, id DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO employee_salary_history (employee_id, field_name, old_value, new_value,
+            effective_date, reason, operator_id)
+        VALUES (#{employeeId}, #{fieldName}, #{oldValue}, #{newValue},
+            #{effectiveDate}, #{reason}, #{operatorId})
+    </insert>
+
+</mapper>
