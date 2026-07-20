@@ -115,6 +115,19 @@ export default defineConfig({
           component: './admin/system/login-logs',
           access: 'canManageSystem',
         },
+
+        // 个人中心（复用门户页，仍留在管理后台布局内）
+        { path: 'personal/profile', component: './portal/profile' },
+        { path: 'personal/attendance', component: './portal/attendance' },
+        { path: 'personal/leave', component: './portal/leave' },
+        { path: 'personal/overtime', component: './portal/overtime' },
+        {
+          path: 'personal/payslips',
+          component: './portal/payslips',
+          access: 'canViewOwnPayslip',
+        },
+        { path: 'personal/resignation', component: './portal/resignation' },
+        { path: 'personal/security', component: './portal/security' },
       ],
     },
     {
