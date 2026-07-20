@@ -169,7 +169,12 @@ public class LeaveService {
         if (dto.getDays() == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "请假天数不能为空");
         }
-        BigDecimal days = BigDecimal.valueOf(dto.getDays());
+
+        LocalDateTime startTime = LocalDateTime.parse(dto.getStartTime(), DateTimeFormatter.ISO_DATE_TIME);
+        LocalDateTime endTime = LocalDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME);
+
+        // 重新计算实际请假天数（排除周末和节假日），不信任前端传值
+        BigDecimal days = recalcLeaveDays(startTime, endTime);
 
         // 病假>1天需上传附件（PRD §6.3.1）
         if ("SICK".equalsIgnoreCase(dto.getLeaveType())
@@ -191,9 +196,6 @@ public class LeaveService {
             balance.setBalance(balance.getBalance().subtract(days));
             leaveBalanceMapper.updateById(balance);
         }
-
-        LocalDateTime startTime = LocalDateTime.parse(dto.getStartTime(), DateTimeFormatter.ISO_DATE_TIME);
-        LocalDateTime endTime = LocalDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME);
 
         LeaveApplication app = new LeaveApplication();
         app.setEmployeeId(employeeId);
@@ -275,14 +277,9 @@ public class LeaveService {
     // ========== 天数预览 ==========
 
     /**
-     * 预览请假天数
-     * 排除周末和法定节假日，支持 0.5 天
+     * 根据起止时间重算请假天数（排除周末和节假日）
      */
-    public CalcDaysVO calcDays(String startTimeStr, String endTimeStr) {
-        LocalDateTime start = LocalDateTime.parse(startTimeStr, DateTimeFormatter.ISO_DATE_TIME);
-        LocalDateTime end = LocalDateTime.parse(endTimeStr, DateTimeFormatter.ISO_DATE_TIME);
-
-        // 加载工作日配置和节假日
+    private BigDecimal recalcLeaveDays(LocalDateTime start, LocalDateTime end) {
         List<WorkdayConfig> workdayConfigs = workdayConfigMapper.selectList(null);
         Set<Integer> workdaySet = workdayConfigs.stream()
                 .filter(w -> w.getIsWorkday() == 1)
@@ -306,12 +303,11 @@ public class LeaveService {
             boolean isHoliday = holidayDates.contains(current);
 
             if (isWorkday && !isHoliday) {
-                // 判断是全天还是半天
                 boolean isFirstDay = current.equals(start.toLocalDate());
                 boolean isLastDay = current.equals(endDate);
 
                 if (isFirstDay && isLastDay && start.toLocalTime().isAfter(end.toLocalTime())) {
-                    // 同一天开始结束
+                    // 同一天开始结束，无效区间
                 } else if (isFirstDay || isLastDay) {
                     days = days.add(BigDecimal.valueOf(0.5));
                 } else {
@@ -321,16 +317,29 @@ public class LeaveService {
             current = current.plusDays(1);
         }
 
-        // 如果是同一天，根据时间段计算
+        // 同一天：按小时折算
         if (start.toLocalDate().equals(end.toLocalDate())) {
-            long hours = ChronoUnit.HOURS.between(start, end);
+            long hours = java.time.temporal.ChronoUnit.HOURS.between(start, end);
             if (hours >= 4) {
                 days = BigDecimal.ONE;
             } else if (hours > 0) {
                 days = BigDecimal.valueOf(0.5);
+            } else {
+                days = BigDecimal.ZERO;
             }
         }
 
+        return days;
+    }
+
+    /**
+     * 预览请假天数
+     * 排除周末和法定节假日，支持 0.5 天
+     */
+    public CalcDaysVO calcDays(String startTimeStr, String endTimeStr) {
+        LocalDateTime start = LocalDateTime.parse(startTimeStr, DateTimeFormatter.ISO_DATE_TIME);
+        LocalDateTime end = LocalDateTime.parse(endTimeStr, DateTimeFormatter.ISO_DATE_TIME);
+        BigDecimal days = recalcLeaveDays(start, end);
         return new CalcDaysVO(days);
     }
 }
