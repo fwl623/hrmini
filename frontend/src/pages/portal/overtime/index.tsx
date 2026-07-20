@@ -65,7 +65,7 @@ const OvertimePage: React.FC = () => {
         confirmLoading={submitting} width={500}>
         <Form form={form} layout="vertical">
           <Form.Item name="overtimeDate" label="加班日期" rules={[{ required: true }]}>
-            <DatePicker style={{ width: '100%' }} disabledDate={(d) => d && d.isAfter(dayjs())} />
+            <DatePicker style={{ width: '100%' }} disabledDate={(d) => d && d.isBefore(dayjs(), 'day')} />
           </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
             <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>

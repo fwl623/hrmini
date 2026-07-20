@@ -225,7 +225,7 @@ const AdminOvertimePage: React.FC = () => {
           <Form.Item name="overtimeDate" label="加班日期" rules={[{ required: true }]}>
             <DatePicker
               style={{ width: '100%' }}
-              disabledDate={(d) => d && d.isAfter(dayjs())}
+              disabledDate={(d) => d && d.isBefore(dayjs(), 'day')}
             />
           </Form.Item>
 
