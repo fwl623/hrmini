@@ -166,7 +166,7 @@ public class PunchService {
     // ========== 今日状态 ==========
 
     /**
-     * 获取今日打卡状态
+     * 获取今日打卡状态（含记录明细）
      */
     public TodayPunchVO getTodayStatus(Long employeeId) {
         LocalDate today = LocalDate.now(CST);
@@ -180,7 +180,28 @@ public class PunchService {
         long earlyLeaveCount = records.stream().filter(r -> "EARLY_LEAVE".equals(r.getPunchStatus())).count();
         long absentCount = records.stream().filter(r -> "ABSENT_HALF".equals(r.getPunchStatus())).count();
 
-        return new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
+        TodayPunchVO vo = new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
+
+        // 填充今日打卡记录明细（去重：每种类型取最新一条）
+        java.util.Map<String, AttendanceRecord> latest = new java.util.HashMap<>();
+        for (AttendanceRecord r : records) {
+            latest.put(r.getPunchType(), r);
+        }
+        java.util.List<TodayPunchVO.PunchRecordItem> items = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, AttendanceRecord> entry : latest.entrySet()) {
+            AttendanceRecord r = entry.getValue();
+            TodayPunchVO.PunchRecordItem item = new TodayPunchVO.PunchRecordItem();
+            item.setType(r.getPunchType());
+            item.setTime(r.getPunchTime() != null
+                    ? r.getPunchTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
+            item.setStatus(r.getPunchStatus());
+            items.add(item);
+        }
+        // 按类型排序：IN 在前
+        items.sort(java.util.Comparator.comparing(i -> "IN".equals(i.getType()) ? 0 : 1));
+        vo.setRecords(items);
+
+        return vo;
     }
 
     // ========== 打卡记录分页 ==========

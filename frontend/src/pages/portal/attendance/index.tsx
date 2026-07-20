@@ -101,6 +101,9 @@ const AttendancePunchPage: React.FC = () => {
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [selectedDay, setSelectedDay] = useState<API.AttendanceCalendarDay | null>(null);
 
+  // 本月打卡统计
+  const [monthTotal, setMonthTotal] = useState({ should: 0, actual: 0, late: 0 });
+
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -134,7 +137,20 @@ const AttendancePunchPage: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       const [statusRes, quotaRes] = await Promise.all([getTodayPunchStatus(), getPunchFixQuota()]);
-      if (statusRes.data) setTodayStatus(statusRes.data);
+      const data = statusRes.data as any;
+      if (data) {
+        setTodayStatus(data);
+        // 从 API 返回的 records 中加载今日打卡记录
+        if (data.records && data.records.length > 0) {
+          setRecords(data.records.map((r: any) => ({
+            time: r.time,
+            type: r.type === 'IN' ? '上班' : '下班',
+            status: r.status,
+          })));
+        } else {
+          setRecords([]);
+        }
+      }
       if (quotaRes.data) setQuota(quotaRes.data);
     } catch {
       // ignore
@@ -145,7 +161,14 @@ const AttendancePunchPage: React.FC = () => {
     setCalendarLoading(true);
     try {
       const res = await getAttendanceCalendar(month.format('YYYY-MM'));
-      setCalendarDays(res.code === 0 && res.data?.days ? res.data.days : []);
+      const days = res.code === 0 && res.data?.days ? res.data.days : [];
+      setCalendarDays(days);
+      // 自动选中今天
+      const todayStr = dayjs().format('YYYY-MM-DD');
+      const todayDay = days.find((d: API.AttendanceCalendarDay) => d.date === todayStr);
+      if (todayDay) {
+        setSelectedDay(todayDay);
+      }
     } catch {
       setCalendarDays([]);
     } finally {
@@ -171,10 +194,6 @@ const AttendancePunchPage: React.FC = () => {
       message.success(`${type === 'in' ? '上班' : '下班'}打卡成功`);
       await loadData();
       await loadCalendar(calendarMonth);
-      setRecords((prev) => [
-        ...prev,
-        { time: timeStr, type: type === 'in' ? '上班' : '下班', status: punchStatus },
-      ]);
     } catch (err: any) {
       message.error(err?.message || '打卡失败');
     } finally {
@@ -270,11 +289,11 @@ const AttendancePunchPage: React.FC = () => {
       </Col>
 
       <Col xs={24} lg={16}>
-        <Card title="今日打卡状态">
+        <Card title={`本月打卡 - ${dayjs().format('YYYY年MM月')}`}>
           <Row gutter={[16, 16]}>
             <Col xs={12} sm={6}>
               <Statistic
-                title="已打卡"
+                title="今日已打卡"
                 value={todayStatus.clockedCount}
                 suffix={`/ ${todayStatus.totalCount}`}
                 valueStyle={{ color: '#1890ff' }}
@@ -282,7 +301,7 @@ const AttendancePunchPage: React.FC = () => {
             </Col>
             <Col xs={12} sm={6}>
               <Statistic
-                title="迟到"
+                title="今日迟到"
                 value={todayStatus.lateCount}
                 valueStyle={{ color: todayStatus.lateCount > 0 ? '#faad14' : undefined }}
                 prefix={<ClockCircleOutlined />}
@@ -290,7 +309,7 @@ const AttendancePunchPage: React.FC = () => {
             </Col>
             <Col xs={12} sm={6}>
               <Statistic
-                title="早退"
+                title="今日早退"
                 value={todayStatus.earlyLeaveCount}
                 valueStyle={{ color: todayStatus.earlyLeaveCount > 0 ? '#faad14' : undefined }}
                 prefix={<ClockCircleOutlined />}
@@ -298,7 +317,7 @@ const AttendancePunchPage: React.FC = () => {
             </Col>
             <Col xs={12} sm={6}>
               <Statistic
-                title="缺卡"
+                title="今日缺卡"
                 value={todayStatus.absentCount}
                 valueStyle={{ color: todayStatus.absentCount > 0 ? '#ff4d4f' : undefined }}
                 prefix={<CloseCircleOutlined />}
