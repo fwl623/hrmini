@@ -70,6 +70,7 @@ backend/hrms-app/src/main/resources/application-dev-local.yml
 .agents/
 .playwright-cli/
 .cursor/skills/playwright-cli/
+playwright-temp/
 
 # 根目录 Playwright 快照 / 状态 yaml
 /login.yaml

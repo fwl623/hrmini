@@ -52,6 +52,8 @@ const AdminLayout: React.FC = () => {
     attendance: access.canManageAttendance,
     payroll: access.canViewPayroll,
     system: access.canManageSystem,
+    portal: true,
+    portalPayslip: access.canViewOwnPayslip,
   };
 
   const menuItems: MenuItem[] = useMemo(() => {
@@ -142,6 +144,24 @@ const AdminLayout: React.FC = () => {
           { key: '/admin/system/login-logs', label: '登录日志' },
         ],
       },
+      {
+        key: '/admin/personal',
+        label: '个人中心',
+        accessKey: 'portal',
+        children: [
+          { key: '/admin/personal/profile', label: '我的档案' },
+          { key: '/admin/personal/attendance', label: '考勤打卡' },
+          { key: '/admin/personal/leave', label: '我的请假' },
+          { key: '/admin/personal/overtime', label: '我的加班' },
+          {
+            key: '/admin/personal/payslips',
+            label: '我的工资条',
+            accessKey: 'portalPayslip',
+          },
+          { key: '/admin/personal/resignation', label: '离职申请' },
+          { key: '/admin/personal/security', label: '账号安全' },
+        ],
+      },
     ];
     return filterMenu(raw, menuAccess);
   }, [access]);
@@ -158,6 +178,9 @@ const AdminLayout: React.FC = () => {
     }
     if (path.startsWith('/admin/approval') || path.startsWith('/admin/delegation')) {
       return ['group-approval'];
+    }
+    if (path.startsWith('/admin/personal')) {
+      return ['/admin/personal'];
     }
     const parts = path.split('/').filter(Boolean);
     if (parts.length >= 2) {

@@ -68,7 +68,7 @@ const PortalLayout: React.FC = () => {
         className="hrms-sider-scroll"
         style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden' }}
       >
-        <div style={{ padding: 16, fontWeight: 600 }}>员工门户</div>
+        <div style={{ padding: 16, fontWeight: 600 }}>个人中心</div>
         <Menu
           mode="inline"
           selectedKeys={[location.pathname]}

@@ -71,7 +71,8 @@ export default function access(initialState: API.InitialState) {
         roleCode === ROLES.DEPT_MANAGER),
     /** 离职管理（发起正式离职）：仅 HR/管理员，部门主管只走审批中心 */
     canManageResignation: isHr,
-    canManageSystem: roleCode === ROLES.SYS_ADMIN || has('menu:system'),
+    /** 系统设置（用户/角色/日志）：仅 SYS_ADMIN；不因脏权限码 menu:system 放开给 HR */
+    canManageSystem: roleCode === ROLES.SYS_ADMIN,
     canViewEmployee:
       !isFinance &&
       (has('menu:employee') || isHr || roleCode === ROLES.DEPT_MANAGER),
