@@ -10,8 +10,12 @@ import java.math.BigDecimal;
 @Data
 public class OvertimeApplicationVO {
     private Long id;
+    private Long employeeId;
     private String employeeName;
+    private String department;
     private String overtimeDate;
+    private String startTime;
+    private String endTime;
     private BigDecimal hours;
     private String status;
 }

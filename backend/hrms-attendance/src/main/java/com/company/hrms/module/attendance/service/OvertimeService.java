@@ -73,10 +73,28 @@ public class OvertimeService {
         for (OvertimeApplication oa : page.getRecords()) {
             OvertimeApplicationVO vo = new OvertimeApplicationVO();
             vo.setId(oa.getId());
-            vo.setEmployeeName(String.valueOf(oa.getEmployeeId())); // TODO: Feign 调用获取姓名
+            vo.setEmployeeId(oa.getEmployeeId());
             vo.setOvertimeDate(oa.getOvertimeDate());
             vo.setHours(oa.getHours());
             vo.setStatus(oa.getStatus());
+            vo.setStartTime(oa.getStartTime() != null
+                    ? oa.getStartTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
+            vo.setEndTime(oa.getEndTime() != null
+                    ? oa.getEndTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
+
+            // 查询员工姓名和部门
+            try {
+                com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(oa.getEmployeeId());
+                if (emp != null) {
+                    vo.setEmployeeName(emp.getName());
+                    vo.setDepartment(emp.getDepartmentName());
+                } else {
+                    vo.setEmployeeName(String.valueOf(oa.getEmployeeId()));
+                }
+            } catch (Exception e) {
+                vo.setEmployeeName(String.valueOf(oa.getEmployeeId()));
+            }
+
             voList.add(vo);
         }
         return PageResult.of(voList, page.getTotal(), pageParam);
