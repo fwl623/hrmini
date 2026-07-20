@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.company.hrms.attendance.entity.AttendanceDailySummary;
 import com.company.hrms.attendance.entity.AttendanceMonthLock;
+import com.company.hrms.attendance.entity.HolidayCalendar;
+import com.company.hrms.attendance.entity.WorkdayConfig;
 import com.company.hrms.attendance.entity.AttendanceMonthlySummary;
 import com.company.hrms.attendance.entity.AttendanceRecord;
 import com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper;
@@ -48,6 +50,8 @@ public class SummaryService {
     private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
     private final com.company.hrms.attendance.mapper.LeaveBalanceMapper leaveBalanceMapper;
     private final com.company.hrms.attendance.mapper.LeaveApplicationMapper leaveApplicationMapper;
+    private final com.company.hrms.attendance.mapper.WorkdayConfigMapper workdayConfigMapper;
+    private final com.company.hrms.attendance.mapper.HolidayCalendarMapper holidayCalendarMapper;
 
     // ========== 月汇总查看/锁定 ==========
 
@@ -278,7 +282,7 @@ public class SummaryService {
         vo.setLateCount(ms.getLateCount() != null ? ms.getLateCount() : 0);
         vo.setEarlyLeaveCount(ms.getEarlyLeaveCount() != null ? ms.getEarlyLeaveCount() : 0);
         vo.setAbsentDays(ms.getAbsentDays() != null ? ms.getAbsentDays() : BigDecimal.ZERO);
-        // 如果月汇总没有请假天数，但实际有已审批的请假，则从申请表计算
+        // 如果月汇总没有请假天数，但实际有已审批的请假，则从申请表累加（仅统计已审批记录）
         BigDecimal leaveDays = ms.getLeaveDays() != null ? ms.getLeaveDays() : BigDecimal.ZERO;
         if (leaveDays.compareTo(BigDecimal.ZERO) == 0) {
             try {
@@ -403,7 +407,18 @@ public class SummaryService {
             summaryMap.put(ds.getSummaryDate(), ds);
         }
 
-        // 加载该员工当月已审批通过的请假记录
+        // 加载工作日配置和节假日，用于判断日期是否为工作日
+        List<WorkdayConfig> wkConfigs = workdayConfigMapper.selectList(null);
+        java.util.Set<Integer> workdaySet = wkConfigs.stream()
+                .filter(w -> w.getIsWorkday() == 1)
+                .map(WorkdayConfig::getDayOfWeek)
+                .collect(java.util.stream.Collectors.toSet());
+        List<HolidayCalendar> holidays = holidayCalendarMapper.selectList(null);
+        java.util.Set<java.time.LocalDate> holidayDates = holidays.stream()
+                .map(HolidayCalendar::getHolidayDate)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // 加载该员工当月已审批通过的请假记录（已驳回/已撤销/待审批的不计入）
         LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
         List<com.company.hrms.attendance.entity.LeaveApplication> approvedLeaves =
                 leaveApplicationMapper.selectList(
@@ -412,19 +427,23 @@ public class SummaryService {
                                 .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
                                 .ge(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, start.atStartOfDay())
                                 .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, end.plusDays(1).atStartOfDay()));
-        // 构建请假日期集合（Fix1: 排除未来日期；Fix2: 结束时间为午夜00:00时不包含结束日）
+        // 构建请假日期集合
+        // 规则：仅已审批 + 仅工作日 + 非未来日期
         java.util.Set<java.time.LocalDate> leaveDateSet = new java.util.HashSet<>();
         for (com.company.hrms.attendance.entity.LeaveApplication la : approvedLeaves) {
             java.time.LocalDate laStart = la.getStartTime().toLocalDate();
             java.time.LocalDate laEnd = la.getEndTime().toLocalDate();
-            // Fix2: 如果结束时间是午夜00:00，endDate 减一天（请假实际到前一天结束）
+            // 结束时间为午夜00:00时不包含结束日
             if (la.getEndTime().toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
                 laEnd = laEnd.minusDays(1);
             }
             java.time.LocalDate d = laStart;
             while (!d.isAfter(laEnd)) {
-                // Fix1: 只标记已过去的日期，未来日期不显示请假
-                if (!d.isAfter(today)) {
+                // 条件1：仅已过去的日期
+                // 条件2：仅工作日（非周末、非节假日）
+                if (!d.isAfter(today)
+                        && workdaySet.contains(d.getDayOfWeek().getValue())
+                        && !holidayDates.contains(d)) {
                     leaveDateSet.add(d);
                 }
                 d = d.plusDays(1);
