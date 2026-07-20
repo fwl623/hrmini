@@ -10,6 +10,7 @@ import com.company.hrms.common.web.Result;
 import com.company.hrms.module.attendance.dto.LeaveApplicationDTO;
 import com.company.hrms.module.attendance.dto.LeaveApplicationVO;
 import com.company.hrms.module.attendance.service.LeaveService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,7 +52,7 @@ public class LeaveProfileController {
      * POST /api/v1/profile/leave/applications
      */
     @PostMapping("/profile/leave/applications")
-    public Result<Map<String, Object>> submit(@RequestBody LeaveApplicationDTO dto) {
+    public Result<Map<String, Object>> submit(@Valid @RequestBody LeaveApplicationDTO dto) {
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
         if (employeeId == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");

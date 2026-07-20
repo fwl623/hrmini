@@ -6,8 +6,11 @@ import com.company.hrms.common.approval.ApprovalStatusDTO;
 import com.company.hrms.common.approval.CreateApprovalRequest;
 import com.company.hrms.common.approval.CreateApprovalResult;
 import com.company.hrms.common.event.ApprovalCompletedEvent;
+import com.company.hrms.common.enums.RoleCode;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
+import com.company.hrms.common.security.LoginUser;
+import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.workflow.dto.ApprovalDtos;
 import com.company.hrms.workflow.entity.ApprovalInstance;
@@ -307,6 +310,39 @@ public class DbApprovalService implements ApprovalEngineService {
             } catch (Exception ignored) {
                 // ignore
             }
+        } else if ("LEAVE".equalsIgnoreCase(instance.getProcessType())) {
+            // 请假：businessSummary = "ANNUAL 3.0天"
+            biz.put("type", "leave");
+            String summary = display.businessSummary;
+            if (summary != null) {
+                String[] parts = summary.split(" ");
+                if (parts.length >= 2) {
+                    biz.put("leaveType", parts[0]);
+                    biz.put("days", parts[1].replace("天", ""));
+                }
+            }
+        } else if ("OVERTIME".equalsIgnoreCase(instance.getProcessType())) {
+            // 加班：businessSummary = "2026-07-21 2.0h"
+            biz.put("type", "overtime");
+            String summary = display.businessSummary;
+            if (summary != null) {
+                String[] parts = summary.split(" ");
+                if (parts.length >= 2) {
+                    biz.put("overtimeDate", parts[0]);
+                    biz.put("hours", parts[1].replace("h", ""));
+                }
+            }
+        } else if ("MAKEUP".equalsIgnoreCase(instance.getProcessType())) {
+            // 补卡：businessSummary = "2026-07-20 IN"
+            biz.put("type", "makeup");
+            String summary = display.businessSummary;
+            if (summary != null) {
+                String[] parts = summary.split(" ");
+                if (parts.length >= 2) {
+                    biz.put("makeupDate", parts[0]);
+                    biz.put("punchType", parts[1]);
+                }
+            }
         }
         detail.setBusinessDetail(biz);
 
@@ -432,6 +468,7 @@ public class DbApprovalService implements ApprovalEngineService {
 
     /**
      * 撤回审批实例。initiatorId 可能存 userId 或 employeeId（请假等业务用 employeeId）。
+     * HR_STAFF / SYS_ADMIN 可代撤（管理端撤销请假等，BUG-025）。
      */
     @Transactional
     public void doWithdrawInstance(long instanceId, long userId, Long employeeId) {
@@ -442,8 +479,8 @@ public class DbApprovalService implements ApprovalEngineService {
         Long initiator = instance.getInitiatorId();
         boolean owner = initiator != null
                 && (initiator.equals(userId) || (employeeId != null && initiator.equals(employeeId)));
-        if (!owner) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "仅发起人可撤回");
+        if (!owner && !isHrOrAdmin()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅发起人或 HR 可撤回");
         }
         if (!"PENDING".equalsIgnoreCase(instance.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID);
@@ -676,6 +713,19 @@ public class DbApprovalService implements ApprovalEngineService {
                 }
             }
             return null;
+        }
+    }
+
+    private static boolean isHrOrAdmin() {
+        try {
+            LoginUser login = SecurityUtils.getLoginUser();
+            if (login == null) {
+                return false;
+            }
+            return login.hasRole(RoleCode.HR_STAFF.name())
+                    || login.hasRole(RoleCode.SYS_ADMIN.name());
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

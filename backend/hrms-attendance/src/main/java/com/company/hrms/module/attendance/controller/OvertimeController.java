@@ -34,7 +34,7 @@ public class OvertimeController {
     /**
      * 加班列表
      * GET /api/v1/overtime/applications?page=1&employeeId=
-     * 管理端传 employeeId=0 查全部；不传则查当前用户
+     * 管理端传 employeeId=0 查全部；不传则查本人（门户）
      */
     @GetMapping("/applications")
     public Result<PageResult<OvertimeApplicationVO>> list(PageParam pageParam,

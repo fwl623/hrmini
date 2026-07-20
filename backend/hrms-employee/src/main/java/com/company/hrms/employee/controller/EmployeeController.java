@@ -3,6 +3,7 @@ package com.company.hrms.employee.controller;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.common.web.Result;
 import com.company.hrms.common.datascope.DataScope;
+import com.company.hrms.employee.auth.EmployeeAccessGuard;
 import com.company.hrms.employee.dto.EmployeePageQuery;
 import com.company.hrms.employee.dto.EmployeeUpdateDTO;
 import com.company.hrms.employee.dto.SalaryProfileUpdateDTO;
@@ -28,7 +29,8 @@ import java.util.List;
  * 员工档案管理接口
  * Base: /api/v1/employees
  *
- * 权限：HR_STAFF 全部 / DEPT_MANAGER 本部门 / EMPLOYEE 仅 SELF
+ * 权限：HR_STAFF 全部 / DEPT_MANAGER 本部门 / EMPLOYEE 仅 SELF；
+ * FINANCE / FINANCE_MANAGER 不可访问花名册（BUG-024）；薪资档案见 {@link EmployeeAccessGuard#requireSalaryAccess()}。
  */
 @RestController
 @RequestMapping("/employees")
@@ -44,12 +46,14 @@ public class EmployeeController {
     @GetMapping
     @DataScope
     public Result<PageResult<EmployeeListVO>> pageSearch(@Valid EmployeePageQuery query) {
+        EmployeeAccessGuard.requireRosterRead();
         return Result.success(employeeService.pageSearch(query));
     }
 
     @GetMapping("/{id}")
     @DataScope
     public Result<EmployeeDetailVO> getDetail(@PathVariable Long id) {
+        EmployeeAccessGuard.requireRosterRead();
         return Result.success(employeeService.getDetail(id));
     }
 
@@ -57,18 +61,21 @@ public class EmployeeController {
     @DataScope
     public Result<Void> update(@PathVariable Long id,
                                 @Valid @RequestBody EmployeeUpdateDTO dto) {
+        EmployeeAccessGuard.requireRosterWrite();
         employeeService.update(id, dto);
         return Result.success();
     }
 
     @GetMapping("/{id}/salary")
     public Result<SalaryProfileVO> getSalary(@PathVariable Long id) {
+        EmployeeAccessGuard.requireSalaryAccess();
         return Result.success(salaryService.getProfile(id));
     }
 
     @PutMapping("/{id}/salary")
     public Result<Void> updateSalary(@PathVariable Long id,
                                       @Valid @RequestBody SalaryProfileUpdateDTO dto) {
+        EmployeeAccessGuard.requireSalaryAccess();
         salaryService.updateProfile(id, dto);
         return Result.success();
     }
@@ -84,11 +91,13 @@ public class EmployeeController {
             @PathVariable Long id,
             @PathVariable String field,
             @RequestHeader(value = "X-Sensitive-Password", required = false) String password) {
+        EmployeeAccessGuard.requireRosterWrite();
         return Result.success(sensitiveFieldService.reveal(id, field, password));
     }
 
     @GetMapping("/{id}/transfer-history")
     public Result<List<TransferHistoryVO>> getTransferHistory(@PathVariable Long id) {
+        EmployeeAccessGuard.requireRosterWrite();
         return Result.success(employeeService.listTransferHistory(id));
     }
 
@@ -100,6 +109,7 @@ public class EmployeeController {
      */
     @GetMapping("/mobile-change-applications")
     public Result<List<EmployeeMobileChangeApplication>> listMobileChangeApps() {
+        EmployeeAccessGuard.requireHrStaff();
         return Result.success(mobileChangeService.listPending());
     }
 
@@ -109,6 +119,7 @@ public class EmployeeController {
      */
     @PostMapping("/mobile-change-applications/{id}/approve")
     public Result<Void> approveMobileChange(@PathVariable Long id) {
+        EmployeeAccessGuard.requireHrStaff();
         mobileChangeService.approve(id);
         return Result.success();
     }
@@ -119,6 +130,7 @@ public class EmployeeController {
      */
     @PostMapping("/mobile-change-applications/{id}/reject")
     public Result<Void> rejectMobileChange(@PathVariable Long id) {
+        EmployeeAccessGuard.requireHrStaff();
         mobileChangeService.reject(id);
         return Result.success();
     }

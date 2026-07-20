@@ -115,14 +115,18 @@ const AdminLeavePage: React.FC = () => {
   const handleCancelLeave = async (id: number) => {
     try {
       const res = await cancelLeave(id);
-      if (res.code !== 0) {
-        message.error(res.message || '撤销失败');
+      // 全局 errorHandler 吞掉 BizError 时可能落到此处且无有效 body，禁止误报成功（BUG-025）
+      if (!res || res.code !== 0) {
+        message.error(res?.message || '撤销失败');
         return;
       }
       message.success('已撤销');
       actionRef.current?.reload();
     } catch (err: any) {
-      message.error(err?.message || '撤销失败');
+      // BizError 已由全局 handler 提示，避免重复 toast
+      if (err?.name !== 'BizError') {
+        message.error(err?.message || '撤销失败');
+      }
     }
   };
 
@@ -308,13 +312,11 @@ const AdminLeavePage: React.FC = () => {
           </Form.Item>
 
           <Form.Item name="handoverEmployeeId" label="交接人">
-            <Select
+            <Select<{ label: string; value: number }>
               placeholder="请选择交接人（搜索员工姓名）"
               showSearch
               allowClear
-              filterOption={(input, option) =>
-                (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
-              }
+              optionFilterProp="label"
               // TODO: 对接员工搜索接口，替换为远程搜索
               options={[]}
             />
