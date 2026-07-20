@@ -11,6 +11,7 @@ import com.company.hrms.module.attendance.dto.CalcDaysVO;
 import com.company.hrms.module.attendance.dto.LeaveApplicationDTO;
 import com.company.hrms.module.attendance.dto.LeaveApplicationVO;
 import com.company.hrms.module.attendance.dto.LeaveBalanceVO;
+import com.company.hrms.module.attendance.auth.AttendanceAccessGuard;
 import com.company.hrms.module.attendance.service.LeaveService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,6 +62,9 @@ public class LeaveController {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工，无法查询本人请假");
             }
         }
+        if (employeeId == 0L) {
+            AttendanceAccessGuard.requireHrStaff();
+        }
         Long filterEmployeeId = employeeId == 0L ? null : employeeId;
         return Result.success(leaveService.pageApplications(pageParam, leaveType, status, filterEmployeeId));
     }
@@ -71,6 +75,7 @@ public class LeaveController {
      */
     @PostMapping("/leaves/applications")
     public Result<Map<String, Object>> submit(@RequestBody LeaveApplicationDTO dto) {
+        AttendanceAccessGuard.requireHrStaff();
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
         if (employeeId == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");
@@ -95,7 +100,12 @@ public class LeaveController {
      */
     @PutMapping("/leaves/applications/{id}/cancel")
     public Result<Map<String, String>> cancel(@PathVariable Long id) {
-        leaveService.cancel(id);
+        AttendanceAccessGuard.requireHrStaff();
+        Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+        if (employeeId == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");
+        }
+        leaveService.cancel(id, employeeId);
         return Result.success(Map.of("status", "CANCELLED"));
     }
 }

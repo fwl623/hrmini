@@ -39,6 +39,11 @@ public class OnboardingController {
         return Result.success(onboardingService.stats());
     }
 
+    @GetMapping("/{id}")
+    public Result<OnboardingDtos.OnboardingVO> detail(@PathVariable("id") long id) {
+        return Result.success(onboardingService.detail(id));
+    }
+
     @PostMapping
     public Result<OnboardingDtos.OnboardingVO> create(@RequestBody OnboardingDtos.OnboardingFormRequest body) {
         long userId = currentUserProvider.requireUserId();

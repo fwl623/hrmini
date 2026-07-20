@@ -27,6 +27,17 @@ public interface EmployeeLifecycleService {
     Long resolveDeptHeadUserIdByDeptId(Long departmentId);
 
     /**
+     * 按部门解析负责人审批人 userId（入职候选人尚无 employeeId 时使用）。
+     * 沿部门树找 head_employee，再回退任意 DEPT_MANAGER。
+     */
+    Long resolveDeptManagerUserIdByDepartment(Long departmentId);
+
+    /**
+     * 解析部门负责人员工 ID（作入职默认直属上级）；找不到返回 null。
+     */
+    Long resolveDeptHeadEmployeeId(Long departmentId);
+
+    /**
      * 解析 HR 审批人 userId：优先非 excludeUserId 的 HR_STAFF，否则任意 HR_STAFF。
      */
     Long resolveHrApproverUserId(Long excludeUserId);
@@ -36,11 +47,14 @@ public interface EmployeeLifecycleService {
      */
     Long resolveFinanceApproverUserId(Long excludeUserId);
 
-    /** 试用结束前 7 天内的待转正列表 */
+    /** 试用结束日前 N 天内（含已逾期）的待转正列表；from 可为空表示不限下限 */
     List<PendingRegularizationVO> listPendingRegularization(LocalDate from, LocalDate to);
 
-    /** PASS：10 → 20 */
+    /** PASS：10 → 20；可选同步调薪 */
     void regularizePass(Long employeeId);
+
+    /** PASS 且有调薪：更新薪资档案并写 history */
+    void applyRegularizationSalary(Long employeeId, java.math.BigDecimal newBaseSalary, Long operatorId);
 
     /** EXTEND：延长试用期，更新 probation_end_date */
     void regularizeExtend(Long employeeId, int extendMonths);

@@ -67,6 +67,8 @@ public class PunchService {
     private final ApprovalEngineService approvalEngineService;
     private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
 
+    /** 时区偏移 +08:00（北京时间） */
+    private static final java.time.ZoneId CST = java.time.ZoneId.of("Asia/Shanghai");
     /** Redis key 前缀：打卡幂等 */
     private static final String PUNCH_IDEMP_KEY = "hrms:punch:";
     /** Redis key 前缀：补卡计数 */
@@ -85,26 +87,29 @@ public class PunchService {
      */
     @Transactional(rollbackFor = Exception.class)
     public String punch(Long employeeId, PunchDTO dto) {
-        LocalDate punchDate = LocalDate.now();
-        LocalDateTime punchTime = LocalDateTime.now();
+        // 判定和幂等键始终以服务器 CST 时间为准
+        LocalDate serverDate = LocalDate.now(CST);
+        LocalTime serverTime = LocalDateTime.now(CST).toLocalTime();
         String type = dto.getType() != null ? dto.getType().toUpperCase() : "IN";
 
-        // 如果请求携带了打卡时间，使用请求时间
+        // Redis 幂等校验（基于服务端日期，不受前端时间影响）
+        String idempKey = PUNCH_IDEMP_KEY + employeeId + ":" + serverDate.toString() + ":" + type;
+        Boolean success = stringRedisTemplate.opsForValue()
+                .setIfAbsent(idempKey, "1", getSecondsUntilEndOfDay(serverDate), TimeUnit.SECONDS);
+        if (Boolean.FALSE.equals(success)) {
+            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
+        }
+
+        // 存储时间优先用前端传的值（保留给用户看的原始时间），否则用服务端时间
+        LocalDateTime storeTime = LocalDateTime.now(CST);
+        LocalDate storeDate = serverDate;
         if (dto.getPunchTime() != null) {
             try {
-                punchTime = LocalDateTime.parse(dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME);
-                punchDate = punchTime.toLocalDate();
+                storeTime = LocalDateTime.parse(dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME);
+                storeDate = storeTime.toLocalDate();
             } catch (DateTimeParseException e) {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, "打卡时间格式错误");
             }
-        }
-
-        // 1. Redis 幂等校验
-        String idempKey = PUNCH_IDEMP_KEY + employeeId + ":" + punchDate.toString() + ":" + type;
-        Boolean success = stringRedisTemplate.opsForValue()
-                .setIfAbsent(idempKey, "1", getSecondsUntilEndOfDay(punchDate), TimeUnit.SECONDS);
-        if (Boolean.FALSE.equals(success)) {
-            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
         }
 
         try {
@@ -116,14 +121,14 @@ public class PunchService {
                 validateGps(group.getGpsRangeJson(), dto.getLatitude(), dto.getLongitude());
             }
 
-            // 4. 判定打卡状态
-            String punchStatus = judgePunchStatus(group, punchTime.toLocalTime(), type);
+            // 4. 判定打卡状态（用服务端 CST 时间，确保与考勤组工作时间比较正确）
+            String punchStatus = judgePunchStatus(group, serverTime, type);
 
-            // 5. 写入打卡记录
+            // 5. 写入打卡记录（存储时间用 storeTime/storeDate，保留前端传入值）
             AttendanceRecord record = new AttendanceRecord();
             record.setEmployeeId(employeeId);
-            record.setPunchDate(punchDate);
-            record.setPunchTime(punchTime);
+            record.setPunchDate(storeDate);
+            record.setPunchTime(storeTime);
             record.setPunchType(type);
             record.setPunchStatus(punchStatus);
             record.setSource("WEB");
@@ -141,7 +146,8 @@ public class PunchService {
             }
 
             attendanceRecordMapper.insert(record);
-            log.info("员工打卡: empId={}, type={}, status={}, time={}", employeeId, type, punchStatus, punchTime);
+            log.info("员工打卡: empId={}, type={}, status={}, serverTime={}, storeTime={}",
+                    employeeId, type, punchStatus, serverTime, storeTime);
             return punchStatus;
 
         } catch (Exception e) {
@@ -157,7 +163,7 @@ public class PunchService {
      * 获取今日打卡状态
      */
     public TodayPunchVO getTodayStatus(Long employeeId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(CST);
 
         // 查今日所有打卡记录
         List<AttendanceRecord> records = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, today);
@@ -235,10 +241,8 @@ public class PunchService {
             for (AttendanceRecord r : recs) {
                 String timeStr = null;
                 if (r.getPunchTime() != null) {
-                    // JVM 默认 UTC，转换到 +08:00 显示
+                    // 数据库已存 CST 时间，直接格式化
                     timeStr = r.getPunchTime()
-                            .atZone(java.time.ZoneOffset.UTC)
-                            .withZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai"))
                             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
                 }
                 if ("IN".equals(r.getPunchType())) {
@@ -446,6 +450,7 @@ public class PunchService {
 
     /**
      * 固定班次（FIXED）打卡判定
+     * punchTime 已是 CST（调用前已转换），直接与考勤组时间比较
      * 上班：准时或早到 NORMAL，迟到阈值内 LATE，超过 ABSENT_HALF
      * 下班：准时或加班 NORMAL，早退阈值内 EARLY_LEAVE，超过 ABSENT_HALF
      */
@@ -529,8 +534,9 @@ public class PunchService {
      * 获取到当天结束的秒数
      */
     private long getSecondsUntilEndOfDay(LocalDate date) {
+        LocalDateTime now = LocalDateTime.now(CST);
         LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        long seconds = Duration.between(LocalDateTime.now(), endOfDay).getSeconds();
+        long seconds = Duration.between(now, endOfDay).getSeconds();
         return Math.max(seconds, 60); // 至少保留 60 秒，避免跨天或午夜后精度问题
     }
 
@@ -538,9 +544,10 @@ public class PunchService {
      * 获取到月末的秒数
      */
     private long getSecondsUntilEndOfMonth(LocalDate date) {
+        LocalDateTime now = LocalDateTime.now(CST);
         LocalDate lastDay = date.withDayOfMonth(date.lengthOfMonth());
         LocalDateTime endOfMonth = lastDay.atTime(LocalTime.MAX);
-        long seconds = Duration.between(LocalDateTime.now(), endOfMonth).getSeconds();
+        long seconds = Duration.between(now, endOfMonth).getSeconds();
         return Math.max(seconds, 60); // 至少保留 60 秒，避免跨天或午夜后精度问题
     }
 }

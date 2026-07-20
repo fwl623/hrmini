@@ -161,7 +161,6 @@
         WHERE deleted = 0
           AND employment_status = 10
           AND probation_end_date IS NOT NULL
-          AND probation_end_date &gt;= #{from}
           AND probation_end_date &lt;= #{to}
         ORDER BY probation_end_date ASC, id ASC
     </select>

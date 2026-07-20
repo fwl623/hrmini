@@ -76,7 +76,10 @@ public class EmployeeIdGenerator {
             }
 
             Integer maxSeq = employeeNoHistoryMapper.selectMaxSeq(year, code);
-            int next = (maxSeq == null ? 0 : maxSeq) + 1;
+            Integer maxFromEmployee = employeeNoHistoryMapper.selectMaxSeqFromEmployee(year, code);
+            int hist = maxSeq == null ? 0 : maxSeq;
+            int emp = maxFromEmployee == null ? 0 : maxFromEmployee;
+            int next = Math.max(hist, emp) + 1;
             if (next > 999) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "当年该部门工号序号已用尽");
             }
@@ -89,7 +92,8 @@ public class EmployeeIdGenerator {
             history.setReuseFlag(0);
             history.setCreatedAt(LocalDateTime.now());
             employeeNoHistoryMapper.insert(history);
-            log.info("新生成工号 {} for employeeId={}", employeeNo, employeeId);
+            log.info("新生成工号 {} for employeeId={} (histMax={} empMax={})",
+                    employeeNo, employeeId, hist, emp);
             return employeeNo;
         } catch (RuntimeException ex) {
             if (!unlockRegistered) {
@@ -101,6 +105,24 @@ public class EmployeeIdGenerator {
 
     public String generate(String deptCode) {
         return generate(deptCode, null);
+    }
+
+    /** 入职建档后回写 history.employee_id */
+    @Transactional(rollbackFor = Exception.class)
+    public void bindEmployee(String employeeNo, Long employeeId) {
+        if (!StringUtils.hasText(employeeNo) || employeeId == null) {
+            return;
+        }
+        EmployeeNoHistory history = employeeNoHistoryMapper.selectOne(
+                new LambdaQueryWrapper<EmployeeNoHistory>()
+                        .eq(EmployeeNoHistory::getEmployeeNo, employeeNo.trim())
+                        .last("LIMIT 1"));
+        if (history == null) {
+            log.warn("绑定工号未找到历史记录 employeeNo={}", employeeNo);
+            return;
+        }
+        history.setEmployeeId(employeeId);
+        employeeNoHistoryMapper.updateById(history);
     }
 
     /**

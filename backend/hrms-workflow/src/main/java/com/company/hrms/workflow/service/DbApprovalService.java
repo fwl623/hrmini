@@ -59,6 +59,8 @@ public class DbApprovalService implements ApprovalEngineService {
     private final ObjectMapper objectMapper;
     private final DelegationService delegationService;
     private final ResignationService resignationService;
+    private final OnboardingService onboardingService;
+    private final RegularizationService regularizationService;
 
     public DbApprovalService(ApprovalInstanceMapper instanceMapper,
                              ApprovalTaskMapper taskMapper,
@@ -69,7 +71,9 @@ public class DbApprovalService implements ApprovalEngineService {
                              ApplicationEventPublisher eventPublisher,
                              ObjectMapper objectMapper,
                              DelegationService delegationService,
-                             @Lazy ResignationService resignationService) {
+                             @Lazy ResignationService resignationService,
+                             @Lazy OnboardingService onboardingService,
+                             @Lazy RegularizationService regularizationService) {
         this.instanceMapper = instanceMapper;
         this.taskMapper = taskMapper;
         this.logMapper = logMapper;
@@ -81,6 +85,8 @@ public class DbApprovalService implements ApprovalEngineService {
         this.objectMapper = objectMapper;
         this.delegationService = delegationService;
         this.resignationService = resignationService;
+        this.onboardingService = onboardingService;
+        this.regularizationService = regularizationService;
     }
 
     @Override
@@ -284,6 +290,20 @@ public class DbApprovalService implements ApprovalEngineService {
             try {
                 Long requestId = Long.parseLong(instance.getBusinessKey());
                 biz.putAll(resignationService.requestBusinessDetail(requestId));
+            } catch (Exception ignored) {
+                // ignore
+            }
+        } else if ("ONBOARDING".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = Long.parseLong(instance.getBusinessKey());
+                biz.putAll(onboardingService.businessDetail(appId));
+            } catch (Exception ignored) {
+                // ignore
+            }
+        } else if ("REGULARIZATION".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = Long.parseLong(instance.getBusinessKey());
+                biz.putAll(regularizationService.businessDetail(appId));
             } catch (Exception ignored) {
                 // ignore
             }

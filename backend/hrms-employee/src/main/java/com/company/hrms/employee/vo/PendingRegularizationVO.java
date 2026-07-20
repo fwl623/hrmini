@@ -17,4 +17,6 @@ public class PendingRegularizationVO {
     private LocalDate hireDate;
     private LocalDate probationEndDate;
     private String employmentStatus;
+    /** 试用结束日已过仍未转正 */
+    private Boolean overdue;
 }

@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Primary;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Feign 客户端开关：默认 Mock；{@code hrms.feign.mock-enabled=false} 走本地真实建档。
+ * Feign 客户端开关：默认走本地真实建档；{@code hrms.feign.mock-enabled=true} 时用 Mock。
  */
 @Configuration
 public class FeignClientConfig {
@@ -20,7 +20,7 @@ public class FeignClientConfig {
 
     @Bean
     @Primary
-    @ConditionalOnProperty(prefix = "hrms.feign", name = "mock-enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "hrms.feign", name = "mock-enabled", havingValue = "true", matchIfMissing = false)
     public EmployeeArchiveClient mockEmployeeArchiveClient() {
         AtomicLong seq = new AtomicLong(900_000);
         return command -> {
@@ -32,7 +32,7 @@ public class FeignClientConfig {
     }
 
     @Bean
-    @ConditionalOnProperty(prefix = "hrms.feign", name = "mock-enabled", havingValue = "false")
+    @ConditionalOnProperty(prefix = "hrms.feign", name = "mock-enabled", havingValue = "false", matchIfMissing = true)
     public EmployeeArchiveClient localEmployeeArchiveClient(
             com.company.hrms.employee.service.OnboardingService employeeOnboardingService) {
         return command -> {
@@ -43,7 +43,7 @@ public class FeignClientConfig {
 
     @Bean
     @Primary
-    @ConditionalOnProperty(prefix = "hrms.feign", name = "mock-enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "hrms.feign", name = "mock-enabled", havingValue = "true", matchIfMissing = false)
     public AuthAccountClient mockAuthAccountClient() {
         AtomicLong seq = new AtomicLong(800_000);
         return request -> {
@@ -58,7 +58,7 @@ public class FeignClientConfig {
      * 真实模式：建号已在 B 组 archive 内完成（InternalUserService），此处仅记日志对齐 Feign 调用点。
      */
     @Bean
-    @ConditionalOnProperty(prefix = "hrms.feign", name = "mock-enabled", havingValue = "false")
+    @ConditionalOnProperty(prefix = "hrms.feign", name = "mock-enabled", havingValue = "false", matchIfMissing = true)
     public AuthAccountClient localAuthAccountClient() {
         return request -> {
             log.info("[Feign-Local] AuthAccountClient.createAccount skipped (done in archive), username={} employeeId={}",

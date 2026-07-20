@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -128,7 +129,7 @@ public class SummaryService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void runDailySummary(LocalDate date) {
-        LocalDate summaryDate = date != null ? date : LocalDate.now().minusDays(1);
+        LocalDate summaryDate = date != null ? date : LocalDate.now(ZoneId.of("Asia/Shanghai")).minusDays(1);
         String period = summaryDate.format(DateTimeFormatter.ofPattern("yyyy-MM"));
 
         // 查询当天所有员工的打卡记录

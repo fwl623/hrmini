@@ -14,6 +14,7 @@ export interface PendingRegularizationItem {
   hireDate?: string;
   probationEndDate?: string;
   employmentStatus?: string;
+  overdue?: boolean;
 }
 
 export interface RegularizationItem {
@@ -30,6 +31,7 @@ export interface RegularizationItem {
   probationEndDate?: string;
   instanceId?: number;
   createdAt?: string;
+  nextAction?: string;
 }
 
 export interface RegularizationCreateBody {
