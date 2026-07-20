@@ -1,5 +1,6 @@
 import { Timeline, Tag, Typography } from 'antd';
 import type { TimelineItemProps } from 'antd';
+import { timelineStatusLabel } from '@/constants/workflow';
 
 export type TimelineNodeStatus = 'wait' | 'process' | 'finish' | 'error';
 
@@ -41,7 +42,7 @@ export default function ApprovalTimeline({ nodes }: ApprovalTimelineProps) {
           <Typography.Text type="secondary"> · {n.assigneeName}</Typography.Text>
         ) : null}
         <div>
-          <Tag>{n.status}</Tag>
+          <Tag>{timelineStatusLabel(n.status)}</Tag>
           {n.displayText ? <Typography.Text type="secondary">{n.displayText}</Typography.Text> : null}
         </div>
         {n.comment ? <Typography.Paragraph style={{ marginBottom: 0 }}>{n.comment}</Typography.Paragraph> : null}

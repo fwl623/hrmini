@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/approvals")
 public class ApprovalController {
@@ -102,6 +104,16 @@ public class ApprovalController {
             @RequestParam(required = false, defaultValue = "20") int pageSize) {
         long userId = currentUserProvider.requireUserId();
         return Result.success(dbApprovalService.listMyInstances(userId, page, pageSize));
+    }
+
+    /**
+     * 正式离职交接人选人（轻量搜索）。
+     * 允许 HR / 部门主管 / 财务经理 / 管理员；不走花名册接口，避免财务经理作为部门负责人时报无权限。
+     */
+    @GetMapping("/handover-candidates")
+    public Result<List<ApprovalDtos.HandoverCandidateVO>> handoverCandidates(
+            @RequestParam(required = false) String keyword) {
+        return Result.success(dbApprovalService.searchHandoverCandidates(keyword));
     }
 
     /** 发起人查看审批进度 */

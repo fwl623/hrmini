@@ -106,6 +106,28 @@ paths:
       responses:
         "200":
           description: 成功
+  /approvals/handover-candidates:
+    get:
+      tags: [Approval]
+      summary: 正式离职交接人选人（轻量搜索，非花名册）
+      description: |
+        供审批中心确认工作交接时搜索在职员工。
+        允许 HR_STAFF / DEPT_MANAGER / FINANCE_MANAGER / SYS_ADMIN；
+        不开放给普通 FINANCE 专员；不经过花名册 DataScope。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 姓名或工号关键词
+      responses:
+        "200":
+          description: 成功；data 为候选列表（employeeId/name/empNo/department）
+        "403":
+          description: 无权限
   /workbench/summary:
     get:
       tags: [Workbench]

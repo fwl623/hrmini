@@ -55,4 +55,48 @@ public interface OrgLookupMapper {
             LIMIT 1
             """)
     java.util.Map<String, Object> selectMobileChangeBrief(@Param("id") Long id);
+
+    /**
+     * 审批交接人选人：姓名/工号模糊，仅在职/试用/待离职；不含敏感字段。
+     * 不走花名册 DataScope，供财务经理等部门负责人在离职审批中选交接人。
+     */
+    @Select("""
+            SELECT e.id AS employeeId,
+                   e.name AS name,
+                   e.employee_no AS empNo,
+                   d.name AS department
+            FROM employee e
+            LEFT JOIN department d ON d.id = e.department_id AND d.deleted = 0
+            WHERE (e.deleted = 0 OR e.deleted IS NULL)
+              AND e.employment_status IN (10, 20, 30)
+              AND (
+                    e.name LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.employee_no LIKE CONCAT('%', #{keyword}, '%')
+              )
+            ORDER BY e.id DESC
+            LIMIT 20
+            """)
+    List<java.util.Map<String, Object>> searchHandoverCandidates(@Param("keyword") String keyword);
+
+    /** 按 userId 查员工姓名与职位名（审批时间线展示） */
+    @Select("""
+            SELECT e.name AS name, p.name AS positionName
+            FROM employee e
+            LEFT JOIN position p ON p.id = e.position_id AND (p.deleted = 0 OR p.deleted IS NULL)
+            WHERE e.user_id = #{userId}
+              AND (e.deleted = 0 OR e.deleted IS NULL)
+            LIMIT 1
+            """)
+    java.util.Map<String, Object> selectEmployeeNameAndPositionByUserId(@Param("userId") Long userId);
+
+    /** 按 employeeId 查员工姓名与职位名（交接人展示） */
+    @Select("""
+            SELECT e.name AS name, p.name AS positionName
+            FROM employee e
+            LEFT JOIN position p ON p.id = e.position_id AND (p.deleted = 0 OR p.deleted IS NULL)
+            WHERE e.id = #{employeeId}
+              AND (e.deleted = 0 OR e.deleted IS NULL)
+            LIMIT 1
+            """)
+    java.util.Map<String, Object> selectEmployeeNameAndPositionByEmployeeId(@Param("employeeId") Long employeeId);
 }

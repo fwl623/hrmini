@@ -13,6 +13,11 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
+import ProcessStatusTag from '@/components/ProcessStatusTag';
+import {
+  resignationReasonLabel,
+  resignationTypeLabel,
+} from '@/constants/workflow';
 import {
   cancelMyResignationRequest,
   createMyResignationRequest,
@@ -46,9 +51,24 @@ export default function PortalResignationPage() {
 
   const columns: ColumnsType<ResignationRequestItem> = [
     { title: '期望离职日', dataIndex: 'expectedResignDate', width: 140 },
-    { title: '类型', dataIndex: 'resignationType', width: 120 },
-    { title: '原因分类', dataIndex: 'reasonCategory', width: 120 },
-    { title: '状态', dataIndex: 'status', width: 120 },
+    {
+      title: '类型',
+      dataIndex: 'resignationType',
+      width: 120,
+      render: (v: string) => resignationTypeLabel(v),
+    },
+    {
+      title: '原因分类',
+      dataIndex: 'reasonCategory',
+      width: 120,
+      render: (v: string) => resignationReasonLabel(v),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 120,
+      render: (s: string) => <ProcessStatusTag status={s} />,
+    },
     { title: '提交时间', dataIndex: 'createdAt', width: 180 },
     {
       title: '操作',

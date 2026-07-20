@@ -9,6 +9,7 @@ import com.company.hrms.common.event.ApprovalCompletedEvent;
 import com.company.hrms.common.enums.RoleCode;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
+import com.company.hrms.common.exception.ForbiddenException;
 import com.company.hrms.common.security.LoginUser;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageResult;
@@ -41,6 +42,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -51,6 +54,7 @@ public class DbApprovalService implements ApprovalEngineService {
 
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final TypeReference<List<ProcessNodeDef>> NODES_TYPE = new TypeReference<>() {};
+    private static final Pattern HANDOVER_ID_PATTERN = Pattern.compile("交接人#(\\d+)");
 
     private final ApprovalInstanceMapper instanceMapper;
     private final ApprovalTaskMapper taskMapper;
@@ -196,7 +200,7 @@ public class DbApprovalService implements ApprovalEngineService {
         ProcessNodeDef first = nodes.get(0);
         createTask(instance, first, variables, now);
         writeLog(instance.getId(), null, initiatorId, "SUBMIT", null, null, "PENDING",
-                "提交 " + processType + " 审批");
+                "提交 " + processTypeLabel(processType) + " 审批");
         return instance.getId();
     }
 
@@ -226,6 +230,52 @@ public class DbApprovalService implements ApprovalEngineService {
                 .filter(t -> t.getSlaDeadline() != null && t.getSlaDeadline().isBefore(LocalDateTime.now()))
                 .count());
         return vo;
+    }
+
+    /**
+     * 正式离职交接人选人：审批场景专用轻量搜索（非花名册）。
+     * 允许 HR / 部门主管 / 财务经理 / 系统管理员。
+     */
+    public List<ApprovalDtos.HandoverCandidateVO> searchHandoverCandidates(String keyword) {
+        LoginUser user = SecurityUtils.requireLoginUser();
+        if (!(user.hasRole(RoleCode.HR_STAFF.name())
+                || user.hasRole(RoleCode.DEPT_MANAGER.name())
+                || user.hasRole(RoleCode.FINANCE_MANAGER.name())
+                || user.hasRole(RoleCode.SYS_ADMIN.name()))) {
+            throw new ForbiddenException();
+        }
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+        String kw = keyword.trim();
+        if (kw.length() > 64) {
+            kw = kw.substring(0, 64);
+        }
+        List<Map<String, Object>> rows = orgLookupMapper.searchHandoverCandidates(kw);
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<ApprovalDtos.HandoverCandidateVO> list = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            ApprovalDtos.HandoverCandidateVO vo = new ApprovalDtos.HandoverCandidateVO();
+            Object id = row.get("employeeId");
+            if (id instanceof Number n) {
+                vo.setEmployeeId(n.longValue());
+            } else if (id != null) {
+                try {
+                    vo.setEmployeeId(Long.parseLong(String.valueOf(id)));
+                } catch (NumberFormatException ignored) {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+            vo.setName(row.get("name") == null ? null : String.valueOf(row.get("name")));
+            vo.setEmpNo(row.get("empNo") == null ? null : String.valueOf(row.get("empNo")));
+            vo.setDepartment(row.get("department") == null ? null : String.valueOf(row.get("department")));
+            list.add(vo);
+        }
+        return list;
     }
 
     public PageResult<ApprovalDtos.TaskListItemVO> listTasks(long userId, String status, String processType,
@@ -369,9 +419,7 @@ public class DbApprovalService implements ApprovalEngineService {
         taskMapper.updateById(task);
         writeLog(instance.getId(), taskId, userId, action, body.getComment(),
                 "PENDING", task.getStatus(),
-                "APPROVE".equals(action) && body.getHandoverEmployeeId() != null
-                        ? action + "（交接人#" + body.getHandoverEmployeeId() + "）"
-                        : action);
+                actionDisplayText(action, body.getHandoverEmployeeId()));
 
         if ("REJECT".equals(action)) {
             instance.setStatus("REJECTED");
@@ -698,7 +746,7 @@ public class DbApprovalService implements ApprovalEngineService {
                     t.setAction(l.getAction());
                     t.setComment(l.getComment());
                     t.setTime(fmt(l.getCreatedAt()));
-                    t.setDisplayText(l.getDisplayText());
+                    t.setDisplayText(enrichHandoverDisplayText(l.getDisplayText()));
                     return t;
                 }).collect(Collectors.toList());
     }
@@ -777,6 +825,86 @@ public class DbApprovalService implements ApprovalEngineService {
                 .map(ProcessNodeDef::getLabel)
                 .findFirst()
                 .orElse("节点" + order);
+    }
+
+    private static String processTypeLabel(String processType) {
+        if (processType == null || processType.isBlank()) {
+            return "审批";
+        }
+        return switch (processType.trim().toUpperCase(Locale.ROOT)) {
+            case "ONBOARDING" -> "入职";
+            case "REGULARIZATION" -> "转正";
+            case "TRANSFER" -> "调岗";
+            case "RESIGNATION" -> "离职";
+            case "RESIGNATION_REQUEST" -> "离职申请";
+            case "MOBILE_CHANGE" -> "手机号变更";
+            case "LEAVE" -> "请假";
+            case "OVERTIME" -> "加班";
+            case "MAKEUP", "PUNCH_FIX" -> "补卡";
+            case "PAYROLL", "PAYROLL_BATCH" -> "薪资核算";
+            default -> processType;
+        };
+    }
+
+    private String actionDisplayText(String action, Long handoverEmployeeId) {
+        String label = switch (action == null ? "" : action.trim().toUpperCase(Locale.ROOT)) {
+            case "SUBMIT" -> "提交";
+            case "APPROVE" -> "同意";
+            case "REJECT" -> "驳回";
+            case "FORWARD" -> "转交";
+            case "WITHDRAW" -> "撤回";
+            case "REMIND" -> "催办";
+            default -> action == null ? "" : action;
+        };
+        if ("APPROVE".equalsIgnoreCase(action) && handoverEmployeeId != null) {
+            return label + "（交接人" + formatEmployeePositionName(handoverEmployeeId) + "）";
+        }
+        return label;
+    }
+
+    /** 职位在前、姓名紧跟；查不到时回退为 #employeeId */
+    private String formatEmployeePositionName(Long employeeId) {
+        if (employeeId == null) {
+            return "";
+        }
+        try {
+            Map<String, Object> row = orgLookupMapper.selectEmployeeNameAndPositionByEmployeeId(employeeId);
+            if (row != null) {
+                String name = row.get("name") == null ? "" : String.valueOf(row.get("name")).trim();
+                String position = row.get("positionName") == null ? "" : String.valueOf(row.get("positionName")).trim();
+                if (!name.isEmpty() && !position.isEmpty()) {
+                    return position + name;
+                }
+                if (!name.isEmpty()) {
+                    return name;
+                }
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        return "#" + employeeId;
+    }
+
+    /** 历史日志「交接人#106」回显时替换为职位+姓名 */
+    private String enrichHandoverDisplayText(String displayText) {
+        if (displayText == null || displayText.isBlank() || !displayText.contains("交接人#")) {
+            return displayText;
+        }
+        Matcher m = HANDOVER_ID_PATTERN.matcher(displayText);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            Long empId;
+            try {
+                empId = Long.parseLong(m.group(1));
+            } catch (NumberFormatException ex) {
+                m.appendReplacement(sb, Matcher.quoteReplacement(m.group(0)));
+                continue;
+            }
+            String label = formatEmployeePositionName(empId);
+            m.appendReplacement(sb, Matcher.quoteReplacement("交接人" + label));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     private static String apiStatus(String db) {

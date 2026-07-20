@@ -449,13 +449,34 @@ export default function OnboardingPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="mobile" label="手机号" rules={[{ required: true, pattern: /^1\d{10}$/ }]}>
+          <Form.Item
+            name="mobile"
+            label="手机号"
+            rules={[
+              { required: true, message: '请输入手机号' },
+              { pattern: /^1\d{10}$/, message: '请输入正确的11位手机号' },
+            ]}
+          >
             <Input placeholder="唯一，将作为登录账号" />
           </Form.Item>
-          <Form.Item name="email" label="邮箱" rules={[{ required: true, type: 'email' }]}>
+          <Form.Item
+            name="email"
+            label="邮箱"
+            rules={[
+              { required: true, message: '请输入邮箱' },
+              { type: 'email', message: '请输入正确的邮箱地址' },
+            ]}
+          >
             <Input />
           </Form.Item>
-          <Form.Item name="idNumber" label="身份证号" rules={[{ required: true, len: 18 }]}>
+          <Form.Item
+            name="idNumber"
+            label="身份证号"
+            rules={[
+              { required: true, message: '请输入身份证号' },
+              { len: 18, message: '身份证号须为18位' },
+            ]}
+          >
             <Input />
           </Form.Item>
           <Form.Item name="expectedOnboardDate" label="预计入职日" rules={[{ required: true }]}>

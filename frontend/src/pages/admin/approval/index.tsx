@@ -20,8 +20,13 @@ import ApprovalActions from '@/components/ApprovalActions';
 import ApprovalTimeline from '@/components/ApprovalTimeline';
 import type { ApprovalTimelineNode } from '@/components/ApprovalTimeline';
 import ProcessStatusTag from '@/components/ProcessStatusTag';
-import { processTypeLabel } from '@/constants/workflow';
-import { getEmployeeList } from '@/services/employee';
+import {
+  approvalActionLabel,
+  localizeTimelineText,
+  processTypeLabel,
+  resignationReasonLabel,
+  resignationTypeLabel,
+} from '@/constants/workflow';
 import {
   fetchMyInstances,
   fetchTaskDetail,
@@ -30,6 +35,7 @@ import {
   fetchTasks,
   postTaskAction,
   remindTask,
+  searchHandoverCandidates,
   withdrawInstance,
   type ApprovalTaskDetail,
   type ApprovalTaskItem,
@@ -140,10 +146,9 @@ export default function ApprovalCenterPage() {
       }
       setHandoverLoading(true);
       try {
-        const res = await getEmployeeList({ keyword: keyword.trim(), page: 1, pageSize: 20 });
-        const list = res.data?.list ?? [];
+        const list = await searchHandoverCandidates(keyword.trim());
         setHandoverOptions(
-          list
+          (list ?? [])
             .filter((e) => e.employeeId !== resigningEmployeeId)
             .map((e) => ({
               label: `${e.name} · ${e.department || '未分部门'} · ${e.empNo || '-'}`,
@@ -259,11 +264,11 @@ export default function ApprovalCenterPage() {
 
   const timelineNodes: ApprovalTimelineNode[] = (detail?.timeline ?? []).map((t, idx) => ({
     key: String(idx),
-    title: t.node || t.action,
+    title: approvalActionLabel(t.node || t.action),
     assigneeName: t.assignee,
-    comment: t.comment,
+    comment: localizeTimelineText(t.comment),
     time: t.time,
-    displayText: t.displayText,
+    displayText: localizeTimelineText(t.displayText),
     status:
       t.action === 'REJECT'
         ? 'error'
@@ -407,7 +412,11 @@ export default function ApprovalCenterPage() {
                   {biz.employeeNo ? ` · ${biz.employeeNo}` : ''}
                 </Descriptions.Item>
                 <Descriptions.Item label="离职日">{bizText(biz.resignationDate)}</Descriptions.Item>
-                <Descriptions.Item label="原因">{bizText(biz.reasonCategory)}</Descriptions.Item>
+                <Descriptions.Item label="原因">
+                  {resignationReasonLabel(
+                    typeof biz.reasonCategory === 'string' ? biz.reasonCategory : undefined,
+                  )}
+                </Descriptions.Item>
                 <Descriptions.Item label="说明">{bizText(biz.reasonDetail)}</Descriptions.Item>
                 <Descriptions.Item label="交接人">
                   {biz.handoverEmployeeName
@@ -426,8 +435,16 @@ export default function ApprovalCenterPage() {
                   {biz.employeeNo ? ` · ${biz.employeeNo}` : ''}
                 </Descriptions.Item>
                 <Descriptions.Item label="期望离职日">{bizText(biz.expectedResignDate)}</Descriptions.Item>
-                <Descriptions.Item label="原因">{bizText(biz.reasonCategory)}</Descriptions.Item>
-                <Descriptions.Item label="类型">{bizText(biz.resignationType)}</Descriptions.Item>
+                <Descriptions.Item label="原因">
+                  {resignationReasonLabel(
+                    typeof biz.reasonCategory === 'string' ? biz.reasonCategory : undefined,
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="类型">
+                  {resignationTypeLabel(
+                    typeof biz.resignationType === 'string' ? biz.resignationType : undefined,
+                  )}
+                </Descriptions.Item>
                 <Descriptions.Item label="说明">{bizText(biz.reasonDetail)}</Descriptions.Item>
               </Descriptions>
             ) : null}

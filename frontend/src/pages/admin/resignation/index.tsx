@@ -16,6 +16,11 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { history, useAccess, useLocation, useSearchParams } from '@umijs/max';
 import { useCallback, useEffect, useState } from 'react';
+import ProcessStatusTag from '@/components/ProcessStatusTag';
+import {
+  resignationReasonLabel,
+  resignationTypeLabel,
+} from '@/constants/workflow';
 import {
   createResignation,
   fetchResignationRequests,
@@ -185,8 +190,18 @@ export default function AdminResignationPage() {
     { title: 'ID', dataIndex: 'id', width: 80 },
     { title: '员工', dataIndex: 'employeeName' },
     { title: '期望离职日', dataIndex: 'expectedResignDate', width: 120 },
-    { title: '类型', dataIndex: 'resignationType', width: 120 },
-    { title: '状态', dataIndex: 'status', width: 120 },
+    {
+      title: '类型',
+      dataIndex: 'resignationType',
+      width: 120,
+      render: (v: string) => resignationTypeLabel(v),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 120,
+      render: (s: string) => <ProcessStatusTag status={s} />,
+    },
     { title: '提交时间', dataIndex: 'createdAt', width: 180 },
     {
       title: '操作',
@@ -207,9 +222,24 @@ export default function AdminResignationPage() {
     { title: '员工', dataIndex: 'employeeName' },
     { title: '关联申请', dataIndex: 'requestId', width: 100 },
     { title: '离职日', dataIndex: 'resignationDate', width: 120 },
-    { title: '原因', dataIndex: 'reasonCategory', width: 100 },
-    { title: '类型', dataIndex: 'resignationType', width: 120 },
-    { title: '状态', dataIndex: 'status', width: 140 },
+    {
+      title: '原因',
+      dataIndex: 'reasonCategory',
+      width: 100,
+      render: (v: string) => resignationReasonLabel(v),
+    },
+    {
+      title: '类型',
+      dataIndex: 'resignationType',
+      width: 120,
+      render: (v: string) => resignationTypeLabel(v),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 140,
+      render: (s: string) => <ProcessStatusTag status={s} />,
+    },
     { title: '创建时间', dataIndex: 'createdAt', width: 180 },
   ];
 

@@ -166,6 +166,25 @@ export async function remindTask(taskId: number) {
   });
 }
 
+export interface HandoverCandidate {
+  employeeId: number;
+  name: string;
+  empNo?: string;
+  department?: string;
+}
+
+/** GET /approvals/handover-candidates — 正式离职交接人选人（非花名册） */
+export async function searchHandoverCandidates(keyword: string) {
+  const res = await request<API.Result<HandoverCandidate[]>>(
+    `${APPROVAL_PREFIX}/handover-candidates`,
+    {
+      method: 'GET',
+      params: { keyword },
+    },
+  );
+  return res.data ?? [];
+}
+
 export interface DelegationItem {
   id: number;
   delegatorId: number;

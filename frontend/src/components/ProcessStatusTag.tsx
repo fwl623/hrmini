@@ -5,6 +5,8 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   DRAFT: { color: 'default', label: '草稿' },
   pending: { color: 'processing', label: '审批中' },
   PENDING: { color: 'processing', label: '待审批' },
+  APPROVING: { color: 'processing', label: '审批中' },
+  approving: { color: 'processing', label: '审批中' },
   approved_pending: { color: 'warning', label: '待入职' },
   onboarded: { color: 'success', label: '已入职' },
   rejected: { color: 'error', label: '已拒绝' },

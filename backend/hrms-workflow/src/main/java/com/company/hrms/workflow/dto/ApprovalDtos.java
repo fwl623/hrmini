@@ -135,4 +135,13 @@ public final class ApprovalDtos {
         private String status;
         private String createdAt;
     }
+
+    /** 正式离职交接人选人（非敏感字段） */
+    @Data
+    public static class HandoverCandidateVO {
+        private Long employeeId;
+        private String name;
+        private String empNo;
+        private String department;
+    }
 }
