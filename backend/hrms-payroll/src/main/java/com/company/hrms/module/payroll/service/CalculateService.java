@@ -153,6 +153,12 @@ public class CalculateService {
         String period = batch.getPeriod();
         log.info("开始核算: batchId={}, period={}", id, period);
 
+        // 清理该账期已有的个税YTD记录和核算明细（防止重算时唯一键冲突）
+        taxYtdRecordMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.payroll.entity.PayTaxYtdRecord>()
+                .eq(com.company.hrms.payroll.entity.PayTaxYtdRecord::getPeriod, period));
+        detailMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.payroll.entity.PayrollDetail>()
+                .eq(com.company.hrms.payroll.entity.PayrollDetail::getBatchId, id));
+
         try {
             // ========== 预加载配置数据 ==========
 
