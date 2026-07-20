@@ -9,6 +9,7 @@ import com.company.hrms.common.web.PageResult;
 import com.company.hrms.common.web.Result;
 import com.company.hrms.module.attendance.dto.OvertimeApplicationDTO;
 import com.company.hrms.module.attendance.dto.OvertimeApplicationVO;
+import com.company.hrms.module.attendance.auth.AttendanceAccessGuard;
 import com.company.hrms.module.attendance.service.OvertimeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,6 +46,9 @@ public class OvertimeController {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工，无法查询本人加班");
             }
         }
+        if (employeeId == 0L) {
+            AttendanceAccessGuard.requireHrStaff();
+        }
         Long filterEmployeeId = employeeId == 0L ? null : employeeId;
         return Result.success(overtimeService.pageApplications(pageParam, filterEmployeeId));
     }
@@ -55,6 +59,7 @@ public class OvertimeController {
      */
     @PostMapping("/applications")
     public Result<Map<String, Object>> submit(@RequestBody OvertimeApplicationDTO dto) {
+        AttendanceAccessGuard.requireEmployee();
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
         if (employeeId == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");

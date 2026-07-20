@@ -7,6 +7,7 @@ import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.Result;
 import com.company.hrms.module.attendance.dto.MonthlySummaryLockDTO;
 import com.company.hrms.module.attendance.dto.MonthlySummaryVO;
+import com.company.hrms.module.attendance.auth.AttendanceAccessGuard;
 import com.company.hrms.module.attendance.service.SummaryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +34,7 @@ public class MonthlySummaryController {
     @GetMapping("/monthly-summary")
     public Result<MonthlySummaryVO> get(PageParam pageParam,
                                         @RequestParam String period) {
+        AttendanceAccessGuard.requireHrStaff();
         return Result.success(summaryService.getMonthlySummary(pageParam, period));
     }
 
@@ -42,6 +44,7 @@ public class MonthlySummaryController {
      */
     @PutMapping("/monthly-summary")
     public Result<Void> updateLock(@RequestBody MonthlySummaryLockDTO dto) {
+        AttendanceAccessGuard.requireHrStaff();
         Long operatorId = SecurityUtils.getCurrentUser().getEmployeeId();
         if (operatorId == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");

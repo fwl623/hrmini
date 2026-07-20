@@ -12,6 +12,7 @@ import com.company.hrms.module.attendance.dto.HolidayCreateDTO;
 import com.company.hrms.module.attendance.dto.HolidayUpdateDTO;
 import com.company.hrms.module.attendance.dto.WorkdayConfigDTO;
 import com.company.hrms.module.attendance.service.AttendanceGroupService;
+import com.company.hrms.module.attendance.auth.AttendanceAccessGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,6 +45,7 @@ public class AttendanceGroupController {
      */
     @GetMapping("/attendance/groups")
     public Result<PageResult<AttendanceGroup>> list(PageParam pageParam) {
+        AttendanceAccessGuard.requireHrStaff();
         return Result.success(attendanceGroupService.page(pageParam));
     }
 
@@ -53,6 +55,7 @@ public class AttendanceGroupController {
      */
     @GetMapping("/attendance/groups/{id}")
     public Result<AttendanceGroupVO> detail(@PathVariable Long id) {
+        AttendanceAccessGuard.requireHrStaff();
         return Result.success(attendanceGroupService.getById(id));
     }
 
@@ -62,6 +65,7 @@ public class AttendanceGroupController {
      */
     @PostMapping("/attendance/groups")
     public Result<Map<String, Long>> create(@RequestBody AttendanceGroupCreateDTO dto) {
+        AttendanceAccessGuard.requireHrStaff();
         Long id = attendanceGroupService.create(dto);
         return Result.success(Map.of("id", id));
     }
@@ -72,6 +76,7 @@ public class AttendanceGroupController {
      */
     @PutMapping("/attendance/groups/{id}")
     public Result<Void> update(@PathVariable Long id, @RequestBody AttendanceGroupCreateDTO dto) {
+        AttendanceAccessGuard.requireHrStaff();
         attendanceGroupService.update(id, dto);
         return Result.success();
     }
@@ -82,6 +87,7 @@ public class AttendanceGroupController {
      */
     @DeleteMapping("/attendance/groups/{id}")
     public Result<Void> delete(@PathVariable Long id) {
+        AttendanceAccessGuard.requireHrStaff();
         attendanceGroupService.delete(id);
         return Result.success();
     }
@@ -94,6 +100,7 @@ public class AttendanceGroupController {
      */
     @GetMapping("/attendance/workdays")
     public Result<List<WorkdayConfig>> getWorkdays() {
+        AttendanceAccessGuard.requireHrStaff();
         return Result.success(attendanceGroupService.getWorkdays());
     }
 
@@ -103,6 +110,7 @@ public class AttendanceGroupController {
      */
     @PutMapping("/attendance/workdays")
     public Result<Void> updateWorkdays(@RequestBody List<WorkdayConfigDTO> list) {
+        AttendanceAccessGuard.requireHrStaff();
         attendanceGroupService.updateWorkdays(list);
         return Result.success();
     }
@@ -115,6 +123,7 @@ public class AttendanceGroupController {
      */
     @GetMapping("/attendance/holidays")
     public Result<PageResult<HolidayCalendar>> listHolidays(PageParam pageParam) {
+        AttendanceAccessGuard.requireHrStaff();
         return Result.success(attendanceGroupService.pageHolidays(pageParam));
     }
 
@@ -124,6 +133,7 @@ public class AttendanceGroupController {
      */
     @PostMapping("/attendance/holidays")
     public Result<Map<String, Long>> createHoliday(@RequestBody HolidayCreateDTO dto) {
+        AttendanceAccessGuard.requireHrStaff();
         Long id = attendanceGroupService.createHoliday(dto);
         return Result.success(Map.of("id", id));
     }
@@ -134,6 +144,7 @@ public class AttendanceGroupController {
      */
     @PutMapping("/attendance/holidays/{id}")
     public Result<Void> updateHoliday(@PathVariable Long id, @RequestBody HolidayUpdateDTO dto) {
+        AttendanceAccessGuard.requireHrStaff();
         attendanceGroupService.updateHoliday(id, dto);
         return Result.success();
     }
@@ -144,6 +155,7 @@ public class AttendanceGroupController {
      */
     @DeleteMapping("/attendance/holidays/{id}")
     public Result<Void> deleteHoliday(@PathVariable Long id) {
+        AttendanceAccessGuard.requireHrStaff();
         attendanceGroupService.deleteHoliday(id);
         return Result.success();
     }

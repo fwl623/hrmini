@@ -9,6 +9,7 @@ import com.company.hrms.module.attendance.dto.PunchFixDTO;
 import com.company.hrms.module.attendance.dto.PunchRecordVO;
 import com.company.hrms.module.attendance.dto.QuotaVO;
 import com.company.hrms.module.attendance.dto.TodayPunchVO;
+import com.company.hrms.module.attendance.auth.AttendanceAccessGuard;
 import com.company.hrms.module.attendance.service.PunchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -68,6 +69,7 @@ public class PunchController {
                                                      @RequestParam(required = false) String keyword,
                                                      @RequestParam(required = false) String dateFrom,
                                                      @RequestParam(required = false) String dateTo) {
+        AttendanceAccessGuard.requireHrOrDeptMgr();
         return Result.success(punchService.pageRecords(pageParam, keyword, dateFrom, dateTo));
     }
 
@@ -80,6 +82,7 @@ public class PunchController {
      */
     @PostMapping("/punch-fix")
     public Result<Map<String, Object>> applyFix(@RequestBody PunchFixDTO dto) {
+        AttendanceAccessGuard.requireEmployee();
         Map<String, Object> result = punchService.applyFix(requireEmployeeId(), dto);
         return Result.success(result);
     }
