@@ -67,6 +67,8 @@ public class PunchService {
     private final ApprovalEngineService approvalEngineService;
     private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
 
+    /** 时区偏移 +08:00（北京时间） */
+    private static final java.time.ZoneId CST = java.time.ZoneId.of("Asia/Shanghai");
     /** Redis key 前缀：打卡幂等 */
     private static final String PUNCH_IDEMP_KEY = "hrms:punch:";
     /** Redis key 前缀：补卡计数 */
@@ -85,8 +87,8 @@ public class PunchService {
      */
     @Transactional(rollbackFor = Exception.class)
     public String punch(Long employeeId, PunchDTO dto) {
-        LocalDate punchDate = LocalDate.now();
-        LocalDateTime punchTime = LocalDateTime.now();
+        LocalDate punchDate = LocalDate.now(CST);
+        LocalDateTime punchTime = LocalDateTime.now(CST);
         String type = dto.getType() != null ? dto.getType().toUpperCase() : "IN";
 
         // 如果请求携带了打卡时间，使用请求时间
@@ -157,7 +159,7 @@ public class PunchService {
      * 获取今日打卡状态
      */
     public TodayPunchVO getTodayStatus(Long employeeId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(CST);
 
         // 查今日所有打卡记录
         List<AttendanceRecord> records = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, today);
@@ -235,10 +237,8 @@ public class PunchService {
             for (AttendanceRecord r : recs) {
                 String timeStr = null;
                 if (r.getPunchTime() != null) {
-                    // JVM 默认 UTC，转换到 +08:00 显示
+                    // 数据库已存 CST 时间，直接格式化
                     timeStr = r.getPunchTime()
-                            .atZone(java.time.ZoneOffset.UTC)
-                            .withZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai"))
                             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
                 }
                 if ("IN".equals(r.getPunchType())) {
@@ -446,6 +446,7 @@ public class PunchService {
 
     /**
      * 固定班次（FIXED）打卡判定
+     * punchTime 已是 CST（调用前已转换），直接与考勤组时间比较
      * 上班：准时或早到 NORMAL，迟到阈值内 LATE，超过 ABSENT_HALF
      * 下班：准时或加班 NORMAL，早退阈值内 EARLY_LEAVE，超过 ABSENT_HALF
      */
@@ -529,8 +530,9 @@ public class PunchService {
      * 获取到当天结束的秒数
      */
     private long getSecondsUntilEndOfDay(LocalDate date) {
+        LocalDateTime now = LocalDateTime.now(CST);
         LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        long seconds = Duration.between(LocalDateTime.now(), endOfDay).getSeconds();
+        long seconds = Duration.between(now, endOfDay).getSeconds();
         return Math.max(seconds, 60); // 至少保留 60 秒，避免跨天或午夜后精度问题
     }
 
@@ -538,9 +540,10 @@ public class PunchService {
      * 获取到月末的秒数
      */
     private long getSecondsUntilEndOfMonth(LocalDate date) {
+        LocalDateTime now = LocalDateTime.now(CST);
         LocalDate lastDay = date.withDayOfMonth(date.lengthOfMonth());
         LocalDateTime endOfMonth = lastDay.atTime(LocalTime.MAX);
-        long seconds = Duration.between(LocalDateTime.now(), endOfMonth).getSeconds();
+        long seconds = Duration.between(now, endOfMonth).getSeconds();
         return Math.max(seconds, 60); // 至少保留 60 秒，避免跨天或午夜后精度问题
     }
 }
