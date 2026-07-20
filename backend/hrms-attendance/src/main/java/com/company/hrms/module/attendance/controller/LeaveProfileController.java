@@ -1,6 +1,8 @@
 package com.company.hrms.module.attendance.controller;
 
 import com.company.hrms.attendance.entity.LeaveApplication;
+import com.company.hrms.common.exception.BusinessException;
+import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
@@ -38,6 +40,9 @@ public class LeaveProfileController {
                                                        @RequestParam(required = false) String leaveType,
                                                        @RequestParam(required = false) String status) {
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+        if (employeeId == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工，无法查询本人请假");
+        }
         return Result.success(leaveService.pageApplications(pageParam, leaveType, status, employeeId));
     }
 
@@ -48,6 +53,9 @@ public class LeaveProfileController {
     @PostMapping("/profile/leave/applications")
     public Result<Map<String, Object>> submit(@RequestBody LeaveApplicationDTO dto) {
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+        if (employeeId == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");
+        }
         LeaveApplication app = leaveService.submit(employeeId, dto);
         return Result.success(Map.of("id", app.getId(), "status", app.getStatus()));
     }
