@@ -375,13 +375,19 @@ const AttendancePunchPage: React.FC = () => {
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(7, 1fr)',
-              gap: 8,
+              gap: 4,
             }}
           >
             {WEEKDAYS.map((w) => (
               <div
                 key={w}
-                style={{ textAlign: 'center', color: '#8c8c8c', fontSize: 13, paddingBottom: 4 }}
+                style={{
+                  textAlign: 'center',
+                  color: w === '六' || w === '日' ? '#ff4d4f' : '#8c8c8c',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  paddingBottom: 8,
+                }}
               >
                 {w}
               </div>
@@ -399,60 +405,92 @@ const AttendancePunchPage: React.FC = () => {
                   : { label: status, bg: '#f5f5f5', dot: '#bfbfbf' });
               const selected = selectedDay?.date === key;
               const isToday = cell.date.isSame(dayjs(), 'day');
+              const isPast = cell.date.isBefore(dayjs(), 'day');
               return (
-                <button
+                <div
                   key={cell.key}
-                  type="button"
                   onClick={() => setSelectedDay(day ?? { date: key, dayStatus: status })}
                   style={{
-                    border: selected || isToday ? '2px solid #1677ff' : '1px solid #f0f0f0',
                     borderRadius: 8,
-                    background: meta.bg,
-                    minHeight: 64,
+                    background: selected ? '#e6f7ff' : meta.bg,
+                    minHeight: 56,
                     cursor: 'pointer',
-                    padding: '8px 4px 6px',
+                    padding: '6px 4px',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
+                    justifyContent: 'flex-start',
+                    gap: 4,
+                    border: selected ? '2px solid #1677ff' : isToday ? '2px solid #91caff' : '1px solid #f0f0f0',
+                    transition: 'all 0.2s',
+                    opacity: cell.date.isAfter(dayjs(), 'day') ? 0.5 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!selected) e.currentTarget.style.borderColor = '#91caff';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!selected && !isToday) e.currentTarget.style.borderColor = '#f0f0f0';
                   }}
                 >
-                  <span style={{ fontWeight: isToday ? 600 : 400, color: '#262626' }}>
+                  <span
+                    style={{
+                      fontWeight: isToday || selected ? 600 : 400,
+                      color: status === '--' && !isWeekend ? '#bfbfbf' : '#262626',
+                      fontSize: 14,
+                      lineHeight: '20px',
+                    }}
+                  >
                     {cell.date.date()}
                   </span>
-                  {status !== '--' ? (
+                  {status !== '--' && (
                     <span
                       style={{
-                        width: 8,
-                        height: 8,
+                        width: 14,
+                        height: 14,
                         borderRadius: '50%',
                         background: meta.dot,
-                        marginTop: 4,
+                        flexShrink: 0,
+                        boxShadow: `0 0 0 2px ${meta.dot}22`,
                       }}
                     />
-                  ) : (
-                    <span style={{ height: 8, marginTop: 4 }} />
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
 
           {selectedDay && (
-            <Card size="small" style={{ marginTop: 12 }} title={`${selectedDay.date} 详情`}>
-              {selectedDay.dayStatus && selectedDay.dayStatus !== '--' ? (
-                <Space direction="vertical" size={4}>
-                  <div>
-                    状态：
-                    <Tag>{DAY_STATUS_META[selectedDay.dayStatus]?.label || selectedDay.dayStatus}</Tag>
+            <Card size="small" style={{ marginTop: 12, borderLeft: `4px solid ${DAY_STATUS_META[selectedDay.dayStatus]?.dot || '#d9d9d9'}` }}>
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography.Text strong>{selectedDay.date}</Typography.Text>
+                  {selectedDay.dayStatus && selectedDay.dayStatus !== '--' && (
+                    <Tag color={DAY_STATUS_META[selectedDay.dayStatus]?.dot || 'default'}>
+                      {DAY_STATUS_META[selectedDay.dayStatus]?.label || selectedDay.dayStatus}
+                    </Tag>
+                  )}
+                </div>
+                {selectedDay.dayStatus && selectedDay.dayStatus !== '--' ? (
+                  <div style={{ display: 'flex', gap: 24 }}>
+                    <div>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>上班打卡</Typography.Text>
+                      <div style={{ fontSize: 16, fontWeight: 500, marginTop: 2 }}>
+                        {selectedDay.clockInTime || '--:--'}
+                      </div>
+                    </div>
+                    <div>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>下班打卡</Typography.Text>
+                      <div style={{ fontSize: 16, fontWeight: 500, marginTop: 2 }}>
+                        {selectedDay.clockOutTime || '--:--'}
+                      </div>
+                    </div>
                   </div>
-                  <Typography.Text type="secondary">
-                    上班：{selectedDay.clockInTime || '-'}　下班：{selectedDay.clockOutTime || '-'}
+                ) : (
+                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                    休息日或尚未生成考勤汇总
                   </Typography.Text>
-                </Space>
-              ) : (
-                <Typography.Text type="secondary">当日无考勤汇总（休息日或尚未生成）</Typography.Text>
-              )}
+                )}
+              </Space>
             </Card>
           )}
         </Card>

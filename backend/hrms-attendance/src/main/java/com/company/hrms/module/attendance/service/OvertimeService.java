@@ -120,13 +120,14 @@ public class OvertimeService {
         CreateApprovalRequest req = new CreateApprovalRequest();
         req.setProcessType("OVERTIME");
         req.setBusinessId(app.getId());
-        req.setApplicantId(employeeId);
+        req.setApplicantId(com.company.hrms.common.security.SecurityUtils.getCurrentUser().getUserId());
         req.setTitle("加班申请#" + app.getId());
         req.setBusinessSummary(dto.getOvertimeDate() + " " + hours + "h");
         req.setBusinessNo("OT-" + app.getId());
         Map<String, Object> form = new HashMap<>();
         form.put("dailyTotalHours", hours);
         form.put("needsSecondReview", needsSecondReview);
+        form.put("employeeId", employeeId);
         req.setFormData(form);
         CreateApprovalResult result = approvalEngineService.createInstance(req);
         app.setInstanceId(result.getInstanceId());

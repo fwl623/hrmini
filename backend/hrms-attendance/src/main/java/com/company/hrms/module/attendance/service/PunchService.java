@@ -324,10 +324,13 @@ public class PunchService {
         CreateApprovalRequest req = new CreateApprovalRequest();
         req.setProcessType("MAKEUP");
         req.setBusinessId(supplement.getId());
-        req.setApplicantId(employeeId);
+        req.setApplicantId(com.company.hrms.common.security.SecurityUtils.getCurrentUser().getUserId());
         req.setTitle("补卡申请#" + supplement.getId());
         req.setBusinessSummary(dto.getPunchDate() + " " + punchType);
         req.setBusinessNo("MAKEUP-" + supplement.getId());
+        java.util.Map<String, Object> form = new java.util.HashMap<>();
+        form.put("employeeId", employeeId);
+        req.setFormData(form);
         CreateApprovalResult approval = approvalEngineService.createInstance(req);
         supplement.setInstanceId(approval.getInstanceId());
         attendanceSupplementMapper.updateById(supplement);
