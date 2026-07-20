@@ -102,6 +102,8 @@ public final class ApprovalDtos {
         private String createdAt;
         private List<NodeProgressVO> nodes;
         private List<TimelineItemVO> timeline;
+        /** 与任务详情对齐，供「我发起的」展示离职/转正等业务字段 */
+        private Map<String, Object> businessDetail;
     }
 
     @Data

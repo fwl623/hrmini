@@ -395,11 +395,26 @@ public class OnboardingService {
         biz.put("expectedOnboardDate",
                 app.getExpectedOnboardDate() != null ? app.getExpectedOnboardDate().toString() : null);
         biz.put("departmentId", app.getDepartmentId());
-        biz.put("positionId", normalizePositionId(app.getPositionId()));
+        Long positionId = normalizePositionId(app.getPositionId());
+        biz.put("positionId", positionId);
+        if (app.getDepartmentId() != null) {
+            biz.put("departmentName", orgLookupMapper.selectDepartmentName(app.getDepartmentId()));
+        }
+        if (positionId != null) {
+            biz.put("positionName", orgLookupMapper.selectPositionName(positionId));
+        }
         biz.put("employmentType", app.getEmploymentType());
         biz.put("probationMonths", app.getProbationMonths());
         biz.put("baseSalary", app.getBaseSalary());
         biz.put("managerId", app.getManagerId());
+        if (app.getManagerId() != null) {
+            try {
+                Employee mgr = employeeLifecycleService.requireEmployee(app.getManagerId());
+                biz.put("managerName", mgr.getName());
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
         biz.put("status", app.getStatus());
         biz.put("positionStandard", isPositionStandard(app));
         biz.put("gradeMax", resolveGradeMax(app));
