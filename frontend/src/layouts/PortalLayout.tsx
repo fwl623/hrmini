@@ -14,6 +14,7 @@ const ALL_PORTAL_MENU: MenuProps['items'] = [
   { key: '/portal/leave', label: '我的请假' },
   { key: '/portal/overtime', label: '我的加班' },
   { key: '/portal/payslips', label: '我的工资条' },
+  { key: '/portal/resignation', label: '离职申请' },
   { key: '/portal/security', label: '账号安全' },
 ];
 

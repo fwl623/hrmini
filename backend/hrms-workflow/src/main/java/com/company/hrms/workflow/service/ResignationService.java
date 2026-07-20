@@ -15,7 +15,6 @@ import com.company.hrms.workflow.mapper.EmployeeResignationRequestMapper;
 import com.company.hrms.workflow.mapper.ResignationApplicationMapper;
 import com.company.hrms.workflow.model.ProcessNodeDef;
 import com.company.hrms.workflow.notify.ApprovalNotifyPublisher;
-import com.company.hrms.workflow.support.AssigneeResolver;
 import com.company.hrms.workflow.support.CurrentUserProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,12 +59,12 @@ public class ResignationService {
     }
 
     /**
-     * 门户员工发起离职申请：按产品口径关闭。
-     * 员工须线下协商，线上仅 HR/管理员发起正式离职（PRD §5.4 正式流程）。
+     * 门户员工发起离职申请（PRD §5.4 双通道第一阶段）。
+     * 审批通过后由 HR 决定是否立即发起正式离职。
      */
     @Transactional
     public LifecycleDtos.ResignationRequestVO createMyRequest(LifecycleDtos.ResignationRequestCreate req) {
-        throw new BusinessException(ErrorCode.FORBIDDEN, "离职须线下与 HR 协商，由 HR 在管理端发起正式离职流程");
+        return createRequest(requireSelfEmployeeId(), req);
     }
 
     public PageResult<LifecycleDtos.ResignationRequestVO> listMyRequests(int page, int pageSize) {
@@ -251,6 +250,35 @@ public class ResignationService {
                 // ignore
             }
         }
+        return biz;
+    }
+
+    /** 员工离职申请详情（审批中心展示） */
+    public Map<String, Object> requestBusinessDetail(Long requestId) {
+        Map<String, Object> biz = new java.util.HashMap<>();
+        if (requestId == null) {
+            return biz;
+        }
+        EmployeeResignationRequest app = requestMapper.selectById(requestId);
+        if (app == null) {
+            return biz;
+        }
+        Employee emp = null;
+        try {
+            emp = employeeLifecycleService.requireEmployee(app.getEmployeeId());
+        } catch (Exception ignored) {
+            // ignore
+        }
+        biz.put("requestId", app.getId());
+        biz.put("employeeId", app.getEmployeeId());
+        biz.put("employeeName", emp != null ? emp.getName() : null);
+        biz.put("employeeNo", emp != null ? emp.getEmployeeNo() : null);
+        biz.put("expectedResignDate",
+                app.getExpectedResignDate() != null ? app.getExpectedResignDate().toString() : null);
+        biz.put("reasonCategory", app.getReasonCategory());
+        biz.put("resignationType", app.getResignationType());
+        biz.put("reasonDetail", app.getReasonDetail());
+        biz.put("status", app.getStatus());
         return biz;
     }
 
@@ -487,11 +515,12 @@ public class ResignationService {
         app.setUpdatedAt(now);
         requestMapper.insert(app);
 
+        List<ProcessNodeDef> nodes = buildResignationRequestNodes(emp, userId);
         Long instanceId = dbApprovalService.createInstance(
                 "RESIGNATION_REQUEST",
                 String.valueOf(app.getId()),
                 userId,
-                AssigneeResolver.resignationRequestNodes(),
+                nodes,
                 DbApprovalService.InstanceDisplay.of(
                         emp.getName() + "离职申请",
                         emp.getName(),
@@ -501,6 +530,17 @@ public class ResignationService {
         app.setInstanceId(instanceId);
         requestMapper.updateById(app);
         return toRequestVo(app);
+    }
+
+    /** 员工离职申请：由 HR 审批（写入真实 assigneeUserId） */
+    private List<ProcessNodeDef> buildResignationRequestNodes(Employee emp, long initiatorUserId) {
+        Long hrUserId = employeeLifecycleService.resolveHrApproverUserId(initiatorUserId);
+        ProcessNodeDef n1 = new ProcessNodeDef();
+        n1.setOrder(1);
+        n1.setLabel("HR 审批");
+        n1.setAssigneeType("HR_STAFF");
+        n1.setAssigneeUserId(hrUserId);
+        return List.of(n1);
     }
 
     private Long requireSelfEmployeeId() {

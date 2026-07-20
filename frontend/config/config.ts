@@ -128,7 +128,7 @@ export default defineConfig({
         { path: 'leave', component: './portal/leave' },
         { path: 'overtime', component: './portal/overtime' },
         { path: 'payslips', component: './portal/payslips', access: 'canViewOwnPayslip' },
-        // 离职正式流程仅 HR/管理员在 /admin/resignation 发起；员工线下协商，门户无入口
+        { path: 'resignation', component: './portal/resignation' },
         { path: 'security', component: './portal/security' },
       ],
     },
