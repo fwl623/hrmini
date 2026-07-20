@@ -63,6 +63,7 @@ public class PunchService {
     private final AttendanceGroupMemberMapper attendanceGroupMemberMapper;
     private final AttendanceSupplementMapper attendanceSupplementMapper;
     private final AttendanceMonthLockMapper attendanceMonthLockMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper attendanceDailySummaryMapper;
     private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper monthlySummaryMapper;
     private final com.company.hrms.attendance.mapper.WorkdayConfigMapper workdayConfigMapper;
     private final com.company.hrms.attendance.mapper.HolidayCalendarMapper holidayCalendarMapper;
@@ -220,75 +221,60 @@ public class PunchService {
     // ========== 本月打卡统计 ==========
 
     /**
-     * 获取本月打卡统计
+     * 获取本月打卡统计（读日汇总表，数据更准确）
      */
     public TodayPunchVO getMonthlyStatus(Long employeeId) {
         LocalDate today = LocalDate.now(CST);
         LocalDate monthStart = today.withDayOfMonth(1);
-        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
 
-        // 查本月所有打卡记录（到当天为止，未来不会有数据）
-        List<AttendanceRecord> allRecords = attendanceRecordMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
-                        .eq(AttendanceRecord::getEmployeeId, employeeId)
-                        .ge(AttendanceRecord::getPunchDate, monthStart)
-                        .le(AttendanceRecord::getPunchDate, today));
+        // 查本月日汇总数据
+        List<com.company.hrms.attendance.entity.AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
+                employeeId, monthStart, today);
 
-        // 计算全月应打卡天数（工作日 × 2，算到月底）
-        List<com.company.hrms.attendance.entity.WorkdayConfig> workdayConfigs = workdayConfigMapper.selectList(null);
-        java.util.Set<Integer> workdaySet = workdayConfigs.stream()
-                .filter(w -> w.getIsWorkday() == 1)
-                .map(com.company.hrms.attendance.entity.WorkdayConfig::getDayOfWeek)
-                .collect(java.util.stream.Collectors.toSet());
-        List<com.company.hrms.attendance.entity.HolidayCalendar> holidays = holidayCalendarMapper.selectList(null);
-        java.util.Set<java.time.LocalDate> holidayDates = holidays.stream()
-                .map(com.company.hrms.attendance.entity.HolidayCalendar::getHolidayDate)
-                .collect(java.util.stream.Collectors.toSet());
+        int shouldDays = dailyList.size(); // 有日汇总的天数 = 应该出勤的天数
+        int clockedCount = 0, lateCount = 0, earlyLeaveCount = 0;
+        int missingInCount = 0, missingOutCount = 0, leaveCount = 0;
 
-        int shouldDays = 0;
-        LocalDate current = monthStart;
-        while (!current.isAfter(monthEnd)) {
-            java.time.DayOfWeek dow = current.getDayOfWeek();
-            int dowVal = dow.getValue();
-            if (workdaySet.contains(dowVal) && !holidayDates.contains(current)) {
-                shouldDays++;
+        for (com.company.hrms.attendance.entity.AttendanceDailySummary ds : dailyList) {
+            String status = ds.getDayStatus();
+            switch (status) {
+                case "NORMAL":
+                    clockedCount += 2; // 正常：有IN+OUT
+                    break;
+                case "LATE":
+                    clockedCount += 2;
+                    lateCount++;
+                    break;
+                case "EARLY_LEAVE":
+                    clockedCount += 2;
+                    earlyLeaveCount++;
+                    break;
+                case "MISSING_IN":
+                    clockedCount++; // 只有OUT
+                    missingInCount++;
+                    break;
+                case "MISSING_OUT":
+                    clockedCount++; // 只有IN
+                    missingOutCount++;
+                    break;
+                case "ABSENT_HALF":
+                    clockedCount++;
+                    missingInCount++; // 算缺一次
+                    break;
+                case "ABSENT":
+                    missingInCount++;
+                    missingOutCount++;
+                    break;
+                case "LEAVE":
+                    leaveCount++;
+                    break;
+                default:
+                    break;
             }
-            current = current.plusDays(1);
         }
-        long totalCount = shouldDays * 2L; // 全月应打卡 = 工作日 × 2
 
-        // 统计本月已发生数据（按 employee_id + punch_date + punch_type 去重）
-        java.util.Set<String> uniqueKeys = new java.util.HashSet<>();
-        long lateCount = 0, earlyLeaveCount = 0;
-        // 按日期统计已打的打卡类型
-        java.util.Map<java.time.LocalDate, java.util.Set<String>> datePunchMap = new java.util.HashMap<>();
-        for (AttendanceRecord r : allRecords) {
-            String key = r.getEmployeeId() + "_" + r.getPunchDate() + "_" + r.getPunchType();
-            if (uniqueKeys.add(key)) {
-                datePunchMap.computeIfAbsent(r.getPunchDate(), k -> new java.util.HashSet<>()).add(r.getPunchType());
-                if ("LATE".equals(r.getPunchStatus())) lateCount++;
-                if ("EARLY_LEAVE".equals(r.getPunchStatus())) earlyLeaveCount++;
-            }
-        }
-        long clockedCount = uniqueKeys.size();
-
-        // 缺卡：遍历每个工作日到今天，检查缺少 IN 或 OUT
-        long absentCount = 0;
-        LocalDate checkDay = monthStart;
-        while (!checkDay.isAfter(today)) {
-            java.time.DayOfWeek dow = checkDay.getDayOfWeek();
-            int dowVal = dow.getValue();
-            if (workdaySet.contains(dowVal) && !holidayDates.contains(checkDay)) {
-                java.util.Set<String> types = datePunchMap.get(checkDay);
-                if (types == null) {
-                    absentCount += 2; // 全天无打卡
-                } else {
-                    if (!types.contains("IN")) absentCount++;
-                    if (!types.contains("OUT")) absentCount++;
-                }
-            }
-            checkDay = checkDay.plusDays(1);
-        }
+        long totalCount = shouldDays * 2L; // 应打卡 = 工作天数 × 2
+        long absentCount = missingInCount + missingOutCount; // 缺卡 = 缺少的IN + 缺少的OUT
 
         return new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
     }
