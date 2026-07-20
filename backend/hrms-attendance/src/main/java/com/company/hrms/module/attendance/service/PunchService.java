@@ -214,17 +214,17 @@ public class PunchService {
      */
     public TodayPunchVO getMonthlyStatus(Long employeeId) {
         LocalDate today = LocalDate.now(CST);
-        String period = today.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
         LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
 
-        // 查本月所有打卡记录
+        // 查本月所有打卡记录（到当天为止，未来不会有数据）
         List<AttendanceRecord> allRecords = attendanceRecordMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
                         .eq(AttendanceRecord::getEmployeeId, employeeId)
                         .ge(AttendanceRecord::getPunchDate, monthStart)
                         .le(AttendanceRecord::getPunchDate, today));
 
-        // 计算本月应打卡天数（工作日 × 2）
+        // 计算全月应打卡天数（工作日 × 2，算到月底）
         List<com.company.hrms.attendance.entity.WorkdayConfig> workdayConfigs = workdayConfigMapper.selectList(null);
         java.util.Set<Integer> workdaySet = workdayConfigs.stream()
                 .filter(w -> w.getIsWorkday() == 1)
@@ -237,7 +237,7 @@ public class PunchService {
 
         int shouldDays = 0;
         LocalDate current = monthStart;
-        while (!current.isAfter(today)) {
+        while (!current.isAfter(monthEnd)) {
             java.time.DayOfWeek dow = current.getDayOfWeek();
             int dowVal = dow.getValue();
             if (workdaySet.contains(dowVal) && !holidayDates.contains(current)) {
@@ -245,9 +245,9 @@ public class PunchService {
             }
             current = current.plusDays(1);
         }
-        long totalCount = shouldDays * 2L; // 每天 IN + OUT
+        long totalCount = shouldDays * 2L; // 全月应打卡 = 工作日 × 2
 
-        // 统计本月数据
+        // 统计本月已发生数据
         long clockedCount = allRecords.size();
         long lateCount = allRecords.stream().filter(r -> "LATE".equals(r.getPunchStatus())).count();
         long earlyLeaveCount = allRecords.stream().filter(r -> "EARLY_LEAVE".equals(r.getPunchStatus())).count();
