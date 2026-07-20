@@ -57,8 +57,8 @@ export default defineConfig({
         },
         { path: 'transfers', component: './admin/transfers', access: 'canManageWorkflow' },
         { path: 'resignation', component: './admin/resignation', access: 'canManageResignation' },
-        { path: 'approval', component: './admin/approval', access: 'canManageWorkflow' },
-        { path: 'delegation', component: './admin/delegation', access: 'canManageWorkflow' },
+        { path: 'approval', component: './admin/approval', access: 'canApprove' },
+        { path: 'delegation', component: './admin/delegation', access: 'canApprove' },
 
         // 考勤管理
         {

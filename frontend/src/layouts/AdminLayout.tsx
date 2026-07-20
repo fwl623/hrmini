@@ -41,7 +41,7 @@ const AdminLayout: React.FC = () => {
   const { initialState } = useModel('@@initialState');
   const username = initialState?.currentUser?.username ?? '用户';
 
-  // 对齐 PRD §2.2：FINANCE 仅工作台+薪资；组织/花名册/审批/考勤均不可见
+  // 对齐 PRD：财务专员仅工作台+薪资；财务经理另可见审批中心
   const menuAccess: Record<string, boolean> = {
     workbench: true,
     org: access.canViewDept || access.canViewPosition,

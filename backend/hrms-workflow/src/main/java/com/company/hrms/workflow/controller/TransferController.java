@@ -39,4 +39,10 @@ public class TransferController {
     public Result<LifecycleDtos.TransferVO> detail(@PathVariable("id") Long id) {
         return Result.success(transferService.detail(id));
     }
+
+    /** 手动触发到期调岗生效（联调/补跑） */
+    @PostMapping("/effect-due")
+    public Result<Integer> effectDue() {
+        return Result.success(transferService.effectDueTransfers(java.time.LocalDate.now()));
+    }
 }

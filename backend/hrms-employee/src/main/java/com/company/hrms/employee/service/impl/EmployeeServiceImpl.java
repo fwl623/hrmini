@@ -14,11 +14,13 @@ import com.company.hrms.employee.entity.EmployeeBank;
 import com.company.hrms.employee.entity.EmployeeContract;
 import com.company.hrms.employee.entity.EmployeePersonal;
 import com.company.hrms.employee.entity.EmployeeSalaryProfile;
+import com.company.hrms.employee.entity.EmployeeTransferHistory;
 import com.company.hrms.employee.mapper.EmployeeBankMapper;
 import com.company.hrms.employee.mapper.EmployeeContractMapper;
 import com.company.hrms.employee.mapper.EmployeeMapper;
 import com.company.hrms.employee.mapper.EmployeePersonalMapper;
 import com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper;
+import com.company.hrms.employee.mapper.EmployeeTransferHistoryMapper;
 import com.company.hrms.employee.service.EmployeeService;
 import com.company.hrms.employee.vo.*;
 import com.company.hrms.common.field.FieldPermissionFilter;
@@ -68,6 +70,7 @@ public class EmployeeServiceImpl implements EmployeeService {
     private final EmployeeSalaryProfileMapper salaryProfileMapper;
     private final EmployeeContractMapper employeeContractMapper;
     private final EmployeeBankMapper employeeBankMapper;
+    private final EmployeeTransferHistoryMapper transferHistoryMapper;
     private final DepartmentMapper departmentMapper;
     private final PositionMapper positionMapper;
     private final HrmsSecurityProperties securityProperties;
@@ -441,6 +444,52 @@ public class EmployeeServiceImpl implements EmployeeService {
         vo.setEmploymentStatus(formatStatus(emp.getEmploymentStatus()));
         vo.setHireDate(emp.getHireDate());
         return vo;
+    }
+
+    @Override
+    public List<TransferHistoryVO> listTransferHistory(Long employeeId) {
+        if (employeeId == null) {
+            return List.of();
+        }
+        List<EmployeeTransferHistory> rows = transferHistoryMapper.selectByEmployeeId(employeeId);
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        return rows.stream().map(this::toTransferHistoryVo).collect(Collectors.toList());
+    }
+
+    private TransferHistoryVO toTransferHistoryVo(EmployeeTransferHistory h) {
+        TransferHistoryVO vo = new TransferHistoryVO();
+        vo.setId(h.getId());
+        vo.setEmployeeId(h.getEmployeeId());
+        vo.setTransferAppId(h.getTransferAppId());
+        vo.setFromDepartmentId(h.getFromDepartmentId());
+        vo.setToDepartmentId(h.getToDepartmentId());
+        vo.setFromPositionId(h.getFromPositionId());
+        vo.setToPositionId(h.getToPositionId());
+        vo.setFromDepartmentName(deptName(h.getFromDepartmentId()));
+        vo.setToDepartmentName(deptName(h.getToDepartmentId()));
+        vo.setFromPositionName(positionName(h.getFromPositionId()));
+        vo.setToPositionName(positionName(h.getToPositionId()));
+        vo.setTransferDate(h.getTransferDate() == null ? null : h.getTransferDate().toString());
+        vo.setReason(h.getReason());
+        return vo;
+    }
+
+    private String deptName(Long id) {
+        if (id == null) {
+            return null;
+        }
+        Department d = departmentMapper.selectById(id);
+        return d == null ? null : d.getName();
+    }
+
+    private String positionName(Long id) {
+        if (id == null) {
+            return null;
+        }
+        Position p = positionMapper.selectById(id);
+        return p == null ? null : p.getName();
     }
 
     private String formatStatus(Integer status) {

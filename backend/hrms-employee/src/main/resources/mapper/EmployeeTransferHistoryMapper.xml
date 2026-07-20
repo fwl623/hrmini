@@ -3,7 +3,30 @@
 <mapper namespace="com.company.hrms.employee.mapper.EmployeeTransferHistoryMapper">
 
     <select id="selectByEmployeeId" resultType="com.company.hrms.employee.entity.EmployeeTransferHistory">
-        SELECT * FROM employee_transfer_history WHERE employee_id = #{employeeId} ORDER BY transfer_date DESC
+        SELECT * FROM employee_transfer_history WHERE employee_id = #{employeeId} ORDER BY transfer_date DESC, id DESC
+    </select>
+
+    <select id="selectVoByEmployeeId" resultType="com.company.hrms.employee.vo.TransferHistoryVO">
+        SELECT h.id,
+               h.employee_id        AS employeeId,
+               h.transfer_app_id    AS transferAppId,
+               h.from_department_id AS fromDepartmentId,
+               fd.name              AS fromDepartmentName,
+               h.to_department_id   AS toDepartmentId,
+               td.name              AS toDepartmentName,
+               h.from_position_id   AS fromPositionId,
+               fp.name              AS fromPositionName,
+               h.to_position_id     AS toPositionId,
+               tp.name              AS toPositionName,
+               h.transfer_date      AS transferDate,
+               h.reason
+        FROM employee_transfer_history h
+        LEFT JOIN department fd ON fd.id = h.from_department_id AND fd.deleted = 0
+        LEFT JOIN department td ON td.id = h.to_department_id AND td.deleted = 0
+        LEFT JOIN position fp ON fp.id = h.from_position_id AND fp.deleted = 0
+        LEFT JOIN position tp ON tp.id = h.to_position_id AND tp.deleted = 0
+        WHERE h.employee_id = #{employeeId}
+        ORDER BY h.transfer_date DESC, h.id DESC
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">

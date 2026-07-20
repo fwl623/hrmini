@@ -31,7 +31,8 @@ public class InternalUserServiceImpl implements InternalUserService {
             RoleCode.EMPLOYEE.name(),
             RoleCode.DEPT_MANAGER.name(),
             RoleCode.HR_STAFF.name(),
-            RoleCode.FINANCE.name()
+            RoleCode.FINANCE.name(),
+            RoleCode.FINANCE_MANAGER.name()
     );
 
     private final SysUserMapper sysUserMapper;

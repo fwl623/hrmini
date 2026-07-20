@@ -12,6 +12,7 @@ import com.company.hrms.employee.service.EmployeeService;
 import com.company.hrms.employee.service.MobileChangeService;
 import com.company.hrms.employee.vo.LoginLogVO;
 import com.company.hrms.employee.vo.ProfileVO;
+import com.company.hrms.employee.vo.TransferHistoryVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -96,6 +97,12 @@ public class ProfileController {
     @GetMapping("/security/login-logs")
     public Result<List<LoginLogVO>> listLoginLogs() {
         return Result.success(employeeService.listLoginLogs(SecurityUtils.getUserId()));
+    }
+
+    /** GET /api/v1/profile/transfer-history — 本人调岗历史 */
+    @GetMapping("/transfer-history")
+    public Result<List<TransferHistoryVO>> listMyTransferHistory() {
+        return Result.success(employeeService.listTransferHistory(SecurityUtils.getEmployeeId()));
     }
 
     private static String extractBearer(jakarta.servlet.http.HttpServletRequest request) {

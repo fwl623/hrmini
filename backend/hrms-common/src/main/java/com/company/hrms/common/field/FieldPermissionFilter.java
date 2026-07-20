@@ -98,7 +98,9 @@ public class FieldPermissionFilter {
         if (user.hasRole(RoleCode.SYS_ADMIN.name())) {
             return false;
         }
-        if (user.hasRole(RoleCode.HR_STAFF.name()) || user.hasRole(RoleCode.FINANCE.name())) {
+        if (user.hasRole(RoleCode.HR_STAFF.name())
+                || user.hasRole(RoleCode.FINANCE.name())
+                || user.hasRole(RoleCode.FINANCE_MANAGER.name())) {
             return true;
         }
         if (user.hasRole(RoleCode.DEPT_MANAGER.name())) {

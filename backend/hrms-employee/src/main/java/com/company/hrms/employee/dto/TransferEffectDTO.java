@@ -2,6 +2,7 @@ package com.company.hrms.employee.dto;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -14,6 +15,8 @@ public class TransferEffectDTO {
     private Long newPositionId;
     private String newJobLevel;
     private Long newManagerId;
+    /** 调岗后基本工资（绝对值）；有值则同步更新薪资档案 */
+    private BigDecimal newBaseSalary;
     private LocalDate effectiveDate;
     private String reason;
 }

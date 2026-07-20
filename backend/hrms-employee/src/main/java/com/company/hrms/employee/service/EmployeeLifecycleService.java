@@ -21,9 +21,20 @@ public interface EmployeeLifecycleService {
     Long resolveDeptManagerUserId(Long employeeId);
 
     /**
+     * 按目标部门解析负责人 userId（调岗「新部门接收」节点）：
+     * 沿部门树找 head_employee，再回退 DEPT_MANAGER。
+     */
+    Long resolveDeptHeadUserIdByDeptId(Long departmentId);
+
+    /**
      * 解析 HR 审批人 userId：优先非 excludeUserId 的 HR_STAFF，否则任意 HR_STAFF。
      */
     Long resolveHrApproverUserId(Long excludeUserId);
+
+    /**
+     * 解析财务审批人 userId（调岗含调薪）：仅 FINANCE_MANAGER（财务经理），不含普通财务专员。
+     */
+    Long resolveFinanceApproverUserId(Long excludeUserId);
 
     /** 试用结束前 7 天内的待转正列表 */
     List<PendingRegularizationVO> listPendingRegularization(LocalDate from, LocalDate to);

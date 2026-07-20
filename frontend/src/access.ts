@@ -8,73 +8,80 @@ function roleIn(role: string | undefined, list: readonly RoleCode[]): boolean {
  * Umi access 权限（对齐 PRD §2.1 / §2.2）
  * 菜单门控 + PermissionButton；数据权限仍由后端 DataScope 保证
  *
- * FINANCE：仅薪资全量 + 本人档案（门户）；不可见组织/审批/考勤/花名册
+ * FINANCE（专员）：薪资全量 + 本人档案；无审批中心
+ * FINANCE_MANAGER（经理）：同上 + 审批中心（调岗调薪等待办）
  */
 export default function access(initialState: API.InitialState) {
   const { roleCode, permissions = [], roles = [] } = initialState?.currentUser ?? {};
   const has = (code: string) => permissions.includes(code);
-  /** 人事业务主角色（含管理员配置侧）；不含 FINANCE */
+  /** 人事业务主角色（含管理员配置侧）；不含财务 */
   const isHr = roleIn(roleCode, [ROLES.SYS_ADMIN, ROLES.HR_STAFF]);
-  /** 组织架构可读：HR/管理员/部门主管；财务按 PRD 不可见组织管理 */
+  /** 组织架构可读：HR/管理员/部门主管；财务不可见组织管理 */
   const isOrgReader = isHr || roleCode === ROLES.DEPT_MANAGER;
-  const isFinance = roleCode === ROLES.FINANCE;
+  const isFinanceFamily = roleIn(roleCode, [ROLES.FINANCE, ROLES.FINANCE_MANAGER]);
+  const isFinanceManager = roleCode === ROLES.FINANCE_MANAGER;
 
   return {
     canSysAdmin: roleCode === ROLES.SYS_ADMIN,
     canHr: isHr,
-    canFinance: isFinance,
+    canFinance: isFinanceFamily,
+    canFinanceManager: isFinanceManager,
     canManager: roleCode === ROLES.DEPT_MANAGER,
     canEmployee: roles.includes(ROLES.EMPLOYEE),
     canPortal: roles.includes(ROLES.EMPLOYEE),
     /** 管理端薪资全量（账套/核算等）；SYS_ADMIN 禁入 */
     canViewPayroll:
       roleCode !== ROLES.SYS_ADMIN &&
-      (has('payroll:view') || roleIn(roleCode, [ROLES.HR_STAFF, ROLES.FINANCE])),
-    /** 门户本人工资条（PRD：普通员工可看个人历史工资条/趋势；≠ 管理端薪资全量） */
+      (has('payroll:view') ||
+        roleIn(roleCode, [ROLES.HR_STAFF, ROLES.FINANCE, ROLES.FINANCE_MANAGER])),
+    /** 门户本人工资条 */
     canViewOwnPayslip:
       roleCode !== ROLES.SYS_ADMIN &&
       (roleCode === ROLES.EMPLOYEE ||
         roles.includes(ROLES.EMPLOYEE) ||
-        roleIn(roleCode, [ROLES.HR_STAFF, ROLES.FINANCE, ROLES.DEPT_MANAGER])),
+        roleIn(roleCode, [
+          ROLES.HR_STAFF,
+          ROLES.FINANCE,
+          ROLES.FINANCE_MANAGER,
+          ROLES.DEPT_MANAGER,
+        ])),
+    /** 审批中心：HR/主管/财务经理（专员不可进） */
     canApprove:
-      !isFinance &&
-      (has('approval:handle') ||
-        has('menu:workflow') ||
-        isHr ||
-        roleCode === ROLES.DEPT_MANAGER),
+      has('approval:handle') ||
+      has('menu:workflow') ||
+      isHr ||
+      isFinanceManager ||
+      roleCode === ROLES.DEPT_MANAGER,
     canImport: roleCode === ROLES.HR_STAFF,
-    canManageOrg: !isFinance && (has('menu:org') || isHr || has('org:dept:edit')),
-    /** 部门查看：与后端 OrgAccessGuard.requireDeptRead 对齐；FINANCE 硬关 */
+    canManageOrg: !isFinanceFamily && (has('menu:org') || isHr || has('org:dept:edit')),
     canViewDept:
-      !isFinance &&
+      !isFinanceFamily &&
       (has('org:dept:view') ||
         has('org:dept:edit') ||
         has('menu:org') ||
         isOrgReader),
-    canEditDept: !isFinance && (has('org:dept:edit') || isHr),
+    canEditDept: !isFinanceFamily && (has('org:dept:edit') || isHr),
     canViewPosition:
-      !isFinance &&
+      !isFinanceFamily &&
       (has('org:position:view') ||
         has('org:position:edit') ||
         has('menu:org') ||
         isOrgReader),
-    canEditPosition: !isFinance && (has('org:position:edit') || isHr),
+    canEditPosition: !isFinanceFamily && (has('org:position:edit') || isHr),
     canManageAttendance:
-      !isFinance &&
+      !isFinanceFamily &&
       (has('attendance:manage') || has('menu:attendance') || isHr),
     canManageWorkflow:
-      !isFinance &&
+      !isFinanceFamily &&
       (has('workflow:manage') ||
         has('menu:workflow') ||
         has('approval:handle') ||
         isHr ||
         roleCode === ROLES.DEPT_MANAGER),
-    /** 离职管理（发起正式离职）：仅 HR/管理员，部门主管只走审批中心 */
     canManageResignation: isHr,
-    /** 系统设置（用户/角色/日志）：仅 SYS_ADMIN；不因脏权限码 menu:system 放开给 HR */
     canManageSystem: roleCode === ROLES.SYS_ADMIN,
     canViewEmployee:
-      !isFinance &&
+      !isFinanceFamily &&
       (has('menu:employee') || isHr || roleCode === ROLES.DEPT_MANAGER),
     hasPermission: (code: string) => has(code),
   };

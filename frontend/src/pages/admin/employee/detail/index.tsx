@@ -11,11 +11,12 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useModel } from '@umijs/max';
-import { Alert, Card, Tabs, Descriptions, Tag, Button, Spin, Space, message, Typography } from 'antd';
-import { getEmployeeDetail } from '@/services/employee';
+import { Alert, Card, Tabs, Descriptions, Tag, Button, Spin, Space, message, Typography, Table } from 'antd';
+import { getEmployeeDetail, getTransferHistory, type TransferHistoryItem } from '@/services/employee';
 import SensitiveField from '@/components/SensitiveField';
 import type { EmployeeDetail } from '@/services/employee';
 import { ROLES } from '@/constants/roles';
+import type { ColumnsType } from 'antd/es/table';
 
 const STATUS_MAP: Record<string, { color: string; label: string }> = {
   probation: { color: 'blue', label: '试用期' },
@@ -46,18 +47,23 @@ const EmployeeDetailPage: React.FC = () => {
   const { initialState } = useModel('@@initialState');
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<TransferHistoryItem[]>([]);
 
   const roleCode = initialState?.currentUser?.roleCode;
   const canSeeContract = roleCode === ROLES.HR_STAFF;
-  const canSeeSalary = roleCode === ROLES.HR_STAFF || roleCode === ROLES.FINANCE;
+  const canSeeSalary =
+    roleCode === ROLES.HR_STAFF ||
+    roleCode === ROLES.FINANCE ||
+    roleCode === ROLES.FINANCE_MANAGER;
   const canSeeBank = roleCode === ROLES.HR_STAFF || roleCode === ROLES.SYS_ADMIN;
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    getEmployeeDetail(Number(id))
-      .then((res) => {
-        if (res.code === 0) setDetail(res.data);
+    Promise.all([getEmployeeDetail(Number(id)), getTransferHistory(Number(id))])
+      .then(([detailRes, histRes]) => {
+        if (detailRes.code === 0) setDetail(detailRes.data);
+        if (histRes.code === 0) setHistory(histRes.data ?? []);
       })
       .catch(() => message.error('加载失败'))
       .finally(() => setLoading(false));
@@ -195,6 +201,35 @@ const EmployeeDetailPage: React.FC = () => {
             </Descriptions.Item>
           </Descriptions>
         </>
+      ),
+    },
+    {
+      key: 'transfer',
+      label: '调岗历史',
+      children: (
+        <Table
+          rowKey="id"
+          size="small"
+          pagination={false}
+          locale={{ emptyText: '暂无调岗记录' }}
+          dataSource={history}
+          columns={
+            [
+              { title: '调岗日期', dataIndex: 'transferDate', width: 120 },
+              {
+                title: '部门',
+                render: (_: unknown, r: TransferHistoryItem) =>
+                  `${r.fromDepartmentName || '-'} → ${r.toDepartmentName || '-'}`,
+              },
+              {
+                title: '职位',
+                render: (_: unknown, r: TransferHistoryItem) =>
+                  `${r.fromPositionName || '-'} → ${r.toPositionName || '-'}`,
+              },
+              { title: '原因', dataIndex: 'reason', ellipsis: true },
+            ] as ColumnsType<TransferHistoryItem>
+          }
+        />
       ),
     },
   ];

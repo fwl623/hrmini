@@ -15,11 +15,13 @@ import com.company.hrms.workflow.entity.TransferApplication;
 import com.company.hrms.workflow.mapper.ApprovalInstanceMapper;
 import com.company.hrms.workflow.mapper.TransferApplicationMapper;
 import com.company.hrms.workflow.model.ProcessNodeDef;
-import com.company.hrms.workflow.support.AssigneeResolver;
 import com.company.hrms.workflow.support.CurrentUserProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -31,6 +33,7 @@ import java.util.stream.Collectors;
 @Service
 public class TransferService {
 
+    private static final Logger log = LoggerFactory.getLogger(TransferService.class);
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final TransferApplicationMapper mapper;
@@ -80,7 +83,6 @@ public class TransferService {
 
     @Transactional
     public LifecycleDtos.TransferVO create(LifecycleDtos.TransferCreateRequest req) {
-        // TC-TRF-004 / BUG-008：仅 HR/管理员可发起调岗，前端藏菜单不够
         requireHrOrAdmin();
         if (req == null || req.getEmployeeId() == null || req.getNewDepartmentId() == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "employeeId / newDepartmentId 必填");
@@ -100,6 +102,9 @@ public class TransferService {
         if (req.getReason() == null || req.getReason().isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "reason 必填");
         }
+        if (req.getSalaryAdjustment() != null && req.getSalaryAdjustment().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "调岗后基本工资须大于 0");
+        }
 
         Employee emp = employeeLifecycleService.requireEmployee(req.getEmployeeId());
         int st = emp.getEmploymentStatus() == null ? -1 : emp.getEmploymentStatus();
@@ -109,8 +114,16 @@ public class TransferService {
         if (req.getNewDepartmentId().equals(emp.getDepartmentId())) {
             throw new BusinessException(ErrorCode.TRANSFER_DEPT_UNCHANGED);
         }
+        if (req.getNewDepartmentId() <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "newDepartmentId 无效");
+        }
+        if (req.getNewPositionId() != null && req.getNewPositionId() <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "newPositionId 无效");
+        }
 
         long userId = currentUserProvider.requireUserId();
+        boolean withSalary = req.getSalaryAdjustment() != null;
+
         TransferApplication app = new TransferApplication();
         app.setEmployeeId(req.getEmployeeId());
         app.setStatus("APPROVING");
@@ -126,13 +139,14 @@ public class TransferService {
         app.setCreatedAt(LocalDateTime.now());
         mapper.insert(app);
 
+        List<ProcessNodeDef> nodes = buildTransferNodes(emp, req.getNewDepartmentId(), userId, withSalary);
         Long instanceId = dbApprovalService.createInstance(
                 "TRANSFER",
                 String.valueOf(app.getId()),
                 userId,
-                AssigneeResolver.transferNodes(),
+                nodes,
                 DbApprovalService.InstanceDisplay.of(
-                        emp.getName() + "调岗申请",
+                        emp.getName() + "调岗申请" + (withSalary ? "(含调薪)" : ""),
                         emp.getName(),
                         null,
                         "TR-" + app.getId()),
@@ -149,17 +163,50 @@ public class TransferService {
             return;
         }
         requireStatus(app.getStatus(), "APPROVING", "PENDING");
+        LocalDate effectiveDate = app.getEffectiveDate();
+        // 生效日未到：待生效，由 Job 到期执行
+        if (effectiveDate != null && effectiveDate.isAfter(LocalDate.now())) {
+            app.setStatus("PENDING_EFFECT");
+            mapper.updateById(app);
+            log.info("调岗审批通过，待生效日执行 appId={} effectiveDate={}", appId, effectiveDate);
+            return;
+        }
+        doEffect(app);
+    }
+
+    /** Job / 联调：将到期待生效调岗单生效 */
+    @Transactional
+    public int effectDueTransfers(LocalDate today) {
+        List<TransferApplication> due = mapper.selectList(new LambdaQueryWrapper<TransferApplication>()
+                .eq(TransferApplication::getStatus, "PENDING_EFFECT")
+                .le(TransferApplication::getEffectiveDate, today));
+        int count = 0;
+        for (TransferApplication app : due) {
+            try {
+                doEffect(app);
+                count++;
+            } catch (Exception e) {
+                log.warn("调岗生效失败 appId={} employeeId={}: {}",
+                        app.getId(), app.getEmployeeId(), e.getMessage());
+            }
+        }
+        return count;
+    }
+
+    private void doEffect(TransferApplication app) {
         TransferEffectDTO dto = new TransferEffectDTO();
         dto.setTransferAppId(app.getId());
         dto.setNewDepartmentId(app.getNewDepartmentId());
         dto.setNewPositionId(app.getNewPositionId());
         dto.setNewJobLevel(app.getNewJobLevel());
         dto.setNewManagerId(app.getNewManagerId());
+        dto.setNewBaseSalary(app.getSalaryAdjustment());
         dto.setEffectiveDate(app.getEffectiveDate());
         dto.setReason(app.getReason());
         employeeLifecycleService.applyTransfer(app.getEmployeeId(), dto);
         app.setStatus("APPROVED");
         mapper.updateById(app);
+        log.info("调岗已生效 appId={} employeeId={}", app.getId(), app.getEmployeeId());
     }
 
     @Transactional
@@ -171,6 +218,37 @@ public class TransferService {
         requireStatus(app.getStatus(), "APPROVING", "PENDING");
         app.setStatus(withdrawn ? "CANCELLED" : "REJECTED");
         mapper.updateById(app);
+    }
+
+    /**
+     * PRD §5.3.3：原部门负责人 → 新部门负责人 →（有调薪时）财务 → HR 备案。
+     * 写入真实 assigneeUserId。
+     */
+    private List<ProcessNodeDef> buildTransferNodes(Employee emp, Long newDeptId,
+                                                    long initiatorUserId, boolean withSalary) {
+        Long fromMgr = employeeLifecycleService.resolveDeptManagerUserId(emp.getId());
+        Long toMgr = employeeLifecycleService.resolveDeptHeadUserIdByDeptId(newDeptId);
+        Long hrUserId = employeeLifecycleService.resolveHrApproverUserId(initiatorUserId);
+
+        List<ProcessNodeDef> nodes = new ArrayList<>();
+        nodes.add(node(1, "原部门确认", "DEPT_MANAGER", fromMgr));
+        nodes.add(node(2, "新部门接收", "NEW_DEPT_MANAGER", toMgr));
+        int order = 3;
+        if (withSalary) {
+            Long financeId = employeeLifecycleService.resolveFinanceApproverUserId(initiatorUserId);
+            nodes.add(node(order++, "财务调薪确认", "FINANCE_MANAGER", financeId));
+        }
+        nodes.add(node(order, "HR 备案", "HR_STAFF", hrUserId));
+        return nodes;
+    }
+
+    private static ProcessNodeDef node(int order, String label, String type, Long assigneeUserId) {
+        ProcessNodeDef n = new ProcessNodeDef();
+        n.setOrder(order);
+        n.setLabel(label);
+        n.setAssigneeType(type);
+        n.setAssigneeUserId(assigneeUserId);
+        return n;
     }
 
     private static void requireStatus(String current, String... allowed) {
@@ -207,7 +285,7 @@ public class TransferService {
         vo.setCreatedAt(app.getCreatedAt() == null ? null : DT.format(app.getCreatedAt()));
 
         if (withNodes) {
-            List<ProcessNodeDef> defs = AssigneeResolver.transferNodes();
+            List<ProcessNodeDef> defs = resolveProgressNodes(app);
             int current = 1;
             String instStatus = "PENDING";
             if (app.getInstanceId() != null) {
@@ -222,7 +300,9 @@ public class TransferService {
                 LifecycleDtos.NodeProgressVO n = new LifecycleDtos.NodeProgressVO();
                 n.setOrder(d.getOrder());
                 n.setLabel(d.getLabel());
-                if ("APPROVED".equalsIgnoreCase(instStatus) || "APPROVED".equalsIgnoreCase(app.getStatus())) {
+                if ("APPROVED".equalsIgnoreCase(instStatus)
+                        || "APPROVED".equalsIgnoreCase(app.getStatus())
+                        || "PENDING_EFFECT".equalsIgnoreCase(app.getStatus())) {
                     n.setStatus("finish");
                 } else if ("REJECTED".equalsIgnoreCase(instStatus) || "REJECTED".equalsIgnoreCase(app.getStatus())) {
                     n.setStatus(d.getOrder() < current ? "finish" : (d.getOrder() == current ? "error" : "wait"));
@@ -246,7 +326,19 @@ public class TransferService {
         return vo;
     }
 
-    /** PRD / TC-TRF-004：仅 HR / 系统管理员可发起与查看调岗管理接口 */
+    private List<ProcessNodeDef> resolveProgressNodes(TransferApplication app) {
+        boolean withSalary = app.getSalaryAdjustment() != null;
+        List<ProcessNodeDef> defs = new ArrayList<>();
+        defs.add(node(1, "原部门确认", "DEPT_MANAGER", null));
+        defs.add(node(2, "新部门接收", "NEW_DEPT_MANAGER", null));
+        int order = 3;
+        if (withSalary) {
+            defs.add(node(order++, "财务调薪确认", "FINANCE_MANAGER", null));
+        }
+        defs.add(node(order, "HR 备案", "HR_STAFF", null));
+        return defs;
+    }
+
     private void requireHrOrAdmin() {
         LoginUser login = SecurityUtils.getLoginUser();
         if (login == null

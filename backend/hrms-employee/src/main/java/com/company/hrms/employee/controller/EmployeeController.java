@@ -7,9 +7,7 @@ import com.company.hrms.employee.dto.EmployeePageQuery;
 import com.company.hrms.employee.dto.EmployeeUpdateDTO;
 import com.company.hrms.employee.dto.SalaryProfileUpdateDTO;
 import com.company.hrms.employee.entity.EmployeeMobileChangeApplication;
-import com.company.hrms.employee.entity.EmployeeTransferHistory;
 import com.company.hrms.employee.mapper.EmployeeMobileChangeApplicationMapper;
-import com.company.hrms.employee.mapper.EmployeeTransferHistoryMapper;
 import com.company.hrms.employee.service.EmployeeService;
 import com.company.hrms.employee.service.MobileChangeService;
 import com.company.hrms.employee.service.SalaryService;
@@ -18,6 +16,7 @@ import com.company.hrms.employee.vo.EmployeeDetailVO;
 import com.company.hrms.employee.vo.EmployeeListVO;
 import com.company.hrms.employee.vo.SalaryProfileVO;
 import com.company.hrms.employee.vo.SensitiveFieldVO;
+import com.company.hrms.employee.vo.TransferHistoryVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -39,7 +38,6 @@ public class EmployeeController {
     private final SensitiveFieldService sensitiveFieldService;
     private final SalaryService salaryService;
     private final MobileChangeService mobileChangeService;
-    private final EmployeeTransferHistoryMapper transferHistoryMapper;
     private final EmployeeMobileChangeApplicationMapper mobileChangeMapper;
 
     @GetMapping
@@ -83,8 +81,8 @@ public class EmployeeController {
     }
 
     @GetMapping("/{id}/transfer-history")
-    public Result<List<EmployeeTransferHistory>> getTransferHistory(@PathVariable Long id) {
-        return Result.success(transferHistoryMapper.selectByEmployeeId(id));
+    public Result<List<TransferHistoryVO>> getTransferHistory(@PathVariable Long id) {
+        return Result.success(employeeService.listTransferHistory(id));
     }
 
     // ==================== 手机号变更 HR 待办 ====================

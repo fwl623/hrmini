@@ -5,7 +5,10 @@ export const ROLES = {
   SYS_ADMIN: 'SYS_ADMIN',
   HR_STAFF: 'HR_STAFF',
   DEPT_MANAGER: 'DEPT_MANAGER',
+  /** 财务专员：薪资域，无审批中心 */
   FINANCE: 'FINANCE',
+  /** 财务经理：薪资域 + 财务审批（调岗调薪等） */
+  FINANCE_MANAGER: 'FINANCE_MANAGER',
   EMPLOYEE: 'EMPLOYEE',
 } as const;
 
@@ -16,12 +19,14 @@ export const ADMIN_ROLES: RoleCode[] = [
   ROLES.HR_STAFF,
   ROLES.DEPT_MANAGER,
   ROLES.FINANCE,
+  ROLES.FINANCE_MANAGER,
 ];
 
 /** 多角色时取主角色（优先级高的在前） */
 export const ROLE_PRIORITY: RoleCode[] = [
   ROLES.SYS_ADMIN,
   ROLES.HR_STAFF,
+  ROLES.FINANCE_MANAGER,
   ROLES.FINANCE,
   ROLES.DEPT_MANAGER,
   ROLES.EMPLOYEE,

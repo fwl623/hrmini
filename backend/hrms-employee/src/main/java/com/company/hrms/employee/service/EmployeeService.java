@@ -40,4 +40,7 @@ public interface EmployeeService {
     void bindMobile(Long employeeId, Long userId, MobileBindDTO dto);
 
     List<LoginLogVO> listLoginLogs(Long userId);
+
+    /** 调岗历史（含部门/职位名称） */
+    List<TransferHistoryVO> listTransferHistory(Long employeeId);
 }

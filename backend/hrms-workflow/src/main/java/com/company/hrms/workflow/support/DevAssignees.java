@@ -12,6 +12,8 @@ public final class DevAssignees {
     public static final long NEW_DEPT_MANAGER = 1002L;
     /** HR 备案 / HR 审批 */
     public static final long HR_STAFF = 1003L;
+    /** 财务调薪确认（含调薪的调岗） */
+    public static final long FINANCE = 1008L;
 
     private DevAssignees() {
     }

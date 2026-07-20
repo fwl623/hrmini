@@ -118,8 +118,29 @@ export async function getSensitiveField(id: number, field: string): Promise<Resu
 }
 
 /** 调岗历史 */
-export async function getTransferHistory(id: number): Promise<Result<any[]>> {
+export interface TransferHistoryItem {
+  id: number;
+  employeeId: number;
+  transferAppId?: number;
+  fromDepartmentId?: number;
+  fromDepartmentName?: string;
+  toDepartmentId?: number;
+  toDepartmentName?: string;
+  fromPositionId?: number;
+  fromPositionName?: string;
+  toPositionId?: number;
+  toPositionName?: string;
+  transferDate?: string;
+  reason?: string;
+}
+
+export async function getTransferHistory(id: number): Promise<Result<TransferHistoryItem[]>> {
   return request(`/api/v1/employees/${id}/transfer-history`, { method: 'GET' });
+}
+
+/** 门户：本人调岗历史 */
+export async function getMyTransferHistory(): Promise<Result<TransferHistoryItem[]>> {
+  return request('/api/v1/profile/transfer-history', { method: 'GET' });
 }
 
 /** HR手机号变更待办 */

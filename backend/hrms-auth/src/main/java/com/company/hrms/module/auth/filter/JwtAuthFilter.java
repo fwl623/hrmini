@@ -199,7 +199,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (user.hasRole(RoleCode.SYS_ADMIN.name())) {
                 return false;
             }
-            return user.hasRole(RoleCode.HR_STAFF.name()) || user.hasRole(RoleCode.FINANCE.name());
+            return user.hasRole(RoleCode.HR_STAFF.name())
+                    || user.hasRole(RoleCode.FINANCE.name())
+                    || user.hasRole(RoleCode.FINANCE_MANAGER.name());
         }
         if (matchesAny(path, PAYSLIP_SELF_PATHS)) {
             // 本人工资条：SYS_ADMIN 不可见；其它角色（含 EMPLOYEE / DEPT_MANAGER）可进门户路径

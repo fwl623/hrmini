@@ -5,8 +5,12 @@ import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.employee.dto.TransferEffectDTO;
 import com.company.hrms.employee.entity.Employee;
+import com.company.hrms.employee.entity.EmployeeSalaryHistory;
+import com.company.hrms.employee.entity.EmployeeSalaryProfile;
 import com.company.hrms.employee.entity.EmployeeTransferHistory;
 import com.company.hrms.employee.mapper.EmployeeMapper;
+import com.company.hrms.employee.mapper.EmployeeSalaryHistoryMapper;
+import com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper;
 import com.company.hrms.employee.mapper.EmployeeTransferHistoryMapper;
 import com.company.hrms.employee.service.EmployeeLifecycleService;
 import com.company.hrms.employee.vo.PendingRegularizationVO;
@@ -22,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -41,6 +46,8 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
 
     private final EmployeeMapper employeeMapper;
     private final EmployeeTransferHistoryMapper transferHistoryMapper;
+    private final EmployeeSalaryProfileMapper salaryProfileMapper;
+    private final EmployeeSalaryHistoryMapper salaryHistoryMapper;
     private final InternalUserService internalUserService;
     private final EmployeeIdGenerator employeeIdGenerator;
     private final ApplicationEventPublisher eventPublisher;
@@ -111,6 +118,50 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         return hrs.get(0);
     }
 
+    @Override
+    public Long resolveDeptHeadUserIdByDeptId(Long departmentId) {
+        if (departmentId == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "部门 ID 不能为空");
+        }
+        Long deptId = departmentId;
+        Set<Long> visited = new HashSet<>();
+        while (deptId != null && visited.add(deptId)) {
+            Department dept = departmentMapper.selectById(deptId);
+            if (dept == null || (dept.getDeleted() != null && dept.getDeleted() == 1)) {
+                break;
+            }
+            Long headEmpId = dept.getHeadEmployeeId();
+            if (headEmpId != null) {
+                Long userId = userIdOfEmployee(headEmpId);
+                if (userId != null) {
+                    return userId;
+                }
+            }
+            deptId = dept.getParentId();
+        }
+        List<Long> managers = sysUserMapper.selectUserIdsByRoleCode("DEPT_MANAGER");
+        if (managers != null && !managers.isEmpty() && managers.get(0) != null) {
+            return managers.get(0);
+        }
+        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                "无法解析新部门负责人审批人，请为部门设置负责人");
+    }
+
+    @Override
+    public Long resolveFinanceApproverUserId(Long excludeUserId) {
+        List<Long> finance = sysUserMapper.selectUserIdsByRoleCode("FINANCE_MANAGER");
+        if (finance == null || finance.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID,
+                    "系统中无 FINANCE_MANAGER（财务经理）用户，含调薪的调岗无法派发财务审批");
+        }
+        for (Long uid : finance) {
+            if (uid != null && !Objects.equals(uid, excludeUserId)) {
+                return uid;
+            }
+        }
+        return finance.get(0);
+    }
+
     private Long userIdOfEmployee(Long employeeId) {
         if (employeeId == null) {
             return null;
@@ -169,11 +220,14 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         if (status != STATUS_PROBATION && status != STATUS_REGULAR) {
             throw new BusinessException(ErrorCode.EMPLOYEE_STATUS_INVALID, "仅试用/正式员工可调岗");
         }
-        if (dto.getNewDepartmentId() == null) {
+        if (dto.getNewDepartmentId() == null || dto.getNewDepartmentId() <= 0) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "新部门不能为空");
         }
         if (dto.getNewDepartmentId().equals(emp.getDepartmentId())) {
             throw new BusinessException(ErrorCode.TRANSFER_DEPT_UNCHANGED);
+        }
+        if (dto.getNewPositionId() != null && dto.getNewPositionId() <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "新职位 ID 无效");
         }
 
         EmployeeTransferHistory history = new EmployeeTransferHistory();
@@ -200,7 +254,40 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
             patch.setManagerId(dto.getNewManagerId());
         }
         employeeMapper.updateById(patch);
+
+        if (dto.getNewBaseSalary() != null) {
+            applyTransferSalary(employeeId, dto.getNewBaseSalary(), dto.getEffectiveDate());
+        }
         log.info("员工调岗生效 employeeId={} toDept={}", employeeId, dto.getNewDepartmentId());
+    }
+
+    private void applyTransferSalary(Long employeeId, BigDecimal newBaseSalary, LocalDate effectiveDate) {
+        if (newBaseSalary.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "调岗后基本工资须大于 0");
+        }
+        EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(employeeId);
+        if (profile == null) {
+            throw new BusinessException(ErrorCode.SALARY_PROFILE_MISSING, "员工无薪资档案，无法调岗调薪");
+        }
+        if (newBaseSalary.equals(profile.getBaseSalary())) {
+            return;
+        }
+        EmployeeSalaryHistory history = new EmployeeSalaryHistory();
+        history.setEmployeeId(employeeId);
+        history.setFieldName("baseSalary");
+        history.setOldValue(profile.getBaseSalary());
+        history.setNewValue(newBaseSalary);
+        history.setEffectiveDate(effectiveDate != null ? effectiveDate : LocalDate.now());
+        history.setReason("调岗调薪");
+        try {
+            history.setOperatorId(com.company.hrms.common.security.SecurityUtils.getUserId());
+        } catch (Exception ignored) {
+            history.setOperatorId(null);
+        }
+        salaryHistoryMapper.insert(history);
+        profile.setBaseSalary(newBaseSalary);
+        salaryProfileMapper.updateById(profile);
+        log.info("调岗调薪生效 employeeId={} newBase={}", employeeId, newBaseSalary);
     }
 
     @Override

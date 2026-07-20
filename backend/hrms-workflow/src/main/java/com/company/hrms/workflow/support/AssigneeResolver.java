@@ -27,7 +27,8 @@ public interface AssigneeResolver {
             String type = node == null || node.getAssigneeType() == null ? "" : node.getAssigneeType();
             return switch (type) {
                 case "NEW_DEPT_MANAGER" -> DevAssignees.NEW_DEPT_MANAGER;
-                case "ROLE", "HR_STAFF", "FINANCE" -> DevAssignees.HR_STAFF;
+                case "FINANCE", "FINANCE_MANAGER" -> DevAssignees.FINANCE;
+                case "ROLE", "HR_STAFF" -> DevAssignees.HR_STAFF;
                 case "SUPERVISOR", "DEPT_MANAGER" -> DevAssignees.DEPT_MANAGER;
                 default -> DevAssignees.DEPT_MANAGER;
             };
