@@ -5,9 +5,11 @@ import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.employee.dto.TransferEffectDTO;
 import com.company.hrms.employee.entity.Employee;
+import com.company.hrms.employee.entity.EmployeeContract;
 import com.company.hrms.employee.entity.EmployeeSalaryHistory;
 import com.company.hrms.employee.entity.EmployeeSalaryProfile;
 import com.company.hrms.employee.entity.EmployeeTransferHistory;
+import com.company.hrms.employee.mapper.EmployeeContractMapper;
 import com.company.hrms.employee.mapper.EmployeeMapper;
 import com.company.hrms.employee.mapper.EmployeeSalaryHistoryMapper;
 import com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper;
@@ -44,10 +46,13 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
     private static final int STATUS_PENDING_RESIGN = 30;
     private static final int STATUS_RESIGNED = 40;
 
+    private static final long DEFAULT_SCHEME_ID = 1L;
+
     private final EmployeeMapper employeeMapper;
     private final EmployeeTransferHistoryMapper transferHistoryMapper;
     private final EmployeeSalaryProfileMapper salaryProfileMapper;
     private final EmployeeSalaryHistoryMapper salaryHistoryMapper;
+    private final EmployeeContractMapper employeeContractMapper;
     private final InternalUserService internalUserService;
     private final EmployeeIdGenerator employeeIdGenerator;
     private final ApplicationEventPublisher eventPublisher;
@@ -66,18 +71,18 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
     @Override
     public Long resolveDeptManagerUserId(Long employeeId) {
         Employee emp = requireEmployee(employeeId);
-        // 1) 直属上级
-        Long fromManager = userIdOfEmployee(emp.getManagerId());
-        if (fromManager != null) {
-            return fromManager;
-        }
-        // 2) 沿部门树找负责人（跳过本人）
+        // 1) 沿部门树找负责人（跳过本人）
         Long userId = resolveDeptManagerUserIdByDepartment(emp.getDepartmentId(), emp.getId(), emp.getUserId());
         if (userId != null) {
             return userId;
         }
+        // 2) 直属上级兜底
+        Long fromManager = userIdOfEmployee(emp.getManagerId());
+        if (fromManager != null) {
+            return fromManager;
+        }
         throw new BusinessException(ErrorCode.PARAM_INVALID,
-                "无法解析部门负责人审批人，请为员工设置直属上级或部门负责人");
+                "无法解析部门负责人审批人，请为部门设置负责人或为员工设置直属上级");
     }
 
     @Override
@@ -238,12 +243,8 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         if (employeeId == null || newBaseSalary == null) {
             return;
         }
-        requireEmployee(employeeId);
-        EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(employeeId);
-        if (profile == null) {
-            log.warn("转正调薪跳过：无薪资档案 employeeId={} newBase={}", employeeId, newBaseSalary);
-            return;
-        }
+        Employee emp = requireEmployee(employeeId);
+        EmployeeSalaryProfile profile = ensureSalaryProfile(emp);
         BigDecimal old = profile.getBaseSalary();
         if (old != null && old.compareTo(newBaseSalary) == 0) {
             return;
@@ -335,10 +336,8 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         if (newBaseSalary.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "调岗后基本工资须大于 0");
         }
-        EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(employeeId);
-        if (profile == null) {
-            throw new BusinessException(ErrorCode.SALARY_PROFILE_MISSING, "员工无薪资档案，无法调岗调薪");
-        }
+        Employee emp = requireEmployee(employeeId);
+        EmployeeSalaryProfile profile = ensureSalaryProfile(emp);
         if (newBaseSalary.equals(profile.getBaseSalary())) {
             return;
         }
@@ -394,10 +393,11 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
     @Transactional
     public void effectResign(Long employeeId) {
         Employee emp = requireEmployee(employeeId);
-        // 已离职：仍确保账号禁用（避免只改了员工状态、账号仍可登录）
+        // 已离职：仍确保账号禁用；若工号未腾出则补腾出（兼容历史数据）
         if (emp.getEmploymentStatus() != null && emp.getEmploymentStatus() == STATUS_RESIGNED) {
             ensureUserDisabled(emp);
-            log.info("员工已是离职状态，补齐账号禁用后跳过 employeeId={}", employeeId);
+            vacateIfReusableHeld(emp);
+            log.info("员工已是离职状态，补齐账号禁用/工号腾出后跳过 employeeId={}", employeeId);
             return;
         }
         if (emp.getEmploymentStatus() == null || emp.getEmploymentStatus() != STATUS_PENDING_RESIGN) {
@@ -414,10 +414,20 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
 
         ensureUserDisabled(emp);
         if (StringUtils.hasText(emp.getEmployeeNo())) {
+            String originalNo = emp.getEmployeeNo().trim();
             try {
-                employeeIdGenerator.release(emp.getEmployeeNo());
+                employeeIdGenerator.release(originalNo);
             } catch (Exception e) {
-                log.warn("离职释放工号失败 employeeId={} empNo={}: {}", employeeId, emp.getEmployeeNo(), e.getMessage());
+                log.warn("离职释放工号失败 employeeId={} empNo={}: {}", employeeId, originalNo, e.getMessage());
+            }
+            // employee.uk_employee_no 全表唯一：腾出原工号，离职档案改占位号（history 仍保留原号供复用）
+            String vacatedNo = vacateEmployeeNo(originalNo, employeeId);
+            if (!vacatedNo.equals(originalNo)) {
+                Employee noPatch = new Employee();
+                noPatch.setId(employeeId);
+                noPatch.setEmployeeNo(vacatedNo);
+                employeeMapper.updateById(noPatch);
+                log.info("离职腾出工号 employeeId={} {} -> {}", employeeId, originalNo, vacatedNo);
             }
         }
 
@@ -433,6 +443,37 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
                 employeeId, emp.getUserId(), emp.getEmployeeNo(), lastWorkDay);
     }
 
+    /**
+     * 确保存在薪资档案：优先查库；缺失时按合同（或员工试用比例）补建，兼容历史入职未建档数据。
+     */
+    private EmployeeSalaryProfile ensureSalaryProfile(Employee emp) {
+        EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(emp.getId());
+        if (profile != null) {
+            return profile;
+        }
+        EmployeeContract contract = employeeContractMapper.selectByEmployeeId(emp.getId());
+        BigDecimal base = contract != null && contract.getBaseSalary() != null
+                ? contract.getBaseSalary() : BigDecimal.ZERO;
+        Long schemeId = contract != null && contract.getSchemeId() != null
+                ? contract.getSchemeId() : DEFAULT_SCHEME_ID;
+        BigDecimal probationRatio = contract != null && contract.getProbationSalaryRatio() != null
+                ? contract.getProbationSalaryRatio()
+                : (emp.getProbationPayRatio() != null ? emp.getProbationPayRatio() : BigDecimal.ONE);
+
+        profile = new EmployeeSalaryProfile();
+        profile.setEmployeeId(emp.getId());
+        profile.setSchemeId(schemeId);
+        profile.setBaseSalary(base);
+        profile.setSsBase(base);
+        profile.setHfBase(base);
+        profile.setPerformanceBase(BigDecimal.ZERO);
+        profile.setProbationRatio(probationRatio);
+        profile.setEffectiveDate(emp.getHireDate() != null ? emp.getHireDate() : LocalDate.now());
+        salaryProfileMapper.insert(profile);
+        log.info("补建薪资档案 employeeId={} baseSalary={} schemeId={}", emp.getId(), base, schemeId);
+        return profile;
+    }
+
     private void ensureUserDisabled(Employee emp) {
         if (emp.getUserId() == null) {
             log.warn("离职员工未绑定账号，无法禁用登录 employeeId={}", emp.getId());
@@ -443,6 +484,44 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         } catch (Exception e) {
             log.warn("离职禁用账号失败 employeeId={} userId={}: {}", emp.getId(), emp.getUserId(), e.getMessage());
         }
+    }
+
+    /**
+     * 兼容历史：已离职但仍占标准工号时补腾出，并确保 history 可复用。
+     */
+    private void vacateIfReusableHeld(Employee emp) {
+        if (emp == null || emp.getId() == null || !StringUtils.hasText(emp.getEmployeeNo())) {
+            return;
+        }
+        String originalNo = emp.getEmployeeNo().trim();
+        // 已是占位号则跳过（含 R{id}）
+        if (!originalNo.matches("^[0-9A-Za-z]{9}$")) {
+            return;
+        }
+        try {
+            employeeIdGenerator.release(originalNo);
+        } catch (Exception e) {
+            log.warn("补释放工号失败 employeeId={} empNo={}: {}", emp.getId(), originalNo, e.getMessage());
+        }
+        String vacatedNo = vacateEmployeeNo(originalNo, emp.getId());
+        Employee noPatch = new Employee();
+        noPatch.setId(emp.getId());
+        noPatch.setEmployeeNo(vacatedNo);
+        employeeMapper.updateById(noPatch);
+        log.info("已离职补腾出工号 employeeId={} {} -> {}", emp.getId(), originalNo, vacatedNo);
+    }
+
+    /**
+     * 腾出 uk_employee_no：占位号须唯一且长度 ≤16（表字段限制）。
+     * 优先保留原工号痕迹：{原工号}R{id}；超长则退化为 R{id}。
+     */
+    private static String vacateEmployeeNo(String originalNo, Long employeeId) {
+        String candidate = originalNo + "R" + employeeId;
+        if (candidate.length() <= 16) {
+            return candidate;
+        }
+        String shortId = "R" + employeeId;
+        return shortId.length() <= 16 ? shortId : String.valueOf(employeeId);
     }
 
     private PendingRegularizationVO toPendingVo(Employee emp, LocalDate today) {

@@ -15,7 +15,7 @@ public interface EmployeeLifecycleService {
     Employee requireEmployee(Long employeeId);
 
     /**
-     * 解析部门负责人审批人 userId：优先员工直属上级，其次沿部门树找 head_employee，
+     * 解析部门负责人审批人 userId：优先沿部门树找 head_employee，其次员工直属上级，
      * 再回退任意 DEPT_MANAGER 角色用户。
      */
     Long resolveDeptManagerUserId(Long employeeId);

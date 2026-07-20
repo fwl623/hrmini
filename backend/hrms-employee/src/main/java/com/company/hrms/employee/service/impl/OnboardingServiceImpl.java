@@ -6,9 +6,11 @@ import com.company.hrms.employee.dto.OnboardingArchiveCommand;
 import com.company.hrms.employee.entity.Employee;
 import com.company.hrms.employee.entity.EmployeeContract;
 import com.company.hrms.employee.entity.EmployeePersonal;
+import com.company.hrms.employee.entity.EmployeeSalaryProfile;
 import com.company.hrms.employee.mapper.EmployeeContractMapper;
 import com.company.hrms.employee.mapper.EmployeeMapper;
 import com.company.hrms.employee.mapper.EmployeePersonalMapper;
+import com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper;
 import com.company.hrms.employee.service.OnboardingService;
 import com.company.hrms.module.auth.dto.InternalCreateUserRequest;
 import com.company.hrms.module.auth.service.InternalUserService;
@@ -40,6 +42,7 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final EmployeeMapper employeeMapper;
     private final EmployeePersonalMapper employeePersonalMapper;
     private final EmployeeContractMapper employeeContractMapper;
+    private final EmployeeSalaryProfileMapper salaryProfileMapper;
     private final InternalUserService internalUserService;
     private final EmployeeIdGenerator employeeIdGenerator;
     private final DepartmentMapper departmentMapper;
@@ -106,10 +109,23 @@ public class OnboardingServiceImpl implements OnboardingService {
         contract.setContractExpireDate(hireDate.plusYears(3));
         contract.setProbationSalaryRatio(emp.getProbationPayRatio());
         contract.setSchemeId(DEFAULT_SCHEME_ID);
-        contract.setBaseSalary(cmd.getBaseSalary() != null ? cmd.getBaseSalary() : BigDecimal.ZERO);
+        BigDecimal baseSalary = cmd.getBaseSalary() != null ? cmd.getBaseSalary() : BigDecimal.ZERO;
+        contract.setBaseSalary(baseSalary);
         contract.setCreatedAt(LocalDateTime.now());
         contract.setUpdatedAt(LocalDateTime.now());
         employeeContractMapper.insert(contract);
+
+        // 与合同同步建薪资档案（调岗调薪/算薪依赖 employee_salary_profile）
+        EmployeeSalaryProfile salaryProfile = new EmployeeSalaryProfile();
+        salaryProfile.setEmployeeId(employeeId);
+        salaryProfile.setSchemeId(DEFAULT_SCHEME_ID);
+        salaryProfile.setBaseSalary(baseSalary);
+        salaryProfile.setSsBase(baseSalary);
+        salaryProfile.setHfBase(baseSalary);
+        salaryProfile.setPerformanceBase(BigDecimal.ZERO);
+        salaryProfile.setProbationRatio(emp.getProbationPayRatio());
+        salaryProfile.setEffectiveDate(hireDate);
+        salaryProfileMapper.insert(salaryProfile);
 
         InternalCreateUserRequest userReq = new InternalCreateUserRequest();
         userReq.setUsername(cmd.getMobile());
