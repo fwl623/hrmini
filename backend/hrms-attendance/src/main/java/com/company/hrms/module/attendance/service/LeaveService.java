@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -170,8 +171,10 @@ public class LeaveService {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "请假天数不能为空");
         }
 
-        LocalDateTime startTime = LocalDateTime.parse(dto.getStartTime(), DateTimeFormatter.ISO_DATE_TIME);
-        LocalDateTime endTime = LocalDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME);
+        LocalDateTime startTime = OffsetDateTime.parse(dto.getStartTime(), DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
+        LocalDateTime endTime = OffsetDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
 
         // 重新计算实际请假天数（排除周末和节假日），不信任前端传值
         BigDecimal days = recalcLeaveDays(startTime, endTime);
@@ -337,8 +340,10 @@ public class LeaveService {
      * 排除周末和法定节假日，支持 0.5 天
      */
     public CalcDaysVO calcDays(String startTimeStr, String endTimeStr) {
-        LocalDateTime start = LocalDateTime.parse(startTimeStr, DateTimeFormatter.ISO_DATE_TIME);
-        LocalDateTime end = LocalDateTime.parse(endTimeStr, DateTimeFormatter.ISO_DATE_TIME);
+        LocalDateTime start = OffsetDateTime.parse(startTimeStr, DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
+        LocalDateTime end = OffsetDateTime.parse(endTimeStr, DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
         BigDecimal days = recalcLeaveDays(start, end);
         return new CalcDaysVO(days);
     }
