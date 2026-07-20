@@ -72,6 +72,9 @@ public class LeaveController {
     @PostMapping("/leaves/applications")
     public Result<Map<String, Object>> submit(@RequestBody LeaveApplicationDTO dto) {
         Long employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
+        if (employeeId == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");
+        }
         LeaveApplication app = leaveService.submit(employeeId, dto);
         return Result.success(Map.of("id", app.getId(), "status", app.getStatus()));
     }

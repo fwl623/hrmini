@@ -1,5 +1,7 @@
 package com.company.hrms.module.attendance.controller;
 
+import com.company.hrms.common.exception.BusinessException;
+import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.Result;
@@ -41,6 +43,9 @@ public class MonthlySummaryController {
     @PutMapping("/monthly-summary")
     public Result<Void> updateLock(@RequestBody MonthlySummaryLockDTO dto) {
         Long operatorId = SecurityUtils.getCurrentUser().getEmployeeId();
+        if (operatorId == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "当前账号未绑定员工");
+        }
         summaryService.updateLock(dto.getPeriod(), dto.getLocked(), operatorId);
         return Result.success();
     }

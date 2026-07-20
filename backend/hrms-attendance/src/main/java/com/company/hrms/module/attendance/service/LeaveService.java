@@ -200,13 +200,14 @@ public class LeaveService {
         CreateApprovalRequest req = new CreateApprovalRequest();
         req.setProcessType("LEAVE");
         req.setBusinessId(app.getId());
-        req.setApplicantId(employeeId);
+        req.setApplicantId(SecurityUtils.getCurrentUser().getUserId());
         req.setTitle("请假申请#" + app.getId());
         req.setBusinessSummary(app.getLeaveType() + " " + days + "天");
         req.setBusinessNo("LEAVE-" + app.getId());
         Map<String, Object> form = new HashMap<>();
         form.put("leaveType", app.getLeaveType());
         form.put("days", days);
+        form.put("employeeId", employeeId);
         req.setFormData(form);
         CreateApprovalResult result = approvalEngineService.createInstance(req);
         app.setInstanceId(result.getInstanceId());
