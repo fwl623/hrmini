@@ -81,7 +81,59 @@ public class ApprovalEventListener {
         if ("APPROVED".equals(result)) {
             app.setStatus("APPROVED");
             leaveApplicationMapper.updateById(app);
-            log.info("请假已通过: id={}", applicationId);
+
+            // 更新考勤日汇总：请假期间每天记为 LEAVE
+            Long empId = app.getEmployeeId();
+            java.time.LocalDate startDate = app.getStartTime().toLocalDate();
+            java.time.LocalDate endDate = app.getEndTime().toLocalDate();
+            java.math.BigDecimal leaveDays = app.getLeaveDays() != null ? app.getLeaveDays() : java.math.BigDecimal.ZERO;
+            long totalDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate) + 1;
+            // 按天数均分 leaveDays 到每天
+            java.math.BigDecimal perDayLeave = totalDays > 0
+                    ? leaveDays.divide(java.math.BigDecimal.valueOf(totalDays), 10, java.math.RoundingMode.HALF_UP)
+                    : java.math.BigDecimal.ZERO;
+
+            java.time.LocalDate current = startDate;
+            while (!current.isAfter(endDate)) {
+                AttendanceDailySummary daily = attendanceDailySummaryMapper.selectByEmployeeAndDate(empId, current);
+                if (daily == null) {
+                    daily = new AttendanceDailySummary();
+                    daily.setEmployeeId(empId);
+                    daily.setSummaryDate(current);
+                    daily.setDayStatus("LEAVE");
+                    daily.setLeaveDays(perDayLeave);
+                    daily.setOvertimeHours(java.math.BigDecimal.ZERO);
+                    attendanceDailySummaryMapper.insert(daily);
+                } else {
+                    daily.setDayStatus("LEAVE");
+                    daily.setLeaveDays(perDayLeave);
+                    attendanceDailySummaryMapper.updateById(daily);
+                }
+                current = current.plusDays(1);
+            }
+
+            // 重新聚合月考勤汇总
+            String period = startDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+            java.time.LocalDate monthStart = startDate.withDayOfMonth(1);
+            java.time.LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+            java.util.List<AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
+                    empId, monthStart, monthEnd);
+            int shouldAttendDays = 0;
+            java.math.BigDecimal totalLeaveDays = java.math.BigDecimal.ZERO;
+            for (AttendanceDailySummary ds : dailyList) {
+                shouldAttendDays++;
+                if ("LEAVE".equals(ds.getDayStatus())) {
+                    totalLeaveDays = totalLeaveDays.add(ds.getLeaveDays() != null ? ds.getLeaveDays() : java.math.BigDecimal.ZERO);
+                }
+            }
+            AttendanceMonthlySummary monthly = attendanceMonthlySummaryMapper.selectByEmployeeAndPeriod(empId, period);
+            if (monthly != null) {
+                monthly.setLeaveDays(totalLeaveDays);
+                attendanceMonthlySummaryMapper.updateById(monthly);
+            }
+
+            log.info("请假已通过, 日汇总已更新: id={}, empId={}, days={}", applicationId, empId, leaveDays);
+
         } else if ("REJECTED".equals(result)) {
             app.setStatus("REJECTED");
             leaveApplicationMapper.updateById(app);

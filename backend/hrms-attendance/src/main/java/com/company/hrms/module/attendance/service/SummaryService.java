@@ -46,6 +46,7 @@ public class SummaryService {
     private final AttendanceMonthLockMapper monthLockMapper;
     private final AttendanceRecordMapper attendanceRecordMapper;
     private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
+    private final com.company.hrms.attendance.mapper.LeaveBalanceMapper leaveBalanceMapper;
 
     // ========== 月汇总查看/锁定 ==========
 
@@ -280,9 +281,14 @@ public class SummaryService {
         vo.setOvertimeHours(ms.getOvertimeHours() != null ? ms.getOvertimeHours() : BigDecimal.ZERO);
 
         // 年假余额
-        com.company.hrms.attendance.entity.LeaveBalance lb = null;
-        // TODO: 通过 LeaveBalanceMapper 查询年假余额
-        vo.setAnnualBalance(BigDecimal.ZERO);
+        try {
+            com.company.hrms.attendance.entity.LeaveBalance lb = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(
+                    employeeId, "ANNUAL", LocalDate.now().getYear());
+            vo.setAnnualBalance(lb != null && lb.getBalance() != null ? lb.getBalance() : BigDecimal.ZERO);
+        } catch (Exception e) {
+            log.warn("查询年假余额失败: employeeId={}", employeeId, e);
+            vo.setAnnualBalance(BigDecimal.ZERO);
+        }
 
         return vo;
     }
