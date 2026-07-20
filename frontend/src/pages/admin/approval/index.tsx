@@ -25,6 +25,7 @@ import { getEmployeeList } from '@/services/employee';
 import {
   fetchMyInstances,
   fetchTaskDetail,
+  fetchInstanceDetail,
   fetchTaskStats,
   fetchTasks,
   postTaskAction,
@@ -86,19 +87,47 @@ export default function ApprovalCenterPage() {
   const openDetail = async (record: ApprovalTaskItem) => {
     setSelected(record);
     setDrawerOpen(true);
-    if (!record.taskId) {
-      setDetail(null);
-      return;
-    }
     try {
-      const d = await fetchTaskDetail(record.taskId);
-      setDetail(d);
+      // 「我发起的」列表 taskId 为 0，需按 instanceId 拉详情（含 businessDetail）
+      if (record.taskId) {
+        const d = await fetchTaskDetail(record.taskId);
+        setDetail(d);
+        return;
+      }
+      if (record.instanceId) {
+        const inst = await fetchInstanceDetail(record.instanceId);
+        const mapped: ApprovalTaskDetail = {
+          task: {
+            id: 0,
+            status: inst?.status || record.status,
+            currentNodeLabel: inst?.currentNodeLabel || record.currentNodeLabel,
+          },
+          instance: {
+            processType: inst?.processType || record.processType,
+            businessNo: String(inst?.instanceId ?? record.instanceId),
+            initiator: record.applicantName,
+            createdAt: inst?.createdAt || record.createTime,
+            status: inst?.status || record.status,
+          },
+          businessDetail: inst?.businessDetail ?? {},
+          timeline: inst?.timeline ?? [],
+          actions: [],
+        };
+        setDetail(mapped);
+        return;
+      }
+      setDetail(null);
     } catch {
       setDetail(null);
     }
   };
 
   const biz = detail?.businessDetail ?? {};
+  const processType = String(
+    detail?.instance?.processType || selected?.processType || '',
+  ).toUpperCase();
+  const bizText = (v: unknown, fallback = '-') =>
+    v == null || v === '' ? fallback : String(v);
   const needHandoverConfirm = biz.needHandoverConfirm === true;
   const resigningEmployeeId =
     typeof biz.employeeId === 'number' ? biz.employeeId : Number(biz.employeeId) || undefined;
@@ -317,15 +346,69 @@ export default function ApprovalCenterPage() {
               ) : null}
             </div>
 
-            {detail?.instance?.processType === 'RESIGNATION' || selected.processType === 'RESIGNATION' ? (
-              <Descriptions size="small" column={1} bordered title="离职信息">
-                <Descriptions.Item label="离职员工">
-                  {(biz.employeeName as string) || selected.applicantName}
+            {processType === 'ONBOARDING' ? (
+              <Descriptions size="small" column={1} bordered title="入职信息">
+                <Descriptions.Item label="姓名">{bizText(biz.name, selected.applicantName)}</Descriptions.Item>
+                <Descriptions.Item label="性别">
+                  {({ MALE: '男', FEMALE: '女' } as Record<string, string>)[String(biz.gender || '')] ||
+                    bizText(biz.gender)}
+                </Descriptions.Item>
+                <Descriptions.Item label="手机号">{bizText(biz.mobile)}</Descriptions.Item>
+                <Descriptions.Item label="邮箱">{bizText(biz.email)}</Descriptions.Item>
+                <Descriptions.Item label="预计入职日">{bizText(biz.expectedOnboardDate)}</Descriptions.Item>
+                <Descriptions.Item label="部门">{bizText(biz.departmentName)}</Descriptions.Item>
+                <Descriptions.Item label="职位">{bizText(biz.positionName)}</Descriptions.Item>
+                <Descriptions.Item label="用工类型">{bizText(biz.employmentType)}</Descriptions.Item>
+                <Descriptions.Item label="试用期月数">{bizText(biz.probationMonths)}</Descriptions.Item>
+                <Descriptions.Item label="基本工资">{bizText(biz.baseSalary)}</Descriptions.Item>
+                <Descriptions.Item label="直属上级">{bizText(biz.managerName)}</Descriptions.Item>
+                <Descriptions.Item label="需 HR 二审">
+                  {biz.needSecondApproval === true ? '是' : biz.needSecondApproval === false ? '否' : '-'}
+                </Descriptions.Item>
+                {biz.rejectReason ? (
+                  <Descriptions.Item label="驳回原因">{bizText(biz.rejectReason)}</Descriptions.Item>
+                ) : null}
+              </Descriptions>
+            ) : null}
+
+            {processType === 'TRANSFER' ? (
+              <Descriptions size="small" column={1} bordered title="调岗信息">
+                <Descriptions.Item label="员工">
+                  {bizText(biz.employeeName, selected.applicantName)}
                   {biz.employeeNo ? ` · ${biz.employeeNo}` : ''}
                 </Descriptions.Item>
-                <Descriptions.Item label="离职日">{(biz.resignationDate as string) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="原因">{(biz.reasonCategory as string) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="说明">{(biz.reasonDetail as string) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="原部门">{bizText(biz.fromDepartmentName)}</Descriptions.Item>
+                <Descriptions.Item label="新部门">{bizText(biz.newDepartmentName)}</Descriptions.Item>
+                <Descriptions.Item label="新职位">{bizText(biz.newPositionName)}</Descriptions.Item>
+                <Descriptions.Item label="新职级">{bizText(biz.newJobLevel)}</Descriptions.Item>
+                <Descriptions.Item label="新上级">{bizText(biz.newManagerName)}</Descriptions.Item>
+                <Descriptions.Item label="调薪">
+                  {biz.salaryAdjustment != null ? String(biz.salaryAdjustment) : '不调薪'}
+                </Descriptions.Item>
+                <Descriptions.Item label="生效日">{bizText(biz.effectiveDate)}</Descriptions.Item>
+                <Descriptions.Item label="原因">{bizText(biz.reason)}</Descriptions.Item>
+              </Descriptions>
+            ) : null}
+
+            {processType === 'MOBILE_CHANGE' ? (
+              <Descriptions size="small" column={1} bordered title="手机号变更">
+                <Descriptions.Item label="员工ID">{bizText(biz.employeeId)}</Descriptions.Item>
+                <Descriptions.Item label="原手机号">{bizText(biz.oldMobile)}</Descriptions.Item>
+                <Descriptions.Item label="新手机号">{bizText(biz.newMobile)}</Descriptions.Item>
+                <Descriptions.Item label="原因">{bizText(biz.reason)}</Descriptions.Item>
+                <Descriptions.Item label="申请状态">{bizText(biz.status)}</Descriptions.Item>
+              </Descriptions>
+            ) : null}
+
+            {processType === 'RESIGNATION' ? (
+              <Descriptions size="small" column={1} bordered title="离职信息">
+                <Descriptions.Item label="离职员工">
+                  {bizText(biz.employeeName, selected.applicantName)}
+                  {biz.employeeNo ? ` · ${biz.employeeNo}` : ''}
+                </Descriptions.Item>
+                <Descriptions.Item label="离职日">{bizText(biz.resignationDate)}</Descriptions.Item>
+                <Descriptions.Item label="原因">{bizText(biz.reasonCategory)}</Descriptions.Item>
+                <Descriptions.Item label="说明">{bizText(biz.reasonDetail)}</Descriptions.Item>
                 <Descriptions.Item label="交接人">
                   {biz.handoverEmployeeName
                     ? `${biz.handoverEmployeeName}${biz.handoverEmployeeNo ? ` · ${biz.handoverEmployeeNo}` : ''}`
@@ -336,42 +419,33 @@ export default function ApprovalCenterPage() {
               </Descriptions>
             ) : null}
 
-            {detail?.instance?.processType === 'RESIGNATION_REQUEST' ||
-            selected.processType === 'RESIGNATION_REQUEST' ? (
+            {processType === 'RESIGNATION_REQUEST' ? (
               <Descriptions size="small" column={1} bordered title="员工离职申请">
                 <Descriptions.Item label="申请人">
-                  {(biz.employeeName as string) || selected.applicantName}
+                  {bizText(biz.employeeName, selected.applicantName)}
                   {biz.employeeNo ? ` · ${biz.employeeNo}` : ''}
                 </Descriptions.Item>
-                <Descriptions.Item label="期望离职日">
-                  {(biz.expectedResignDate as string) || '-'}
-                </Descriptions.Item>
-                <Descriptions.Item label="原因">{(biz.reasonCategory as string) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="类型">{(biz.resignationType as string) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="说明">{(biz.reasonDetail as string) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="期望离职日">{bizText(biz.expectedResignDate)}</Descriptions.Item>
+                <Descriptions.Item label="原因">{bizText(biz.reasonCategory)}</Descriptions.Item>
+                <Descriptions.Item label="类型">{bizText(biz.resignationType)}</Descriptions.Item>
+                <Descriptions.Item label="说明">{bizText(biz.reasonDetail)}</Descriptions.Item>
               </Descriptions>
             ) : null}
 
-            {detail?.instance?.processType === 'REGULARIZATION' ||
-            selected.processType === 'REGULARIZATION' ? (
+            {processType === 'REGULARIZATION' ? (
               <Descriptions size="small" column={1} bordered title="转正信息">
                 <Descriptions.Item label="员工">
-                  {(biz.employeeName as string) || selected.applicantName}
+                  {bizText(biz.employeeName, selected.applicantName)}
                   {biz.employeeNo ? ` · ${biz.employeeNo}` : ''}
                 </Descriptions.Item>
                 <Descriptions.Item label="试用起止">
-                  {(biz.probationStartDate as string) || '-'} ~{' '}
-                  {(biz.probationEndDate as string) || '-'}
+                  {bizText(biz.probationStartDate)} ~ {bizText(biz.probationEndDate)}
                 </Descriptions.Item>
-                <Descriptions.Item label="表现评价">
-                  {(biz.performanceEvaluation as string) || '-'}
-                </Descriptions.Item>
+                <Descriptions.Item label="表现评价">{bizText(biz.performanceEvaluation)}</Descriptions.Item>
                 <Descriptions.Item label="评估结果">
                   {({ PASS: '通过', EXTEND: '延长试用', FAIL: '不通过' } as Record<string, string>)[
                     String(biz.approvalResult || '')
-                  ] ||
-                    (biz.approvalResult as string) ||
-                    '-'}
+                  ] || bizText(biz.approvalResult)}
                 </Descriptions.Item>
                 <Descriptions.Item label="延长月数">
                   {biz.extendMonths != null ? String(biz.extendMonths) : '-'}
@@ -382,32 +456,53 @@ export default function ApprovalCenterPage() {
               </Descriptions>
             ) : null}
 
-            {(detail?.instance?.processType === 'LEAVE' || selected?.processType === 'LEAVE') &&
-            biz.leaveType ? (
+            {processType === 'LEAVE' ? (
               <Descriptions size="small" column={1} bordered title="请假信息">
                 <Descriptions.Item label="请假类型">
-                  {({ANNUAL:'年假',SICK:'病假',PERSONAL:'事假',MARRIAGE:'婚假',MATERNITY:'产假',BEREAVEMENT:'丧假',COMP_OFF:'调休'}as Record<string,string>)[String(biz.leaveType)]||String(biz.leaveType)}
+                  {(
+                    {
+                      ANNUAL: '年假',
+                      SICK: '病假',
+                      PERSONAL: '事假',
+                      MARRIAGE: '婚假',
+                      MATERNITY: '产假',
+                      BEREAVEMENT: '丧假',
+                      COMP_OFF: '调休',
+                    } as Record<string, string>
+                  )[String(biz.leaveType || '')] || bizText(biz.leaveType)}
                 </Descriptions.Item>
-                <Descriptions.Item label="天数">{String(biz.days)} 天</Descriptions.Item>
-                <Descriptions.Item label="摘要">{String(biz.businessSummary||'')}</Descriptions.Item>
+                <Descriptions.Item label="天数">
+                  {biz.days != null ? `${biz.days} 天` : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="摘要">{bizText(biz.businessSummary)}</Descriptions.Item>
               </Descriptions>
             ) : null}
 
-            {(detail?.instance?.processType === 'OVERTIME' || selected?.processType === 'OVERTIME') &&
-            biz.hours ? (
+            {processType === 'OVERTIME' ? (
               <Descriptions size="small" column={1} bordered title="加班信息">
-                <Descriptions.Item label="加班日期">{String(biz.overtimeDate||'')}</Descriptions.Item>
-                <Descriptions.Item label="加班时长">{String(biz.hours)} 小时</Descriptions.Item>
-                <Descriptions.Item label="摘要">{String(biz.businessSummary||'')}</Descriptions.Item>
+                <Descriptions.Item label="加班日期">{bizText(biz.overtimeDate)}</Descriptions.Item>
+                <Descriptions.Item label="加班时长">
+                  {biz.hours != null ? `${biz.hours} 小时` : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="摘要">{bizText(biz.businessSummary)}</Descriptions.Item>
               </Descriptions>
             ) : null}
 
-            {(detail?.instance?.processType === 'MAKEUP' || selected?.processType === 'MAKEUP') &&
-            biz.makeupDate ? (
+            {processType === 'MAKEUP' || processType === 'PUNCH_FIX' ? (
               <Descriptions size="small" column={1} bordered title="补卡信息">
-                <Descriptions.Item label="补卡日期">{String(biz.makeupDate)}</Descriptions.Item>
-                <Descriptions.Item label="补卡类型">{biz.punchType === 'IN' ? '上班卡' : '下班卡'}</Descriptions.Item>
-                <Descriptions.Item label="摘要">{String(biz.businessSummary||'')}</Descriptions.Item>
+                <Descriptions.Item label="补卡日期">{bizText(biz.makeupDate)}</Descriptions.Item>
+                <Descriptions.Item label="补卡类型">
+                  {biz.punchType === 'IN' ? '上班卡' : biz.punchType === 'OUT' ? '下班卡' : bizText(biz.punchType)}
+                </Descriptions.Item>
+                <Descriptions.Item label="摘要">{bizText(biz.businessSummary)}</Descriptions.Item>
+              </Descriptions>
+            ) : null}
+
+            {processType === 'PAYROLL' || processType === 'PAYROLL_BATCH' ? (
+              <Descriptions size="small" column={1} bordered title="薪资核算">
+                <Descriptions.Item label="标题">{bizText(biz.title, selected.title)}</Descriptions.Item>
+                <Descriptions.Item label="业务单号">{bizText(biz.businessKey)}</Descriptions.Item>
+                <Descriptions.Item label="摘要">{bizText(biz.businessSummary)}</Descriptions.Item>
               </Descriptions>
             ) : null}
 

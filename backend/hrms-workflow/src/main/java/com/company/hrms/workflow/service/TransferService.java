@@ -13,11 +13,13 @@ import com.company.hrms.workflow.dto.LifecycleDtos;
 import com.company.hrms.workflow.entity.ApprovalInstance;
 import com.company.hrms.workflow.entity.TransferApplication;
 import com.company.hrms.workflow.mapper.ApprovalInstanceMapper;
+import com.company.hrms.workflow.mapper.OrgLookupMapper;
 import com.company.hrms.workflow.mapper.TransferApplicationMapper;
 import com.company.hrms.workflow.model.ProcessNodeDef;
 import com.company.hrms.workflow.support.CurrentUserProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,8 +28,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -41,17 +45,67 @@ public class TransferService {
     private final EmployeeLifecycleService employeeLifecycleService;
     private final DbApprovalService dbApprovalService;
     private final CurrentUserProvider currentUserProvider;
+    private final OrgLookupMapper orgLookupMapper;
 
     public TransferService(TransferApplicationMapper mapper,
                            ApprovalInstanceMapper instanceMapper,
                            EmployeeLifecycleService employeeLifecycleService,
-                           DbApprovalService dbApprovalService,
-                           CurrentUserProvider currentUserProvider) {
+                           @Lazy DbApprovalService dbApprovalService,
+                           CurrentUserProvider currentUserProvider,
+                           OrgLookupMapper orgLookupMapper) {
         this.mapper = mapper;
         this.instanceMapper = instanceMapper;
         this.employeeLifecycleService = employeeLifecycleService;
         this.dbApprovalService = dbApprovalService;
         this.currentUserProvider = currentUserProvider;
+        this.orgLookupMapper = orgLookupMapper;
+    }
+
+    /** 审批中心业务详情 */
+    public Map<String, Object> businessDetail(Long applicationId) {
+        Map<String, Object> biz = new HashMap<>();
+        if (applicationId == null) {
+            return biz;
+        }
+        TransferApplication app = mapper.selectById(applicationId);
+        if (app == null) {
+            return biz;
+        }
+        biz.put("transferId", app.getId());
+        biz.put("employeeId", app.getEmployeeId());
+        try {
+            Employee emp = employeeLifecycleService.requireEmployee(app.getEmployeeId());
+            biz.put("employeeName", emp.getName());
+            biz.put("employeeNo", emp.getEmployeeNo());
+        } catch (Exception ignored) {
+            // ignore
+        }
+        biz.put("fromDepartmentId", app.getFromDepartmentId());
+        biz.put("newDepartmentId", app.getNewDepartmentId());
+        biz.put("newPositionId", app.getNewPositionId());
+        if (app.getFromDepartmentId() != null) {
+            biz.put("fromDepartmentName", orgLookupMapper.selectDepartmentName(app.getFromDepartmentId()));
+        }
+        if (app.getNewDepartmentId() != null) {
+            biz.put("newDepartmentName", orgLookupMapper.selectDepartmentName(app.getNewDepartmentId()));
+        }
+        if (app.getNewPositionId() != null) {
+            biz.put("newPositionName", orgLookupMapper.selectPositionName(app.getNewPositionId()));
+        }
+        biz.put("newJobLevel", app.getNewJobLevel());
+        biz.put("newManagerId", app.getNewManagerId());
+        if (app.getNewManagerId() != null) {
+            try {
+                biz.put("newManagerName", employeeLifecycleService.requireEmployee(app.getNewManagerId()).getName());
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+        biz.put("salaryAdjustment", app.getSalaryAdjustment());
+        biz.put("effectiveDate", app.getEffectiveDate() == null ? null : app.getEffectiveDate().toString());
+        biz.put("reason", app.getReason());
+        biz.put("status", app.getStatus());
+        return biz;
     }
 
     public PageResult<LifecycleDtos.TransferVO> list(int page, int pageSize, String status) {

@@ -19,6 +19,7 @@ import com.company.hrms.workflow.entity.ApprovalTask;
 import com.company.hrms.workflow.mapper.ApprovalInstanceMapper;
 import com.company.hrms.workflow.mapper.ApprovalLogMapper;
 import com.company.hrms.workflow.mapper.ApprovalTaskMapper;
+import com.company.hrms.workflow.mapper.OrgLookupMapper;
 import com.company.hrms.workflow.model.ProcessNodeDef;
 import com.company.hrms.workflow.notify.ApprovalNotifyPublisher;
 import com.company.hrms.workflow.support.AssigneeResolver;
@@ -64,6 +65,8 @@ public class DbApprovalService implements ApprovalEngineService {
     private final ResignationService resignationService;
     private final OnboardingService onboardingService;
     private final RegularizationService regularizationService;
+    private final TransferService transferService;
+    private final OrgLookupMapper orgLookupMapper;
 
     public DbApprovalService(ApprovalInstanceMapper instanceMapper,
                              ApprovalTaskMapper taskMapper,
@@ -76,7 +79,9 @@ public class DbApprovalService implements ApprovalEngineService {
                              DelegationService delegationService,
                              @Lazy ResignationService resignationService,
                              @Lazy OnboardingService onboardingService,
-                             @Lazy RegularizationService regularizationService) {
+                             @Lazy RegularizationService regularizationService,
+                             @Lazy TransferService transferService,
+                             OrgLookupMapper orgLookupMapper) {
         this.instanceMapper = instanceMapper;
         this.taskMapper = taskMapper;
         this.logMapper = logMapper;
@@ -90,6 +95,8 @@ public class DbApprovalService implements ApprovalEngineService {
         this.resignationService = resignationService;
         this.onboardingService = onboardingService;
         this.regularizationService = regularizationService;
+        this.transferService = transferService;
+        this.orgLookupMapper = orgLookupMapper;
     }
 
     @Override
@@ -275,76 +282,7 @@ public class DbApprovalService implements ApprovalEngineService {
         ib.setStatus(apiStatus(instance.getStatus()));
         detail.setInstance(ib);
 
-        Map<String, Object> biz = new HashMap<>();
-        biz.put("businessKey", instance.getBusinessKey());
-        biz.put("title", display.title);
-        biz.put("businessSummary", display.businessSummary);
-        if ("RESIGNATION".equalsIgnoreCase(instance.getProcessType())) {
-            try {
-                Long appId = Long.parseLong(instance.getBusinessKey());
-                biz.putAll(resignationService.resignationBusinessDetail(appId));
-                boolean needHandover = task.getNodeOrder() != null && task.getNodeOrder() == 1
-                        && "PENDING".equalsIgnoreCase(task.getStatus());
-                biz.put("needHandoverConfirm", needHandover);
-            } catch (Exception ignored) {
-                biz.put("needHandoverConfirm", false);
-            }
-        } else if ("RESIGNATION_REQUEST".equalsIgnoreCase(instance.getProcessType())) {
-            try {
-                Long requestId = Long.parseLong(instance.getBusinessKey());
-                biz.putAll(resignationService.requestBusinessDetail(requestId));
-            } catch (Exception ignored) {
-                // ignore
-            }
-        } else if ("ONBOARDING".equalsIgnoreCase(instance.getProcessType())) {
-            try {
-                Long appId = Long.parseLong(instance.getBusinessKey());
-                biz.putAll(onboardingService.businessDetail(appId));
-            } catch (Exception ignored) {
-                // ignore
-            }
-        } else if ("REGULARIZATION".equalsIgnoreCase(instance.getProcessType())) {
-            try {
-                Long appId = Long.parseLong(instance.getBusinessKey());
-                biz.putAll(regularizationService.businessDetail(appId));
-            } catch (Exception ignored) {
-                // ignore
-            }
-        } else if ("LEAVE".equalsIgnoreCase(instance.getProcessType())) {
-            // 请假：businessSummary = "ANNUAL 3.0天"
-            biz.put("type", "leave");
-            String summary = display.businessSummary;
-            if (summary != null) {
-                String[] parts = summary.split(" ");
-                if (parts.length >= 2) {
-                    biz.put("leaveType", parts[0]);
-                    biz.put("days", parts[1].replace("天", ""));
-                }
-            }
-        } else if ("OVERTIME".equalsIgnoreCase(instance.getProcessType())) {
-            // 加班：businessSummary = "2026-07-21 2.0h"
-            biz.put("type", "overtime");
-            String summary = display.businessSummary;
-            if (summary != null) {
-                String[] parts = summary.split(" ");
-                if (parts.length >= 2) {
-                    biz.put("overtimeDate", parts[0]);
-                    biz.put("hours", parts[1].replace("h", ""));
-                }
-            }
-        } else if ("MAKEUP".equalsIgnoreCase(instance.getProcessType())) {
-            // 补卡：businessSummary = "2026-07-20 IN"
-            biz.put("type", "makeup");
-            String summary = display.businessSummary;
-            if (summary != null) {
-                String[] parts = summary.split(" ");
-                if (parts.length >= 2) {
-                    biz.put("makeupDate", parts[0]);
-                    biz.put("punchType", parts[1]);
-                }
-            }
-        }
-        detail.setBusinessDetail(biz);
+        detail.setBusinessDetail(buildBusinessDetail(instance, display, task));
 
         detail.setTimeline(buildTimeline(instance.getId()));
         List<String> actions = new ArrayList<>();
@@ -576,7 +514,108 @@ public class DbApprovalService implements ApprovalEngineService {
         vo.setCreatedAt(fmt(instance.getCreatedAt()));
         vo.setNodes(nodes);
         vo.setTimeline(buildTimeline(instance.getId()));
+        vo.setBusinessDetail(buildBusinessDetail(instance, display, null));
         return vo;
+    }
+
+    /**
+     * 组装审批业务详情（离职/入职/转正/考勤等）。task 为空时不要求交接确认（发起人只读视角）。
+     */
+    private Map<String, Object> buildBusinessDetail(ApprovalInstance instance, InstanceDisplay display,
+                                                    ApprovalTask task) {
+        Map<String, Object> biz = new HashMap<>();
+        biz.put("businessKey", instance.getBusinessKey());
+        biz.put("title", display.title);
+        biz.put("businessSummary", display.businessSummary);
+        if ("RESIGNATION".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = parseBusinessId(instance.getBusinessKey());
+                biz.putAll(resignationService.resignationBusinessDetail(appId));
+                boolean needHandover = task != null
+                        && task.getNodeOrder() != null
+                        && task.getNodeOrder() == 1
+                        && "PENDING".equalsIgnoreCase(task.getStatus());
+                biz.put("needHandoverConfirm", needHandover);
+            } catch (Exception ignored) {
+                biz.put("needHandoverConfirm", false);
+            }
+        } else if ("RESIGNATION_REQUEST".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long requestId = parseBusinessId(instance.getBusinessKey());
+                biz.putAll(resignationService.requestBusinessDetail(requestId));
+            } catch (Exception ignored) {
+                // ignore
+            }
+        } else if ("ONBOARDING".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = parseBusinessId(instance.getBusinessKey());
+                biz.putAll(onboardingService.businessDetail(appId));
+            } catch (Exception ignored) {
+                // ignore
+            }
+        } else if ("REGULARIZATION".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = parseBusinessId(instance.getBusinessKey());
+                biz.putAll(regularizationService.businessDetail(appId));
+            } catch (Exception ignored) {
+                // ignore
+            }
+        } else if ("TRANSFER".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = parseBusinessId(instance.getBusinessKey());
+                biz.putAll(transferService.businessDetail(appId));
+            } catch (Exception ignored) {
+                // ignore
+            }
+        } else if ("MOBILE_CHANGE".equalsIgnoreCase(instance.getProcessType())) {
+            try {
+                Long appId = parseBusinessId(instance.getBusinessKey());
+                Map<String, Object> mobile = orgLookupMapper.selectMobileChangeBrief(appId);
+                if (mobile != null) {
+                    biz.putAll(mobile);
+                }
+            } catch (Exception ignored) {
+                // ignore
+            }
+        } else if ("LEAVE".equalsIgnoreCase(instance.getProcessType())
+                || "PAYROLL_BATCH".equalsIgnoreCase(instance.getProcessType())
+                || "PAYROLL".equalsIgnoreCase(instance.getProcessType())) {
+            if ("LEAVE".equalsIgnoreCase(instance.getProcessType())) {
+                biz.put("type", "leave");
+                String summary = display.businessSummary;
+                if (summary != null) {
+                    String[] parts = summary.split(" ");
+                    if (parts.length >= 2) {
+                        biz.put("leaveType", parts[0]);
+                        biz.put("days", parts[1].replace("天", ""));
+                    }
+                }
+            } else {
+                biz.put("type", "payroll");
+            }
+        } else if ("OVERTIME".equalsIgnoreCase(instance.getProcessType())) {
+            biz.put("type", "overtime");
+            String summary = display.businessSummary;
+            if (summary != null) {
+                String[] parts = summary.split(" ");
+                if (parts.length >= 2) {
+                    biz.put("overtimeDate", parts[0]);
+                    biz.put("hours", parts[1].replace("h", ""));
+                }
+            }
+        } else if ("MAKEUP".equalsIgnoreCase(instance.getProcessType())
+                || "PUNCH_FIX".equalsIgnoreCase(instance.getProcessType())) {
+            biz.put("type", "makeup");
+            String summary = display.businessSummary;
+            if (summary != null) {
+                String[] parts = summary.split(" ");
+                if (parts.length >= 2) {
+                    biz.put("makeupDate", parts[0]);
+                    biz.put("punchType", parts[1]);
+                }
+            }
+        }
+        return biz;
     }
 
     private void publishCompleted(ApprovalInstance instance, String result, String comment) {

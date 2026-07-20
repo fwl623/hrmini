@@ -21,6 +21,12 @@ public interface OrgLookupMapper {
     @Select("SELECT code FROM department WHERE id = #{id} AND deleted = 0 LIMIT 1")
     String selectDepartmentCode(@Param("id") Long id);
 
+    @Select("SELECT name FROM department WHERE id = #{id} AND deleted = 0 LIMIT 1")
+    String selectDepartmentName(@Param("id") Long id);
+
+    @Select("SELECT name FROM position WHERE id = #{id} AND deleted = 0 LIMIT 1")
+    String selectPositionName(@Param("id") Long id);
+
     @Select("SELECT head_employee_id FROM department WHERE id = #{id} AND deleted = 0 LIMIT 1")
     Long selectDepartmentHeadEmployeeId(@Param("id") Long id);
 
@@ -40,4 +46,13 @@ public interface OrgLookupMapper {
             WHERE e.user_id = #{userId} AND d.deleted = 0
             """)
     List<Long> selectDepartmentIdsByHeadUserId(@Param("userId") Long userId);
+
+    @Select("""
+            SELECT old_mobile AS oldMobile, new_mobile AS newMobile, reason, status,
+                   employee_id AS employeeId
+            FROM employee_mobile_change_application
+            WHERE id = #{id}
+            LIMIT 1
+            """)
+    java.util.Map<String, Object> selectMobileChangeBrief(@Param("id") Long id);
 }

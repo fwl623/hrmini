@@ -225,6 +225,7 @@ export async function fetchInstanceDetail(instanceId: number) {
       createdAt?: string;
       nodes?: { order: number; label: string; state: string }[];
       timeline?: ApprovalTimelineItem[];
+      businessDetail?: Record<string, unknown>;
     }>
   >(`${APPROVAL_PREFIX}/instances/${instanceId}`, {
     method: 'GET',
