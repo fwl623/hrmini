@@ -247,11 +247,18 @@ public class PunchService {
         }
         long totalCount = shouldDays * 2L; // 全月应打卡 = 工作日 × 2
 
-        // 统计本月已发生数据
-        long clockedCount = allRecords.size();
-        long lateCount = allRecords.stream().filter(r -> "LATE".equals(r.getPunchStatus())).count();
-        long earlyLeaveCount = allRecords.stream().filter(r -> "EARLY_LEAVE".equals(r.getPunchStatus())).count();
-        long absentCount = allRecords.stream().filter(r -> "ABSENT_HALF".equals(r.getPunchStatus())).count();
+        // 统计本月已发生数据（按 employee_id + punch_date + punch_type 去重）
+        java.util.Set<String> uniqueKeys = new java.util.HashSet<>();
+        long clockedCount = 0, lateCount = 0, earlyLeaveCount = 0, absentCount = 0;
+        for (AttendanceRecord r : allRecords) {
+            String key = r.getEmployeeId() + "_" + r.getPunchDate() + "_" + r.getPunchType();
+            if (uniqueKeys.add(key)) {
+                clockedCount++;
+                if ("LATE".equals(r.getPunchStatus())) lateCount++;
+                if ("EARLY_LEAVE".equals(r.getPunchStatus())) earlyLeaveCount++;
+                if ("ABSENT_HALF".equals(r.getPunchStatus())) absentCount++;
+            }
+        }
 
         return new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
     }
