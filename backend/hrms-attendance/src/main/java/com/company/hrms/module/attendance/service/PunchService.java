@@ -417,8 +417,7 @@ public class PunchService {
      */
     private String judgePunchStatus(AttendanceGroup group, LocalTime punchTime, String type) {
         if (group == null || group.getWorkStartTime() == null || group.getWorkEndTime() == null) {
-            // 无考勤组或未配置时间，默认正常
-            return "NORMAL";
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "您未分配考勤组，请联系HR配置后再打卡");
         }
 
         // 根据班次类型分发
