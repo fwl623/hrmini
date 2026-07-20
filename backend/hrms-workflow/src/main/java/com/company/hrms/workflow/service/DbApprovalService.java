@@ -310,6 +310,39 @@ public class DbApprovalService implements ApprovalEngineService {
             } catch (Exception ignored) {
                 // ignore
             }
+        } else if ("LEAVE".equalsIgnoreCase(instance.getProcessType())) {
+            // 请假：businessSummary = "ANNUAL 3.0天"
+            biz.put("type", "leave");
+            String summary = display.businessSummary;
+            if (summary != null) {
+                String[] parts = summary.split(" ");
+                if (parts.length >= 2) {
+                    biz.put("leaveType", parts[0]);
+                    biz.put("days", parts[1].replace("天", ""));
+                }
+            }
+        } else if ("OVERTIME".equalsIgnoreCase(instance.getProcessType())) {
+            // 加班：businessSummary = "2026-07-21 2.0h"
+            biz.put("type", "overtime");
+            String summary = display.businessSummary;
+            if (summary != null) {
+                String[] parts = summary.split(" ");
+                if (parts.length >= 2) {
+                    biz.put("overtimeDate", parts[0]);
+                    biz.put("hours", parts[1].replace("h", ""));
+                }
+            }
+        } else if ("MAKEUP".equalsIgnoreCase(instance.getProcessType())) {
+            // 补卡：businessSummary = "2026-07-20 IN"
+            biz.put("type", "makeup");
+            String summary = display.businessSummary;
+            if (summary != null) {
+                String[] parts = summary.split(" ");
+                if (parts.length >= 2) {
+                    biz.put("makeupDate", parts[0]);
+                    biz.put("punchType", parts[1]);
+                }
+            }
         }
         detail.setBusinessDetail(biz);
 

@@ -171,6 +171,13 @@ public class LeaveService {
         }
         BigDecimal days = BigDecimal.valueOf(dto.getDays());
 
+        // 病假>1天需上传附件（PRD §6.3.1）
+        if ("SICK".equalsIgnoreCase(dto.getLeaveType())
+                && days.compareTo(BigDecimal.ONE) > 0
+                && (dto.getAttachment() == null || dto.getAttachment().isBlank())) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "病假超过1天需上传医院证明");
+        }
+
         // 年假/调休需校验余额
         if ("ANNUAL".equalsIgnoreCase(dto.getLeaveType())
                 || "COMP_OFF".equalsIgnoreCase(dto.getLeaveType())) {

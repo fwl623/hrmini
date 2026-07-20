@@ -121,6 +121,11 @@ public class PunchService {
                 validateGps(group.getGpsRangeJson(), dto.getLatitude(), dto.getLongitude());
             }
 
+            // 3b. IP 白名单校验
+            if (group != null && group.getIpWhitelistJson() != null && dto.getClientIp() != null) {
+                validateIpWhitelist(group.getIpWhitelistJson(), dto.getClientIp());
+            }
+
             // 4. 判定打卡状态（用服务端 CST 时间，确保与考勤组工作时间比较正确）
             String punchStatus = judgePunchStatus(group, serverTime, type);
 
@@ -514,6 +519,52 @@ public class PunchService {
         } catch (Exception e) {
             log.warn("GPS 校验解析失败: {}", gpsRangeJson, e);
         }
+    }
+
+    /**
+     * IP 白名单校验（支持精确 IP 和 CIDR 网段）
+     */
+    private void validateIpWhitelist(String whitelistJson, String clientIp) {
+        if (clientIp == null || clientIp.isBlank()) {
+            throw new BusinessException(ErrorCode.PUNCH_OUT_OF_RANGE, "无法获取客户端 IP");
+        }
+        try {
+            java.util.List<String> whitelist = objectMapper.readValue(whitelistJson,
+                    new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {});
+            if (whitelist == null || whitelist.isEmpty()) return;
+            boolean matched = false;
+            for (String rule : whitelist) {
+                if (rule == null || rule.isBlank()) continue;
+                if (rule.contains("/")) {
+                    String[] parts = rule.split("/");
+                    if (isIpInCidr(clientIp, parts[0], Integer.parseInt(parts[1]))) {
+                        matched = true; break;
+                    }
+                } else if (rule.equals(clientIp)) {
+                    matched = true; break;
+                }
+            }
+            if (!matched) {
+                throw new BusinessException(ErrorCode.PUNCH_OUT_OF_RANGE,
+                        "不在打卡有效范围（IP " + clientIp + " 不在白名单）");
+            }
+        } catch (BusinessException e) { throw e;
+        } catch (Exception e) { log.warn("IP 白名单校验失败: {}", whitelistJson, e); }
+    }
+
+    private boolean isIpInCidr(String ip, String network, int prefix) {
+        try {
+            long ipLong = ipToLong(ip);
+            long mask = prefix == 0 ? 0 : (0xFFFFFFFFL << (32 - prefix));
+            return (ipLong & mask) == (ipToLong(network) & mask);
+        } catch (Exception e) { return false; }
+    }
+
+    private long ipToLong(String ip) {
+        String[] octets = ip.split("\\.");
+        long result = 0;
+        for (int i = 0; i < 4; i++) result = (result << 8) | (Integer.parseInt(octets[i]) & 0xFF);
+        return result;
     }
 
     /**
