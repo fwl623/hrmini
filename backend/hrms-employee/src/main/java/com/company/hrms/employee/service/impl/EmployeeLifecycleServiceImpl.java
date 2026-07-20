@@ -5,8 +5,12 @@ import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.employee.dto.TransferEffectDTO;
 import com.company.hrms.employee.entity.Employee;
+import com.company.hrms.employee.entity.EmployeeSalaryHistory;
+import com.company.hrms.employee.entity.EmployeeSalaryProfile;
 import com.company.hrms.employee.entity.EmployeeTransferHistory;
 import com.company.hrms.employee.mapper.EmployeeMapper;
+import com.company.hrms.employee.mapper.EmployeeSalaryHistoryMapper;
+import com.company.hrms.employee.mapper.EmployeeSalaryProfileMapper;
 import com.company.hrms.employee.mapper.EmployeeTransferHistoryMapper;
 import com.company.hrms.employee.service.EmployeeLifecycleService;
 import com.company.hrms.employee.vo.PendingRegularizationVO;
@@ -22,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -41,6 +46,8 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
 
     private final EmployeeMapper employeeMapper;
     private final EmployeeTransferHistoryMapper transferHistoryMapper;
+    private final EmployeeSalaryProfileMapper salaryProfileMapper;
+    private final EmployeeSalaryHistoryMapper salaryHistoryMapper;
     private final InternalUserService internalUserService;
     private final EmployeeIdGenerator employeeIdGenerator;
     private final ApplicationEventPublisher eventPublisher;
@@ -65,7 +72,46 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
             return fromManager;
         }
         // 2) 沿部门树找负责人（跳过本人）
-        Long deptId = emp.getDepartmentId();
+        Long userId = resolveDeptManagerUserIdByDepartment(emp.getDepartmentId(), emp.getId(), emp.getUserId());
+        if (userId != null) {
+            return userId;
+        }
+        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                "无法解析部门负责人审批人，请为员工设置直属上级或部门负责人");
+    }
+
+    @Override
+    public Long resolveDeptManagerUserIdByDepartment(Long departmentId) {
+        Long userId = resolveDeptManagerUserIdByDepartment(departmentId, null, null);
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID,
+                    "无法解析部门负责人审批人，请为部门设置负责人");
+        }
+        return userId;
+    }
+
+    @Override
+    public Long resolveDeptHeadEmployeeId(Long departmentId) {
+        if (departmentId == null) {
+            return null;
+        }
+        Set<Long> visited = new HashSet<>();
+        Long deptId = departmentId;
+        while (deptId != null && visited.add(deptId)) {
+            Department dept = departmentMapper.selectById(deptId);
+            if (dept == null || (dept.getDeleted() != null && dept.getDeleted() == 1)) {
+                break;
+            }
+            if (dept.getHeadEmployeeId() != null) {
+                return dept.getHeadEmployeeId();
+            }
+            deptId = dept.getParentId();
+        }
+        return null;
+    }
+
+    private Long resolveDeptManagerUserIdByDepartment(Long departmentId, Long excludeEmployeeId, Long excludeUserId) {
+        Long deptId = departmentId;
         Set<Long> visited = new HashSet<>();
         while (deptId != null && visited.add(deptId)) {
             Department dept = departmentMapper.selectById(deptId);
@@ -73,7 +119,7 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
                 break;
             }
             Long headEmpId = dept.getHeadEmployeeId();
-            if (headEmpId != null && !headEmpId.equals(emp.getId())) {
+            if (headEmpId != null && !Objects.equals(headEmpId, excludeEmployeeId)) {
                 Long userId = userIdOfEmployee(headEmpId);
                 if (userId != null) {
                     return userId;
@@ -81,11 +127,10 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
             }
             deptId = dept.getParentId();
         }
-        // 3) 回退：任意 DEPT_MANAGER 角色
         List<Long> managers = sysUserMapper.selectUserIdsByRoleCode("DEPT_MANAGER");
         if (managers != null) {
             for (Long uid : managers) {
-                if (uid != null && !Objects.equals(uid, emp.getUserId())) {
+                if (uid != null && !Objects.equals(uid, excludeUserId)) {
                     return uid;
                 }
             }
@@ -93,8 +138,7 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
                 return managers.get(0);
             }
         }
-        throw new BusinessException(ErrorCode.PARAM_INVALID,
-                "无法解析部门负责人审批人，请为员工设置直属上级或部门负责人");
+        return null;
     }
 
     @Override
@@ -124,8 +168,9 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
 
     @Override
     public List<PendingRegularizationVO> listPendingRegularization(LocalDate from, LocalDate to) {
+        LocalDate today = LocalDate.now();
         return employeeMapper.listPendingRegularization(from, to).stream()
-                .map(this::toPendingVo)
+                .map(emp -> toPendingVo(emp, today))
                 .collect(Collectors.toList());
     }
 
@@ -141,6 +186,38 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         patch.setEmploymentStatus(STATUS_REGULAR);
         employeeMapper.updateById(patch);
         log.info("员工转正 PASS employeeId={}", employeeId);
+    }
+
+    @Override
+    @Transactional
+    public void applyRegularizationSalary(Long employeeId, BigDecimal newBaseSalary, Long operatorId) {
+        if (employeeId == null || newBaseSalary == null) {
+            return;
+        }
+        requireEmployee(employeeId);
+        EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(employeeId);
+        if (profile == null) {
+            log.warn("转正调薪跳过：无薪资档案 employeeId={} newBase={}", employeeId, newBaseSalary);
+            return;
+        }
+        BigDecimal old = profile.getBaseSalary();
+        if (old != null && old.compareTo(newBaseSalary) == 0) {
+            return;
+        }
+        EmployeeSalaryHistory history = new EmployeeSalaryHistory();
+        history.setEmployeeId(employeeId);
+        history.setFieldName("baseSalary");
+        history.setOldValue(old);
+        history.setNewValue(newBaseSalary);
+        history.setEffectiveDate(LocalDate.now());
+        history.setReason("转正调薪");
+        history.setOperatorId(operatorId);
+        salaryHistoryMapper.insert(history);
+
+        profile.setBaseSalary(newBaseSalary);
+        salaryProfileMapper.updateById(profile);
+        log.info("转正调薪生效 employeeId={} old={} new={} operatorId={}",
+                employeeId, old, newBaseSalary, operatorId);
     }
 
     @Override
@@ -288,7 +365,7 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         }
     }
 
-    private PendingRegularizationVO toPendingVo(Employee emp) {
+    private PendingRegularizationVO toPendingVo(Employee emp, LocalDate today) {
         PendingRegularizationVO vo = new PendingRegularizationVO();
         vo.setEmployeeId(emp.getId());
         vo.setEmpNo(emp.getEmployeeNo());
@@ -298,6 +375,7 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
         vo.setHireDate(emp.getHireDate());
         vo.setProbationEndDate(emp.getProbationEndDate());
         vo.setEmploymentStatus("probation");
+        vo.setOverdue(emp.getProbationEndDate() != null && emp.getProbationEndDate().isBefore(today));
         return vo;
     }
 }

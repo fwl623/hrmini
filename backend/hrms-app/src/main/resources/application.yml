@@ -53,9 +53,9 @@ hrms:
   # 模块间内部接口密钥（请求头 X-Internal-Token）；生产务必用环境变量覆盖
   internal:
     token: ${HRMS_INTERNAL_TOKEN:hrms-dev-internal-token-change-me}
-  # Day4：Feign 默认 Mock；联调日设 false 走本地真实建档/建号
+  # 入职确认默认走本地真实建档/建号；仅联调隔离时可设 true 用 Mock
   feign:
-    mock-enabled: true
+    mock-enabled: false
   # Day4：RabbitMQ 催办默认关闭（骨架 + OverdueCheckJob）；启用见 RabbitConfig 注释
   rabbitmq:
     enabled: false

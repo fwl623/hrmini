@@ -54,6 +54,12 @@ public final class OnboardingDtos {
         private Long createdBy;
         private String createdAt;
         private String updatedAt;
+        /** 是否标准职位（影响是否二审） */
+        private Boolean positionStandard;
+        /** 职级薪资上限（二审阈值） */
+        private BigDecimal gradeMaxSalary;
+        /** 驳回原因（来自审批日志） */
+        private String rejectReason;
     }
 
     @Data

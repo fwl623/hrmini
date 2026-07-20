@@ -1,7 +1,10 @@
 package com.company.hrms.workflow.job;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.company.hrms.employee.service.EmployeeLifecycleService;
+import com.company.hrms.workflow.entity.ApprovalInstance;
 import com.company.hrms.workflow.entity.ApprovalTask;
+import com.company.hrms.workflow.mapper.ApprovalInstanceMapper;
 import com.company.hrms.workflow.mapper.ApprovalTaskMapper;
 import com.company.hrms.workflow.notify.ApprovalNotifyPublisher;
 import com.company.hrms.workflow.service.DelegationService;
@@ -15,7 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 扫描超时待办：sla_deadline &lt; now 且 overdue=0 → overdue=1，并对新逾期任务催办；顺带清理过期委托。
+ * 扫描超时待办：sla_deadline &lt; now 且 overdue=0 → overdue=1，催办审批人并升级知会 HR；顺带清理过期委托。
  */
 @Slf4j
 @Component
@@ -23,8 +26,10 @@ import java.util.List;
 public class OverdueCheckJob {
 
     private final ApprovalTaskMapper taskMapper;
+    private final ApprovalInstanceMapper instanceMapper;
     private final ApprovalNotifyPublisher notifyPublisher;
     private final DelegationService delegationService;
+    private final EmployeeLifecycleService employeeLifecycleService;
 
     /** 每 15 分钟扫一次 */
     @Scheduled(cron = "0 */15 * * * ?")
@@ -39,7 +44,7 @@ public class OverdueCheckJob {
         }
     }
 
-    /** 供单测 / 手动触发：仅对新标记逾期的 PENDING 任务发催办 */
+    /** 供单测 / 手动触发：仅对新标记逾期的 PENDING 任务发催办 + 升级 */
     public int runOnce() {
         LocalDateTime now = LocalDateTime.now();
         List<ApprovalTask> due = taskMapper.selectList(new LambdaQueryWrapper<ApprovalTask>()
@@ -60,8 +65,26 @@ public class OverdueCheckJob {
                             task.getId(), assigneeId, e.getMessage());
                 }
             }
+            escalateToHr(task, assigneeId);
         }
         return updated;
+    }
+
+    private void escalateToHr(ApprovalTask task, Long assigneeId) {
+        try {
+            ApprovalInstance instance = instanceMapper.selectById(task.getInstanceId());
+            String processType = instance == null ? null : instance.getProcessType();
+            Long hrUserId = employeeLifecycleService.resolveHrApproverUserId(assigneeId);
+            if (hrUserId != null && (assigneeId == null || !hrUserId.equals(assigneeId))) {
+                notifyPublisher.publishOverdueEscalation(
+                        task.getId(),
+                        assigneeId == null ? 0L : assigneeId,
+                        processType,
+                        hrUserId);
+            }
+        } catch (Exception e) {
+            log.warn("逾期升级失败 taskId={}: {}", task.getId(), e.getMessage());
+        }
     }
 
     public long countPendingOverdue() {

@@ -35,6 +35,8 @@ public final class LifecycleDtos {
         private String probationEndDate;
         private Long instanceId;
         private String createdAt;
+        /** FAIL 完成后引导：START_RESIGNATION */
+        private String nextAction;
     }
 
     @Data

@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
-import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -25,6 +24,9 @@ import java.util.Set;
 
 @Service
 public class InternalUserServiceImpl implements InternalUserService {
+
+    /** 入职/内部建号默认初密（联调与种子账号一致，便于登录） */
+    private static final String DEFAULT_PASSWORD = "Admin@123";
 
     /** 内部建号允许的角色；禁止 SYS_ADMIN，防止持内部 Token 提权 */
     private static final Set<String> ALLOWED_ROLE_CODES = Set.of(
@@ -63,17 +65,14 @@ public class InternalUserServiceImpl implements InternalUserService {
         LocalDateTime now = LocalDateTime.now();
         SysUser user = new SysUser();
         user.setUsername(request.getUsername());
-        user.setPasswordHash(passwordEncoder.encode(randomPassword()));
-        // 随机初密视为「未主动改密」，触发首次登录强制改密
-        user.setPasswordChangedAt(now);
+        user.setPasswordHash(passwordEncoder.encode(DEFAULT_PASSWORD));
+        // 早于 createdAt，避免 mustChangePassword 判定为「首次强制改密」
+        user.setPasswordChangedAt(now.minusDays(1));
         user.setCreatedAt(now);
         user.setEmployeeId(request.getEmployeeId());
         user.setStatus(1);
         user.setUpdatedAt(now);
         sysUserMapper.insert(user);
-        // 与 createdAt 对齐，mustChangePassword 会因「创建即改密」判定为首次改密
-        user.setPasswordChangedAt(user.getCreatedAt());
-        sysUserMapper.updateById(user);
 
         List<String> roleCodes = CollectionUtils.isEmpty(request.getRoleCodes())
                 ? Collections.singletonList(RoleCode.EMPLOYEE.name())
@@ -130,13 +129,4 @@ public class InternalUserServiceImpl implements InternalUserService {
         sysUserMapper.updateById(user);
     }
 
-    private static String randomPassword() {
-        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-        SecureRandom random = new SecureRandom();
-        StringBuilder sb = new StringBuilder("Aa1");
-        for (int i = 0; i < 9; i++) {
-            sb.append(chars.charAt(random.nextInt(chars.length())));
-        }
-        return sb.toString();
-    }
 }

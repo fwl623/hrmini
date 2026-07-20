@@ -24,7 +24,7 @@ public class RegularizationController {
         this.regularizationService = regularizationService;
     }
 
-    /** 待转正：试用结束前 7 天 */
+    /** 待转正：试用结束日 ≤ 今天+7（含已逾期） */
     @GetMapping("/pending")
     public Result<List<PendingRegularizationVO>> pending() {
         return Result.success(regularizationService.listPending());

@@ -27,4 +27,16 @@ public interface OrgEmployeeNoHistoryMapper extends BaseMapper<EmployeeNoHistory
             WHERE year = #{year} AND dept_code = #{deptCode}
             """)
     Integer selectMaxSeq(@Param("year") String year, @Param("deptCode") String deptCode);
+
+    /**
+     * 种子/历史遗漏时 history 可能为空，需与 employee 表已占用工号取更大序号，避免 uk_employee_no 冲突。
+     */
+    @Select("""
+            SELECT MAX(CAST(SUBSTRING(employee_no, 7, 3) AS UNSIGNED))
+            FROM employee
+            WHERE employee_no LIKE CONCAT(#{year}, #{deptCode}, '%')
+              AND CHAR_LENGTH(employee_no) >= 9
+              AND (deleted = 0 OR deleted IS NULL)
+            """)
+    Integer selectMaxSeqFromEmployee(@Param("year") String year, @Param("deptCode") String deptCode);
 }
