@@ -58,6 +58,7 @@ public class LeaveService {
     private final WorkdayConfigMapper workdayConfigMapper;
     private final HolidayCalendarMapper holidayCalendarMapper;
     private final ApprovalEngineService approvalEngineService;
+    private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
 
     // ========== 假期余额 ==========
 
@@ -143,11 +144,33 @@ public class LeaveService {
         IPage<LeaveApplication> page = leaveApplicationMapper.selectPage(
                 new Page<>(pageParam.getPage(), pageParam.getPageSize()), wrapper);
 
+        // 收集员工ID，批量查询姓名和部门
+        java.util.Set<Long> empIds = page.getRecords().stream()
+                .map(LeaveApplication::getEmployeeId)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Map<Long, String> nameMap = new java.util.HashMap<>();
+        java.util.Map<Long, String> deptMap = new java.util.HashMap<>();
+        if (!empIds.isEmpty()) {
+            String idList = empIds.stream().map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(","));
+            List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
+                    null, null, null, null, null, null, null,
+                    " AND e.id IN (" + idList + ")");
+            for (com.company.hrms.employee.entity.Employee emp : empList) {
+                if (emp != null && emp.getId() != null) {
+                    nameMap.put(emp.getId(), emp.getName());
+                    deptMap.put(emp.getId(), emp.getDepartmentName());
+                }
+            }
+        }
+
         List<LeaveApplicationVO> voList = new ArrayList<>();
         for (LeaveApplication la : page.getRecords()) {
             LeaveApplicationVO vo = new LeaveApplicationVO();
             vo.setId(la.getId());
-            vo.setEmployeeName(String.valueOf(la.getEmployeeId())); // TODO: 通过 Feign 获取员工姓名
+            vo.setEmployeeId(la.getEmployeeId());
+            vo.setEmployeeName(nameMap.getOrDefault(la.getEmployeeId(), String.valueOf(la.getEmployeeId())));
+            vo.setDepartment(deptMap.get(la.getEmployeeId()));
             vo.setLeaveType(la.getLeaveType());
             vo.setStartTime(la.getStartTime() != null ? la.getStartTime().toString() : null);
             vo.setEndTime(la.getEndTime() != null ? la.getEndTime().toString() : null);

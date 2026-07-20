@@ -8,7 +8,9 @@ import lombok.Data;
 @Data
 public class LeaveApplicationVO {
     private Long id;
+    private Long employeeId;
     private String employeeName;
+    private String department;
     private String leaveType;
     private String startTime;
     private String endTime;
