@@ -248,10 +248,13 @@ public class PunchService {
                         .le(AttendanceRecord::getPunchDate, today));
         java.util.Map<java.time.LocalDate, java.util.Set<String>> dateTypeMap = new java.util.HashMap<>();
         java.util.Set<String> dedupKeys = new java.util.HashSet<>();
+        long lateCount = 0, earlyLeaveCount = 0;
         for (AttendanceRecord r : allRecords) {
             String key = r.getEmployeeId() + "_" + r.getPunchDate() + "_" + r.getPunchType();
             if (dedupKeys.add(key)) {
                 dateTypeMap.computeIfAbsent(r.getPunchDate(), k -> new java.util.HashSet<>()).add(r.getPunchType());
+                if ("LATE".equals(r.getPunchStatus())) lateCount++;
+                if ("EARLY_LEAVE".equals(r.getPunchStatus())) earlyLeaveCount++;
             }
         }
 
@@ -280,7 +283,7 @@ public class PunchService {
         }
 
         // 4. 遍历月初到今天每个工作日，统计打卡
-        int shouldDays = 0, clockedCount = 0, lateCount = 0, earlyLeaveCount = 0;
+        int shouldDays = 0, clockedCount = 0;
         int missingInCount = 0, missingOutCount = 0;
 
         LocalDate current = monthStart;
