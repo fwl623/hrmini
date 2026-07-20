@@ -104,12 +104,15 @@ public class PunchService {
             throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
         }
 
-        // 存储时间优先用前端传的值（保留给用户看的原始时间），否则用服务端时间
+        // 存储时间优先用前端传的值，否则用服务端时间
+        // 前端传的是 ISO 8601 UTC 时间（如 "2026-07-20T11:47:00.000Z"），需转成 CST
         LocalDateTime storeTime = LocalDateTime.now(CST);
         LocalDate storeDate = serverDate;
         if (dto.getPunchTime() != null) {
             try {
-                storeTime = LocalDateTime.parse(dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME);
+                java.time.OffsetDateTime odt = java.time.OffsetDateTime.parse(
+                        dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME);
+                storeTime = odt.atZoneSameInstant(CST).toLocalDateTime();
                 storeDate = storeTime.toLocalDate();
             } catch (DateTimeParseException e) {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, "打卡时间格式错误");
