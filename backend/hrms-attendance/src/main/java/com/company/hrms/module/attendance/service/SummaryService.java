@@ -45,6 +45,7 @@ public class SummaryService {
     private final AttendanceMonthlySummaryMapper monthlySummaryMapper;
     private final AttendanceMonthLockMapper monthLockMapper;
     private final AttendanceRecordMapper attendanceRecordMapper;
+    private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
 
     // ========== 月汇总查看/锁定 ==========
 
@@ -65,7 +66,17 @@ public class SummaryService {
         for (AttendanceMonthlySummary ms : page.getRecords()) {
             MonthlySummaryItem item = new MonthlySummaryItem();
             item.setEmployeeId(ms.getEmployeeId());
-            item.setEmployeeName(String.valueOf(ms.getEmployeeId())); // TODO: Feign
+            // 从 employee 表查询员工姓名
+            String employeeName = String.valueOf(ms.getEmployeeId());
+            try {
+                com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(ms.getEmployeeId());
+                if (emp != null && emp.getName() != null) {
+                    employeeName = emp.getName();
+                }
+            } catch (Exception e) {
+                log.warn("查询员工姓名失败: employeeId={}", ms.getEmployeeId(), e);
+            }
+            item.setEmployeeName(employeeName);
             item.setPeriod(ms.getPeriod());
             item.setShouldAttendDays(ms.getShouldAttendDays() != null ? ms.getShouldAttendDays() : 0);
             item.setActualAttendDays(ms.getActualAttendDays() != null ? ms.getActualAttendDays() : BigDecimal.ZERO);
