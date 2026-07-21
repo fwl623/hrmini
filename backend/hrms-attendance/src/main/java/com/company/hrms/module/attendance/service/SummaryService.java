@@ -439,7 +439,27 @@ public class SummaryService {
             monthly.setPeriod(period);
         }
 
+        // 动态计算当月工作日数（从配置读取，不依赖日汇总数量）
         int shouldAttendDays = 0;
+        try {
+            java.util.Set<Integer> wkSet = workdayConfigMapper.selectList(null).stream()
+                    .filter(w -> w.getIsWorkday() == 1)
+                    .map(WorkdayConfig::getDayOfWeek)
+                    .collect(java.util.stream.Collectors.toSet());
+            java.util.Set<java.time.LocalDate> holSet = holidayCalendarMapper.selectList(null).stream()
+                    .map(HolidayCalendar::getHolidayDate)
+                    .collect(java.util.stream.Collectors.toSet());
+            java.time.LocalDate d = startDate;
+            while (!d.isAfter(endDate)) {
+                if (wkSet.contains(d.getDayOfWeek().getValue()) && !holSet.contains(d)) {
+                    shouldAttendDays++;
+                }
+                d = d.plusDays(1);
+            }
+        } catch (Exception e) {
+            log.warn("计算工作日数失败，回退到日汇总数量", e);
+            shouldAttendDays = dailyList.size();
+        }
         BigDecimal actualAttendDays = BigDecimal.ZERO;
         int lateCount = 0;
         int earlyLeaveCount = 0;
@@ -449,7 +469,6 @@ public class SummaryService {
 
         for (AttendanceDailySummary daily : dailyList) {
             String raw = daily.getDayStatus();
-            shouldAttendDays++;
             int amCode = -1, pmCode = -1;
             boolean isNewFormat = (raw != null && raw.startsWith("am:"));
             if (isNewFormat) {
