@@ -44,6 +44,7 @@ public class ApprovalEventListener {
     private final AttendanceRecordMapper attendanceRecordMapper;
     private final AttendanceDailySummaryMapper attendanceDailySummaryMapper;
     private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper attendanceMonthlySummaryMapper;
+    private final com.company.hrms.attendance.mapper.BalanceChangeLogMapper balanceChangeLogMapper;
 
     @EventListener
     @Transactional(rollbackFor = Exception.class)
@@ -81,6 +82,21 @@ public class ApprovalEventListener {
         if ("APPROVED".equals(result)) {
             app.setStatus("APPROVED");
             leaveApplicationMapper.updateById(app);
+
+            // 更新余额变动日志为 CONFIRMED
+            try {
+                com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.BalanceChangeLog> wrapper =
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+                wrapper.eq(com.company.hrms.attendance.entity.BalanceChangeLog::getSourceId, applicationId)
+                       .eq(com.company.hrms.attendance.entity.BalanceChangeLog::getSourceType, "SUBMIT");
+                com.company.hrms.attendance.entity.BalanceChangeLog log = balanceChangeLogMapper.selectOne(wrapper);
+                if (log != null) {
+                    log.setStatus("CONFIRMED");
+                    balanceChangeLogMapper.updateById(log);
+                }
+            } catch (Exception e) {
+                log.warn("更新余额变动日志失败: applicationId={}", applicationId, e);
+            }
 
             // 更新考勤日汇总：请假期间每天记为 LEAVE
             Long empId = app.getEmployeeId();
@@ -166,6 +182,20 @@ public class ApprovalEventListener {
             leaveApplicationMapper.updateById(app);
             // 恢复预扣余额（年假/调休）
             restoreLeaveBalance(app);
+            // 更新余额变动日志为 REFUNDED
+            try {
+                com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.BalanceChangeLog> wrapper =
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+                wrapper.eq(com.company.hrms.attendance.entity.BalanceChangeLog::getSourceId, applicationId)
+                       .eq(com.company.hrms.attendance.entity.BalanceChangeLog::getSourceType, "SUBMIT");
+                com.company.hrms.attendance.entity.BalanceChangeLog log = balanceChangeLogMapper.selectOne(wrapper);
+                if (log != null) {
+                    log.setStatus("REFUNDED");
+                    balanceChangeLogMapper.updateById(log);
+                }
+            } catch (Exception e) {
+                log.warn("更新余额变动日志失败: applicationId={}", applicationId, e);
+            }
             log.info("请假已驳回, 余额已恢复: id={}", applicationId);
         }
     }

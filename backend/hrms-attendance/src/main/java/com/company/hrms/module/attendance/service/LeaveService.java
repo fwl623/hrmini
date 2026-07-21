@@ -59,6 +59,7 @@ public class LeaveService {
     private final HolidayCalendarMapper holidayCalendarMapper;
     private final ApprovalEngineService approvalEngineService;
     private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
+    private final com.company.hrms.attendance.mapper.BalanceChangeLogMapper balanceChangeLogMapper;
 
     // ========== 假期余额 ==========
 
@@ -215,18 +216,43 @@ public class LeaveService {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "病假超过1天需上传医院证明");
         }
 
-        // 年假/调休需校验余额
+        // 年假/调休需校验余额（预扣模式）
+        String snapshotJson = null;
         if ("ANNUAL".equalsIgnoreCase(dto.getLeaveType())
                 || "COMP_OFF".equalsIgnoreCase(dto.getLeaveType())) {
             String leaveType = dto.getLeaveType().toUpperCase();
             int year = LocalDate.now().getYear();
-            LeaveBalance balance = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(employeeId, leaveType, year);
-            if (balance == null || balance.getBalance().compareTo(days) < 0) {
+            LeaveBalance lb = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(employeeId, leaveType, year);
+            // 使用 remaining_quota 判断（后备用 balance）
+            BigDecimal remaining = lb.getRemainingQuota() != null ? lb.getRemainingQuota() : lb.getBalance();
+            if (lb == null || remaining.compareTo(days) < 0) {
                 throw new BusinessException(ErrorCode.LEAVE_BALANCE_INSUFFICIENT, "请假余额不足");
             }
-            // 预扣余额
-            balance.setBalance(balance.getBalance().subtract(days));
-            leaveBalanceMapper.updateById(balance);
+            // 乐观锁预扣
+            BigDecimal before = remaining;
+            BigDecimal after = before.subtract(days);
+            if (lb.getRemainingQuota() != null) {
+                lb.setRemainingQuota(after);
+            }
+            lb.setBalance(after); // 同步旧字段
+            lb.setUsedQuota(lb.getUsedQuota() != null ? lb.getUsedQuota().add(days) : days);
+            lb.setVersion(lb.getVersion() != null ? lb.getVersion() + 1 : 1);
+            int rows = leaveBalanceMapper.updateById(lb);
+            if (rows <= 0) {
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "余额扣减失败，请重试");
+            }
+            // 记录余额快照（用于审计）
+            snapshotJson = "{\"before\":" + before + ",\"after\":" + after + ",\"leaveType\":\"" + leaveType + "\",\"year\":" + year + "}";
+            // 写入余额变动日志（PENDING 状态）
+            com.company.hrms.attendance.entity.BalanceChangeLog log = new com.company.hrms.attendance.entity.BalanceChangeLog();
+            log.setEmployeeId(employeeId);
+            log.setLeaveType(leaveType);
+            log.setChangeAmount(days);
+            log.setSourceType("SUBMIT");
+            log.setBalanceBefore(before);
+            log.setBalanceAfter(after);
+            log.setStatus("PENDING");
+            balanceChangeLogMapper.insert(log);
         }
 
         LeaveApplication app = new LeaveApplication();
@@ -239,6 +265,9 @@ public class LeaveService {
         app.setHandoverEmployeeId(dto.getHandoverEmployeeId());
         app.setAttachmentUrl(dto.getAttachment());
         app.setStatus("PENDING");
+        if (snapshotJson != null) {
+            app.setDeductedBalanceSnapshot(snapshotJson);
+        }
         leaveApplicationMapper.insert(app);
 
         CreateApprovalRequest req = new CreateApprovalRequest();
@@ -290,8 +319,27 @@ public class LeaveService {
             LeaveBalance balance = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(
                     app.getEmployeeId(), app.getLeaveType(), LocalDate.now().getYear());
             if (balance != null) {
-                balance.setBalance(balance.getBalance().add(app.getLeaveDays()));
+                BigDecimal before = balance.getRemainingQuota() != null ? balance.getRemainingQuota() : balance.getBalance();
+                BigDecimal after = before.add(app.getLeaveDays());
+                if (balance.getRemainingQuota() != null) balance.setRemainingQuota(after);
+                balance.setBalance(after);
+                balance.setUsedQuota(balance.getUsedQuota() != null
+                        ? balance.getUsedQuota().subtract(app.getLeaveDays()) : BigDecimal.ZERO);
+                balance.setVersion(balance.getVersion() != null ? balance.getVersion() + 1 : 1);
                 leaveBalanceMapper.updateById(balance);
+
+                // 记录归还日志
+                com.company.hrms.attendance.entity.BalanceChangeLog log = new com.company.hrms.attendance.entity.BalanceChangeLog();
+                log.setEmployeeId(app.getEmployeeId());
+                log.setLeaveType(app.getLeaveType());
+                log.setChangeAmount(app.getLeaveDays().negate());
+                log.setSourceType("REFUND");
+                log.setSourceId(app.getId());
+                log.setBalanceBefore(before);
+                log.setBalanceAfter(after);
+                log.setStatus("REFUNDED");
+                log.setRemark("撤回归还");
+                balanceChangeLogMapper.insert(log);
             }
         }
 
@@ -302,6 +350,7 @@ public class LeaveService {
                     operatorId != null ? operatorId : app.getEmployeeId());
         }
         app.setStatus("CANCELLED");
+        app.setCancelReason("WITHDRAW");
         leaveApplicationMapper.updateById(app);
         log.info("撤销请假: id={}, empId={}", id, app.getEmployeeId());
     }

@@ -101,9 +101,16 @@ public class LeaveApplication {
     @TableField("status")
     private String status;
 
+    /** 撤销原因：WITHDRAW(审批中撤回)/REVOKE(通过后撤销) */
+    @TableField("cancel_reason")
+    private String cancelReason;
+
+    /** 扣减时的余额快照（JSON，审计用） */
+    @TableField("deducted_balance_snapshot")
+    private String deductedBalanceSnapshot;
+
     /**
      * 审批实例ID，关联审批流程实例表主键
-     * 用于关联该请假申请对应的审批流程记录，可为空
      */
     @TableField("instance_id")
     private Long instanceId;
