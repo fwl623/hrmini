@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -390,7 +391,7 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.NESTED)
     public void effectResign(Long employeeId) {
         Employee emp = requireEmployee(employeeId);
         // 已离职：仍确保账号禁用；若工号未腾出则补腾出（兼容历史数据）
