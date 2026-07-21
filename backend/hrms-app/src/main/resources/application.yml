@@ -18,6 +18,8 @@ spring:
       # Redis：登录/鉴权已依赖 StringRedisTemplate，勿再排除 RedisAutoConfiguration
       # - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       # - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+  flyway:
+    out-of-order: true
 
 springdoc:
   api-docs:
