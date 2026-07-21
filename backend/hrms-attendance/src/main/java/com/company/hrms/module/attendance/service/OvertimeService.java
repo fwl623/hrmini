@@ -113,10 +113,10 @@ public class OvertimeService {
      */
     @Transactional(rollbackFor = Exception.class)
     public OvertimeApplication submit(Long employeeId, OvertimeApplicationDTO dto) {
-        // 校验：加班日期不能是未来日期
+        // 校验：加班日期不能是过去日期（PRD要求：加班需提前申请）
         LocalDate overtimeDate = LocalDate.parse(dto.getOvertimeDate());
-        if (overtimeDate.isAfter(LocalDate.now())) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "加班日期不能是未来日期");
+        if (overtimeDate.isBefore(LocalDate.now())) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "加班日期不能是过去日期，请选择今天或未来的日期");
         }
 
         // 解析起止时间
