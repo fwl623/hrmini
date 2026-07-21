@@ -51,6 +51,8 @@ public final class OnboardingDtos {
         private BigDecimal baseSalary;
         private LocalDate actualOnboardDate;
         private Long employeeId;
+        /** 关联员工当前在职状态：10试用/20正式/30待离职/40已离职；未建档则为 null */
+        private Integer employmentStatus;
         private Long createdBy;
         private String createdAt;
         private String updatedAt;
