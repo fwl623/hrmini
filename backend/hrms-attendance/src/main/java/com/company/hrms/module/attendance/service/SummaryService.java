@@ -154,11 +154,9 @@ public class SummaryService {
     // ========== 日终聚合 ==========
 
     /**
-     * 执行日终聚合
-     * 将当日 attendance_record 聚合为 attendance_daily_summary，
-     * 再聚合进 attendance_monthly_summary
-     *
-     * @param date 汇总日期，null 表示昨天
+     * 执行日终聚合（v2.1 双槽位）
+     * 将当日 attendance_record 按 AM(IN)/PM(OUT) 分别判定，
+     * 生成 attendance_daily_summary 格式 "am:0,pm:0"
      */
     @Transactional(rollbackFor = Exception.class)
     public void runDailySummary(LocalDate date) {
@@ -170,46 +168,113 @@ public class SummaryService {
                 new LambdaQueryWrapper<AttendanceRecord>()
                         .eq(AttendanceRecord::getPunchDate, summaryDate));
 
+        // 加载当天已审批的请假（用于槽位覆盖判断）
+        List<com.company.hrms.attendance.entity.LeaveApplication> dayLeaves = leaveApplicationMapper.selectList(
+                new LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
+                        .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
+                        .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, summaryDate.plusDays(1).atStartOfDay())
+                        .ge(com.company.hrms.attendance.entity.LeaveApplication::getEndTime, summaryDate.atStartOfDay()));
+
         // 按 employeeId 分组
         java.util.Map<Long, List<AttendanceRecord>> grouped = records.stream()
                 .collect(java.util.stream.Collectors.groupingBy(AttendanceRecord::getEmployeeId));
 
-        for (java.util.Map.Entry<Long, List<AttendanceRecord>> entry : grouped.entrySet()) {
-            Long empId = entry.getKey();
-            List<AttendanceRecord> empRecords = entry.getValue();
+        // 收集所有员工ID（有打卡+有请假的）
+        java.util.Set<Long> allEmpIds = new java.util.HashSet<>(grouped.keySet());
+        for (com.company.hrms.attendance.entity.LeaveApplication la : dayLeaves) {
+            allEmpIds.add(la.getEmployeeId());
+        }
+
+        for (Long empId : allEmpIds) {
+            List<AttendanceRecord> empRecords = grouped.getOrDefault(empId, java.util.Collections.emptyList());
 
             AttendanceDailySummary summary = dailySummaryMapper.selectByEmployeeAndDate(empId, summaryDate);
+
+            // ---- v2.1 双槽位判定 ----
+
+            // 1. 判断该员工当天的请假覆盖槽位
+            boolean amLeave = false, pmLeave = false;
+            for (com.company.hrms.attendance.entity.LeaveApplication la : dayLeaves) {
+                if (!la.getEmployeeId().equals(empId)) continue;
+                java.time.LocalTime startT = la.getStartTime().toLocalTime();
+                java.time.LocalTime endT = la.getEndTime().toLocalTime();
+                // 跨天请假：end > start 或 end 为午夜
+                boolean isCrossDay = la.getStartTime().toLocalDate().isBefore(summaryDate)
+                    || la.getEndTime().toLocalDate().isAfter(summaryDate)
+                    || (la.getEndTime().toLocalDate().equals(summaryDate) && endT.equals(java.time.LocalTime.MIDNIGHT));
+                // 当前日期在请假范围内才判断
+                if (la.getStartTime().toLocalDate().isAfter(summaryDate) || la.getEndTime().toLocalDate().isBefore(summaryDate)) {
+                    continue;
+                }
+                // 2026-07-21 13:00 ~ 2026-07-21 18:00：覆盖18:00 → PM请假
+                // 请假时段 ∩ [00:00, 12:00) ≠ ∅ → AM请假
+                // 请假时段 ∩ [12:00, 23:59] ≠ ∅ → PM请假
+                if (isCrossDay || startT.isBefore(java.time.LocalTime.NOON)) {
+                    // 请假从这天开始且在12点前，或跨天覆盖了整个上午
+                    if (isCrossDay || (startT.isBefore(java.time.LocalTime.NOON) && endT.isAfter(java.time.LocalTime.MIDNIGHT))) {
+                        amLeave = true;
+                    }
+                }
+                if (isCrossDay || endT.isAfter(java.time.LocalTime.NOON)) {
+                    pmLeave = true;
+                }
+            }
+
+            // 2. 查询打卡记录
+            AttendanceRecord inRecord = empRecords.stream()
+                    .filter(r -> "IN".equals(r.getPunchType()))
+                    .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
+                    .orElse(null);
+            AttendanceRecord outRecord = empRecords.stream()
+                    .filter(r -> "OUT".equals(r.getPunchType()))
+                    .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
+                    .orElse(null);
+
+            java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
+            java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
+            int lateThreshold = 15;
+
+            // 3. AM 槽位判定
+            int amCode;
+            if (amLeave) {
+                amCode = 4; // 请假
+            } else if (inRecord == null) {
+                amCode = 5; // 缺卡
+            } else {
+                java.time.LocalTime t = inRecord.getPunchTime().toLocalTime();
+                if (!t.isAfter(workStart)) {
+                    amCode = 0; // 正常
+                } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
+                    amCode = 1; // 迟到
+                } else {
+                    amCode = 3; // 旷工
+                }
+            }
+
+            // 4. PM 槽位判定
+            int pmCode;
+            if (pmLeave) {
+                pmCode = 4; // 请假
+            } else if (outRecord == null) {
+                pmCode = 5; // 缺卡
+            } else {
+                java.time.LocalTime t = outRecord.getPunchTime().toLocalTime();
+                if (!t.isBefore(workEnd)) {
+                    pmCode = 0; // 正常
+                } else if (!t.isBefore(workEnd.minusMinutes(lateThreshold))) {
+                    pmCode = 2; // 早退
+                } else {
+                    pmCode = 3; // 旷工
+                }
+            }
+
+            // 5. 写入日汇总
             if (summary == null) {
                 summary = new AttendanceDailySummary();
                 summary.setEmployeeId(empId);
                 summary.setSummaryDate(summaryDate);
             }
-
-            // 计算日考勤状态
-            boolean hasIn = empRecords.stream().anyMatch(r -> "IN".equals(r.getPunchType()));
-            boolean hasOut = empRecords.stream().anyMatch(r -> "OUT".equals(r.getPunchType()));
-
-            String dayStatus;
-            if (hasIn && hasOut) {
-                // 取最差的打卡状态
-                dayStatus = empRecords.stream()
-                        .map(AttendanceRecord::getPunchStatus)
-                        .max(java.util.Comparator.comparingInt(s -> {
-                            if ("ABSENT_HALF".equals(s)) return 3;
-                            if ("LATE".equals(s)) return 2;
-                            if ("EARLY_LEAVE".equals(s)) return 2;
-                            return 1; // NORMAL
-                        }))
-                        .orElse("NORMAL");
-            } else if (hasIn) {
-                dayStatus = "MISSING_OUT";
-            } else if (hasOut) {
-                dayStatus = "MISSING_IN";
-            } else {
-                dayStatus = "ABSENT";
-            }
-
-            summary.setDayStatus(dayStatus);
+            summary.setDayStatus("am:" + amCode + ",pm:" + pmCode);
             final AttendanceDailySummary finalSummary = summary;
             // 打卡时间
             empRecords.stream().filter(r -> "IN".equals(r.getPunchType()))
@@ -458,7 +523,9 @@ public class SummaryService {
             day.setDate(current.toString());
 
             if (ds != null) {
-                day.setDayStatus(ds.getDayStatus());
+                // v2.1: 解析双槽位格式 "am:0,pm:0"
+                String displayStatus = parseDualSlotStatus(ds.getDayStatus());
+                day.setDayStatus(displayStatus);
                 day.setClockInTime(ds.getClockInTime() != null
                         ? ds.getClockInTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
                 day.setClockOutTime(ds.getClockOutTime() != null
@@ -481,5 +548,34 @@ public class SummaryService {
         }
 
         return new AttendanceCalendarVO(start.getYear(), start.getMonthValue(), days);
+    }
+
+    // ========== v2.1 双槽位工具方法 ==========
+
+    /**
+     * 解析双槽位状态 "am:0,pm:0" → 展示用单状态（最差槽位优先）
+     * 兼容旧格式（无 am:/pm: 前缀时原样返回）
+     */
+    private String parseDualSlotStatus(String raw) {
+        if (raw == null) return "--";
+        if (!raw.startsWith("am:") && !raw.startsWith("pm:")) {
+            // 旧格式兼容
+            return raw;
+        }
+        try {
+            String[] parts = raw.split(",");
+            int amCode = Integer.parseInt(parts[0].split(":")[1]);
+            int pmCode = Integer.parseInt(parts[1].split(":")[1]);
+
+            // 按优先级返回展示状态：请假 > 旷工 > 缺卡 > 迟到/早退 > 正常
+            if (amCode == 4 || pmCode == 4) return "LEAVE";
+            if (amCode == 3 || pmCode == 3) return "ABSENT";
+            if (amCode == 5 && pmCode == 5) return "ABSENT"; // 双缺卡→缺勤展示
+            if (amCode == 1 || pmCode == 2) return (amCode == 1 ? "LATE" : "EARLY_LEAVE");
+            if (amCode == 5 || pmCode == 5) return "MISSING_IN"; // 单缺卡
+            return "NORMAL";
+        } catch (Exception e) {
+            return raw;
+        }
     }
 }

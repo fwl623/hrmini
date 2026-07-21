@@ -96,16 +96,43 @@ public class ApprovalEventListener {
             java.time.LocalDate current = startDate;
             while (!current.isAfter(endDate)) {
                 AttendanceDailySummary daily = attendanceDailySummaryMapper.selectByEmployeeAndDate(empId, current);
+                // v2.1: 判断当天哪些槽位被请假覆盖
+                boolean isFirstDay = current.equals(startDate);
+                boolean isLastDay = current.equals(endDate);
+                // 中间天 → 全天覆盖；首日/末日 → 按时间段判断
+                boolean coversAm, coversPm;
+                if (!isFirstDay && !isLastDay) {
+                    coversAm = true;
+                    coversPm = true;
+                } else {
+                    java.time.LocalTime s = isFirstDay ? app.getStartTime().toLocalTime() : java.time.LocalTime.MIDNIGHT;
+                    java.time.LocalTime e = isLastDay ? app.getEndTime().toLocalTime() : java.time.LocalTime.MIDNIGHT.plusHours(23).plusMinutes(59);
+                    coversAm = !(e.isBefore(java.time.LocalTime.NOON) || s.isAfter(java.time.LocalTime.NOON));
+                    coversPm = !(e.isBefore(java.time.LocalTime.NOON) || s.isAfter(java.time.LocalTime.NOON));
+                }
+
                 if (daily == null) {
                     daily = new AttendanceDailySummary();
                     daily.setEmployeeId(empId);
                     daily.setSummaryDate(current);
-                    daily.setDayStatus("LEAVE");
+                    daily.setDayStatus("am:" + (coversAm ? 4 : 5) + ",pm:" + (coversPm ? 4 : 5));
                     daily.setLeaveDays(perDayLeave);
                     daily.setOvertimeHours(java.math.BigDecimal.ZERO);
                     attendanceDailySummaryMapper.insert(daily);
                 } else {
-                    daily.setDayStatus("LEAVE");
+                    // 合并：保留已有状态，只将请假覆盖的槽位置为4
+                    String raw = daily.getDayStatus();
+                    int amCode = 5, pmCode = 5;
+                    if (raw != null && raw.startsWith("am:")) {
+                        try {
+                            String[] parts = raw.split(",");
+                            amCode = Integer.parseInt(parts[0].split(":")[1]);
+                            pmCode = Integer.parseInt(parts[1].split(":")[1]);
+                        } catch (Exception e) {}
+                    }
+                    if (coversAm) amCode = 4;
+                    if (coversPm) pmCode = 4;
+                    daily.setDayStatus("am:" + amCode + ",pm:" + pmCode);
                     daily.setLeaveDays(perDayLeave);
                     attendanceDailySummaryMapper.updateById(daily);
                 }
@@ -190,51 +217,66 @@ public class ApprovalEventListener {
             record.setSource("MAKEUP");
             attendanceRecordMapper.insert(record);
 
-            // 更新日汇总：删除旧的当日汇总，重新聚合
-            attendanceDailySummaryMapper.delete(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceDailySummary>()
-                            .eq(AttendanceDailySummary::getEmployeeId, sup.getEmployeeId())
-                            .eq(AttendanceDailySummary::getSummaryDate, punchDate));
+            // v2.1 原子化重算：仅重算被补卡影响的槽位
+            Long empId = sup.getEmployeeId();
+            AttendanceDailySummary summary = attendanceDailySummaryMapper.selectByEmployeeAndDate(empId, punchDate);
 
-            // 重新查询该员工当天的所有打卡记录（已经清理了重复的），聚合日汇总
-            java.util.List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectList(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
-                            .eq(AttendanceRecord::getEmployeeId, sup.getEmployeeId())
-                            .eq(AttendanceRecord::getPunchDate, punchDate));
-
-            boolean hasIn = dayRecords.stream().anyMatch(r -> "IN".equals(r.getPunchType()));
-            boolean hasOut = dayRecords.stream().anyMatch(r -> "OUT".equals(r.getPunchType()));
-            String dayStatus = "ABSENT";
-            if (hasIn && hasOut) {
-                dayStatus = dayRecords.stream()
-                        .map(AttendanceRecord::getPunchStatus)
-                        .max(java.util.Comparator.comparingInt(s -> {
-                            if ("ABSENT_HALF".equals(s)) return 3;
-                            if ("LATE".equals(s)) return 2;
-                            if ("EARLY_LEAVE".equals(s)) return 2;
-                            return 1;
-                        }))
-                        .orElse("NORMAL");
-            } else if (hasIn) {
-                dayStatus = "MISSING_OUT";
-            } else if (hasOut) {
-                dayStatus = "MISSING_IN";
+            // 解析现有槽位状态，如果日汇总不存在则默认双缺卡
+            int amCode = 5, pmCode = 5;
+            if (summary != null && summary.getDayStatus() != null && summary.getDayStatus().startsWith("am:")) {
+                try {
+                    String[] parts = summary.getDayStatus().split(",");
+                    amCode = Integer.parseInt(parts[0].split(":")[1]);
+                    pmCode = Integer.parseInt(parts[1].split(":")[1]);
+                } catch (Exception e) { /* 解析失败用默认值 */ }
             }
 
-            AttendanceDailySummary summary = new AttendanceDailySummary();
-            summary.setEmployeeId(sup.getEmployeeId());
-            summary.setSummaryDate(punchDate);
-            summary.setDayStatus(dayStatus);
-            dayRecords.stream().filter(r -> "IN".equals(r.getPunchType()))
-                    .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
-                    .ifPresent(r -> summary.setClockInTime(r.getPunchTime()));
-            dayRecords.stream().filter(r -> "OUT".equals(r.getPunchType()))
-                    .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
-                    .ifPresent(r -> summary.setClockOutTime(r.getPunchTime()));
+            // 仅重算被补卡的槽位
+            java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
+            java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
+            int lateThreshold = 15;
+
+            if ("IN".equals(punchType)) {
+                // 补上班卡 → 仅重算 AM 槽位
+                java.time.LocalTime t = sup.getMakeupTime().toLocalTime();
+                if (!t.isAfter(workStart)) {
+                    amCode = 0;
+                } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
+                    amCode = 1;
+                } else {
+                    amCode = 3;
+                }
+                // PM 保持不变
+            } else {
+                // 补下班卡 → 仅重算 PM 槽位
+                java.time.LocalTime t = sup.getMakeupTime().toLocalTime();
+                if (!t.isBefore(workEnd)) {
+                    pmCode = 0;
+                } else if (!t.isBefore(workEnd.minusMinutes(lateThreshold))) {
+                    pmCode = 2;
+                } else {
+                    pmCode = 3;
+                }
+                // AM 保持不变
+            }
+
+            if (summary == null) {
+                summary = new AttendanceDailySummary();
+                summary.setEmployeeId(empId);
+                summary.setSummaryDate(punchDate);
+            }
+            summary.setDayStatus("am:" + amCode + ",pm:" + pmCode);
+            if ("IN".equals(punchType)) {
+                summary.setClockInTime(sup.getMakeupTime());
+            } else {
+                summary.setClockOutTime(sup.getMakeupTime());
+            }
             summary.setLeaveDays(java.math.BigDecimal.ZERO);
             summary.setOvertimeHours(java.math.BigDecimal.ZERO);
             if (summary.getId() == null) {
                 attendanceDailySummaryMapper.insert(summary);
+            } else {
+                attendanceDailySummaryMapper.updateById(summary);
             }
 
             log.info("补卡已通过, 打卡记录已写入: id={}, empId={}, date={}",
