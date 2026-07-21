@@ -21,7 +21,7 @@ export default function access(initialState: API.InitialState) {
   const isFinanceFamily = roleIn(roleCode, [ROLES.FINANCE, ROLES.FINANCE_MANAGER]);
   const isFinanceManager = roleCode === ROLES.FINANCE_MANAGER;
   const isDeptManager = roleCode === ROLES.DEPT_MANAGER;
-  /** 组织架构只读：HR/管理员 + 部门负责人；编辑仍仅 HR/管理员 */
+  /** 组织架构只读：HR/管理员 + 部门负责人；财务不可见；编辑仍仅 HR/管理员 */
   const isOrgReader = isHr || isDeptManager;
 
   return {
