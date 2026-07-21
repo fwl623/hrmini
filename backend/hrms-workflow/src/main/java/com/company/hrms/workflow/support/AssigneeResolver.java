@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 审批人解析器（占位）：当前由 {@link DevAssignees} 写死，后续接部门负责人/角色查询。
+ * 审批人解析器：优先使用节点上已写入的真实 userId；
+ * 考勤请假等经 {@link com.company.hrms.workflow.service.DbApprovalService} 创建时会先 enrich 真实审批人。
+ * 未写入时回退 {@link DevAssignees} 开发桩。
  */
 public interface AssigneeResolver {
 

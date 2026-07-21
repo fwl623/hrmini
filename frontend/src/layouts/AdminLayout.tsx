@@ -49,13 +49,14 @@ const AdminLayout: React.FC = () => {
     org: access.canViewDept || access.canViewPosition,
     employee: access.canViewEmployee,
     lifecycle: access.canManageWorkflow || access.canHr,
-    approval: access.canApprove || access.canManageWorkflow,
+    approval: access.canApprove,
     resignation: access.canManageResignation,
     attendance: access.canManageAttendance,
     payroll: access.canViewPayroll,
     system: access.canManageSystem,
     ai: access.canUseAiAssistant || access.canManageAiKnowledge,
     aiKnowledge: access.canManageAiKnowledge,
+    mobileChange: access.canManageMobileChange,
     portal: !access.canSysAdmin,
     portalPayslip: !access.canSysAdmin && access.canViewOwnPayslip,
   };
@@ -87,7 +88,7 @@ const AdminLayout: React.FC = () => {
         accessKey: 'employee',
         children: [
           { key: '/admin/employee/list', label: '花名册' },
-          { key: '/admin/employee/mobile-change', label: '手机号变更' },
+          { key: '/admin/employee/mobile-change', label: '手机号变更', accessKey: 'mobileChange' },
         ],
       },
       {

@@ -78,6 +78,7 @@ public class OnboardingService {
     }
 
     public OnboardingDtos.OnboardingListResponse list(int page, int pageSize, String status) {
+        requireHrOrAdmin();
         LambdaQueryWrapper<OnboardingApplication> q = new LambdaQueryWrapper<OnboardingApplication>()
                 .orderByDesc(OnboardingApplication::getId);
         if (status != null && !status.isBlank()) {
@@ -106,6 +107,7 @@ public class OnboardingService {
     }
 
     public OnboardingDtos.OnboardingStatsVO stats() {
+        requireHrOrAdmin();
         LambdaQueryWrapper<OnboardingApplication> q = new LambdaQueryWrapper<>();
         applyVisibilityFilter(q);
         OnboardingDtos.OnboardingStatsVO s = new OnboardingDtos.OnboardingStatsVO();
@@ -127,7 +129,7 @@ public class OnboardingService {
 
     @Transactional
     public OnboardingDtos.OnboardingVO create(OnboardingDtos.OnboardingFormRequest req, long userId) {
-        requireHrOrDeptManager();
+        requireHrOrAdmin();
         validateForm(req, true);
         ensureMobileUnique(req.getMobile(), null);
         fillDefaults(req);
@@ -691,19 +693,8 @@ public class OnboardingService {
         if (login.hasRole("HR_STAFF") || login.hasRole("SYS_ADMIN")) {
             return;
         }
-        long userId = login.getUserId();
-        if (login.hasRole("DEPT_MANAGER")) {
-            List<Long> deptIds = orgLookupMapper.selectDepartmentIdsByHeadUserId(userId);
-            if (deptIds != null && !deptIds.isEmpty()) {
-                q.and(w -> w.eq(OnboardingApplication::getCreatedBy, userId)
-                        .or()
-                        .in(OnboardingApplication::getDepartmentId, deptIds));
-            } else {
-                q.eq(OnboardingApplication::getCreatedBy, userId);
-            }
-            return;
-        }
-        q.eq(OnboardingApplication::getCreatedBy, userId);
+        // 部门主管不进「入转调离」管理台；列表仅创建人可见（兜底）
+        q.eq(OnboardingApplication::getCreatedBy, login.getUserId());
     }
 
     private void assertCanView(OnboardingApplication app) {
@@ -718,6 +709,7 @@ public class OnboardingService {
         if (app.getCreatedBy() != null && app.getCreatedBy() == userId) {
             return;
         }
+        // 审批中心打开业务详情：目标部门负责人仍可查看
         if (login.hasRole("DEPT_MANAGER")) {
             List<Long> deptIds = orgLookupMapper.selectDepartmentIdsByHeadUserId(userId);
             if (deptIds != null && app.getDepartmentId() != null && deptIds.contains(app.getDepartmentId())) {
@@ -742,17 +734,6 @@ public class OnboardingService {
         throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作该入职申请");
     }
 
-    private void requireHrOrDeptManager() {
-        LoginUser login = SecurityUtils.getLoginUser();
-        if (login == null) {
-            return;
-        }
-        if (login.hasRole("HR_STAFF") || login.hasRole("SYS_ADMIN") || login.hasRole("DEPT_MANAGER")) {
-            return;
-        }
-        throw new BusinessException(ErrorCode.FORBIDDEN, "仅 HR/部门负责人可发起入职申请");
-    }
-
     private void requireHrOrAdmin() {
         LoginUser login = SecurityUtils.getLoginUser();
         if (login == null) {
@@ -761,10 +742,10 @@ public class OnboardingService {
         if (login.hasRole("HR_STAFF") || login.hasRole("SYS_ADMIN")) {
             return;
         }
-        throw new BusinessException(ErrorCode.FORBIDDEN, "仅 HR/管理员可确认入职");
+        throw new BusinessException(ErrorCode.FORBIDDEN, "仅 HR/管理员可操作入职管理");
     }
 
-    /** 待入职：HR/管理员、创建人、或目标部门负责人可改入职日 / 放弃 */
+    /** 待入职：仅 HR/管理员或创建人可改入职日 / 放弃 */
     private void assertCanManageApprovedPending(OnboardingApplication app) {
         LoginUser login = SecurityUtils.getLoginUser();
         if (login == null || login.getUserId() == null) {
@@ -776,12 +757,6 @@ public class OnboardingService {
         long userId = login.getUserId();
         if (app.getCreatedBy() != null && app.getCreatedBy() == userId) {
             return;
-        }
-        if (login.hasRole("DEPT_MANAGER") && app.getDepartmentId() != null) {
-            List<Long> deptIds = orgLookupMapper.selectDepartmentIdsByHeadUserId(userId);
-            if (deptIds != null && deptIds.contains(app.getDepartmentId())) {
-                return;
-            }
         }
         throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作该待入职申请");
     }

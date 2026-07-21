@@ -13,6 +13,7 @@ import com.company.hrms.common.exception.ForbiddenException;
 import com.company.hrms.common.security.LoginUser;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageResult;
+import com.company.hrms.employee.service.EmployeeLifecycleService;
 import com.company.hrms.workflow.dto.ApprovalDtos;
 import com.company.hrms.workflow.entity.ApprovalInstance;
 import com.company.hrms.workflow.entity.ApprovalLog;
@@ -72,6 +73,7 @@ public class DbApprovalService implements ApprovalEngineService {
     private final RegularizationService regularizationService;
     private final TransferService transferService;
     private final OrgLookupMapper orgLookupMapper;
+    private final EmployeeLifecycleService employeeLifecycleService;
 
     public DbApprovalService(ApprovalInstanceMapper instanceMapper,
                              ApprovalTaskMapper taskMapper,
@@ -86,7 +88,8 @@ public class DbApprovalService implements ApprovalEngineService {
                              @Lazy OnboardingService onboardingService,
                              @Lazy RegularizationService regularizationService,
                              @Lazy TransferService transferService,
-                             OrgLookupMapper orgLookupMapper) {
+                             OrgLookupMapper orgLookupMapper,
+                             EmployeeLifecycleService employeeLifecycleService) {
         this.instanceMapper = instanceMapper;
         this.taskMapper = taskMapper;
         this.logMapper = logMapper;
@@ -102,6 +105,7 @@ public class DbApprovalService implements ApprovalEngineService {
         this.regularizationService = regularizationService;
         this.transferService = transferService;
         this.orgLookupMapper = orgLookupMapper;
+        this.employeeLifecycleService = employeeLifecycleService;
     }
 
     @Override
@@ -112,6 +116,7 @@ public class DbApprovalService implements ApprovalEngineService {
         }
         String processType = request.getProcessType().trim().toUpperCase(Locale.ROOT);
         List<ProcessNodeDef> nodes = AssigneeResolver.resolveNodes(processType, request.getFormData());
+        enrichNodeAssignees(nodes, request);
         InstanceDisplay display = InstanceDisplay.of(
                 request.getTitle() != null ? request.getTitle() : processType + "#" + request.getBusinessId(),
                 request.getApplicantName() != null
@@ -680,6 +685,65 @@ public class DbApprovalService implements ApprovalEngineService {
                 result,
                 instance.getInitiatorId(),
                 comment);
+    }
+
+    /**
+     * 考勤类等通过 {@link ApprovalEngineService#createInstance} 发起的流程：
+     * 把 SUPERVISOR/DEPT_MANAGER/HR 等占位类型解析为真实 userId，避免落成 DevAssignees 桩账号。
+     * 入转调离业务侧已自行写入 assigneeUserId 的节点不会被覆盖。
+     */
+    private void enrichNodeAssignees(List<ProcessNodeDef> nodes, CreateApprovalRequest request) {
+        if (nodes == null || nodes.isEmpty() || request == null) {
+            return;
+        }
+        Long employeeId = extractLong(request.getFormData(), "employeeId");
+        Long applicantId = request.getApplicantId();
+        for (ProcessNodeDef node : nodes) {
+            if (node == null || node.getAssigneeUserId() != null) {
+                continue;
+            }
+            String type = node.getAssigneeType() == null ? "" : node.getAssigneeType().trim().toUpperCase(Locale.ROOT);
+            switch (type) {
+                case "SUPERVISOR", "DEPT_MANAGER" -> {
+                    if (employeeId != null) {
+                        node.setAssigneeUserId(employeeLifecycleService.resolveDeptManagerUserId(employeeId));
+                    }
+                }
+                case "NEW_DEPT_MANAGER" -> {
+                    Long newDeptId = extractLong(request.getFormData(), "newDepartmentId", "toDepartmentId");
+                    if (newDeptId != null) {
+                        node.setAssigneeUserId(employeeLifecycleService.resolveDeptHeadUserIdByDeptId(newDeptId));
+                    }
+                }
+                case "HR_STAFF", "ROLE" ->
+                        node.setAssigneeUserId(employeeLifecycleService.resolveHrApproverUserId(applicantId));
+                case "FINANCE", "FINANCE_MANAGER" ->
+                        node.setAssigneeUserId(employeeLifecycleService.resolveFinanceApproverUserId(applicantId));
+                default -> {
+                    // 保留 DevAssigneeResolver 兜底
+                }
+            }
+        }
+    }
+
+    private static Long extractLong(Map<String, Object> form, String... keys) {
+        if (form == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object v = form.get(key);
+            if (v instanceof Number n) {
+                return n.longValue();
+            }
+            if (v != null && !v.toString().isBlank()) {
+                try {
+                    return Long.parseLong(v.toString().trim());
+                } catch (NumberFormatException ignored) {
+                    // next key
+                }
+            }
+        }
+        return null;
     }
 
     private void createTask(ApprovalInstance instance, ProcessNodeDef node,
