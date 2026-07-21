@@ -20,9 +20,110 @@ import {
 
 dayjs.locale('zh-cn');
 
-/** Ant Design 全局中文（Modal 取消 →「取消」等） */
+/** Ant Design 全局中文 + 主题配置（简约商务蓝白风） */
 export const antd = {
   locale: zhCN,
+  theme: {
+    token: {
+      colorPrimary: '#165DFF',
+      borderRadius: 6,
+      colorBgContainer: '#FFFFFF',
+      colorBgLayout: '#F5F7FA',
+      colorText: '#1D2129',
+      colorTextSecondary: '#4E5969',
+      colorBorder: '#E5E6EB',
+      colorBorderSecondary: '#F0F1F3',
+      colorSplit: '#F0F1F3',
+      colorSuccess: '#00B42A',
+      colorWarning: '#FF7D00',
+      colorError: '#F53F3F',
+      colorInfo: '#165DFF',
+      fontSize: 14,
+      controlHeight: 36,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+    },
+    components: {
+      Layout: {
+        headerBg: '#FFFFFF',
+        siderBg: '#001529',
+        bodyBg: '#F5F7FA',
+        headerHeight: 60,
+      },
+      Menu: {
+        itemHeight: 42,
+        collapsedWidth: 60,
+        darkItemBg: 'transparent',
+        darkItemColor: 'rgba(255,255,255,0.65)',
+        darkItemHoverBg: 'rgba(255,255,255,0.08)',
+        darkItemHoverColor: 'rgba(255,255,255,0.9)',
+        darkItemSelectedBg: '#165DFF',
+        darkItemSelectedColor: '#FFFFFF',
+        darkSubMenuItemBg: 'transparent',
+      },
+      Table: {
+        headerBg: '#F7F8FA',
+        headerColor: '#4E5969',
+        rowHoverBg: '#E8F0FF',
+        borderColor: '#F0F1F3',
+        cellPaddingBlock: 11,
+        cellPaddingInline: 16,
+      },
+      Card: {
+        paddingLG: 20,
+        paddingMD: 16,
+        borderRadiusLG: 8,
+      },
+      Button: {
+        borderRadiusLG: 6,
+        borderRadiusSM: 4,
+        controlHeight: 36,
+        controlHeightSM: 30,
+        controlHeightLG: 42,
+        primaryShadow: 'none',
+      },
+      Input: {
+        controlHeight: 36,
+        borderRadius: 6,
+        activeShadow: '0 0 0 2px rgba(22,93,255,0.1)',
+      },
+      Select: {
+        controlHeight: 36,
+        borderRadius: 6,
+      },
+      DatePicker: {
+        controlHeight: 36,
+        borderRadius: 6,
+        activeShadow: '0 0 0 2px rgba(22,93,255,0.1)',
+      },
+      Modal: {
+        borderRadiusLG: 8,
+        paddingContentHorizontalLG: 24,
+        paddingMD: 24,
+      },
+      Pagination: {
+        borderRadius: 6,
+        itemSize: 32,
+      },
+      Tabs: {
+        inkBarColor: '#165DFF',
+        itemSelectedColor: '#165DFF',
+        itemHoverColor: '#165DFF',
+      },
+      Tag: {
+        borderRadiusSM: 4,
+      },
+      Alert: {
+        borderRadiusLG: 6,
+      },
+      Badge: {
+        dotSize: 8,
+      },
+      Steps: {
+        finishIconBorderColor: '#165DFF',
+        finishIconBg: '#E8F0FF',
+      },
+    },
+  },
 };
 
 const PUBLIC_PATHS = ['/login'];

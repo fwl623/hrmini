@@ -1,13 +1,32 @@
-/* 侧栏可滚动，但不显示滚动条 */
+/* ============================================================
+   HRMS Layout Styles — 侧边栏 / 头部 / 内容区布局
+   仅修改外观，不动功能逻辑
+   ============================================================ */
+
+/* ---------- 侧边栏滚动条隐藏 (管理后台) ---------- */
 .hrms-sider-scroll,
 .hrms-sider-scroll .ant-layout-sider-children {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge legacy */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .hrms-sider-scroll::-webkit-scrollbar,
 .hrms-sider-scroll .ant-layout-sider-children::-webkit-scrollbar {
-  display: none; /* Chrome / Safari / Edge */
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ---------- 侧边栏滚动条隐藏 (门户) ---------- */
+.hrms-portal-sider,
+.hrms-portal-sider .ant-layout-sider-children {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hrms-portal-sider::-webkit-scrollbar,
+.hrms-portal-sider .ant-layout-sider-children::-webkit-scrollbar {
+  display: none;
   width: 0;
   height: 0;
 }
