@@ -51,7 +51,7 @@ type TabKey = 'todo' | 'done' | 'mine';
 
 /**
  * 审批中心：列表 + 详情 Drawer（Timeline + Actions + 催办）
- * - 正式离职第一岗：同意前须确认工作交接人
+ * - 正式离职第一岗：同意前可确认工作交接人（可选）
  * - 员工离职申请（RESIGNATION_REQUEST）同意后：提示是否立即发起正式离职
  */
 export default function ApprovalCenterPage() {
@@ -628,7 +628,7 @@ export default function ApprovalCenterPage() {
               <Typography.Title level={5}>操作</Typography.Title>
               {needHandoverConfirm && tab === 'todo' ? (
                 <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-                  同意前请确认工作交接安排（交接人不能是离职员工本人）。
+                  同意前可确认工作交接安排（可选；若指定则不能是离职员工本人）。
                 </Typography.Paragraph>
               ) : null}
               <ApprovalActions
@@ -702,10 +702,6 @@ export default function ApprovalCenterPage() {
         confirmLoading={acting}
         onCancel={() => setHandoverOpen(false)}
         onOk={async () => {
-          if (!handoverEmployeeId) {
-            message.warning('请选择工作交接人');
-            return;
-          }
           if (resigningEmployeeId && handoverEmployeeId === resigningEmployeeId) {
             message.warning('工作交接人不能是离职员工本人');
             return;
@@ -716,11 +712,14 @@ export default function ApprovalCenterPage() {
       >
         <Typography.Paragraph type="secondary">
           离职员工：{(biz.employeeName as string) || selected?.applicantName || '-'}
+          <br />
+          交接人可选；不选也可直接同意。
         </Typography.Paragraph>
         <Select
+          allowClear
           showSearch
           style={{ width: '100%' }}
-          placeholder="按姓名 / 部门 / 工号搜索交接人"
+          placeholder="按姓名 / 部门 / 工号搜索交接人（可选）"
           filterOption={false}
           notFoundContent={handoverLoading ? '搜索中…' : '无匹配员工'}
           loading={handoverLoading}

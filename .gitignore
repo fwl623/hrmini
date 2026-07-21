@@ -102,3 +102,6 @@ backend/hrms-org/*改动.md
 # Local uploaded attachments
 backend/data/uploads/
 data/uploads/
+
+# 本地暂存的 Flyway 脚本（勿提交）
+_local_park/

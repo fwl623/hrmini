@@ -120,6 +120,8 @@ export interface OnboardingItem {
   baseSalary?: number;
   expectedOnboardDate?: string;
   employeeId?: number;
+  /** 10试用/20正式/30待离职/40已离职 */
+  employmentStatus?: number;
   instanceId?: number;
   createdAt?: string;
   positionStandard?: boolean;

@@ -17,6 +17,7 @@ import {
   Table,
   Tag,
   Timeline,
+  Tooltip,
   TreeSelect,
   Typography,
   message,
@@ -125,17 +126,21 @@ const NODE_STATE_TO_STEP: Record<string, 'wait' | 'process' | 'finish' | 'error'
   cancelled: 'error',
 };
 
-function actionsForStatus(status: string) {
+function actionsForStatus(status: string, employmentStatus?: number, expectedOnboardDate?: string) {
+  const onboardDateReached = !expectedOnboardDate
+    || !dayjs(expectedOnboardDate).isAfter(dayjs(), 'day');
   return {
     edit: status === 'draft' || status === 'rejected',
     submit: status === 'draft' || status === 'rejected',
     withdraw: status === 'pending',
     confirm: status === 'approved_pending',
+    confirmReady: status === 'approved_pending' && onboardDateReached,
     abandon: status === 'approved_pending',
     changeDate: status === 'approved_pending',
     remove: status === 'draft' || status === 'rejected',
     viewReject: status === 'rejected',
-    regularize: status === 'onboarded',
+    // 仅试用期在职员工可去转正；已离职/待离职/已转正不展示
+    regularize: status === 'onboarded' && employmentStatus === 10,
     viewProgress: status === 'pending' || status === 'approved_pending'
       || status === 'onboarded' || status === 'rejected' || status === 'abandoned',
   };
@@ -423,7 +428,7 @@ export default function OnboardingPage() {
       title: '操作',
       width: 420,
       render: (_, row) => {
-        const a = actionsForStatus(row.status);
+        const a = actionsForStatus(row.status, row.employmentStatus, row.expectedOnboardDate);
         return (
           <Space wrap>
             {a.viewProgress && row.instanceId ? (
@@ -492,21 +497,31 @@ export default function OnboardingPage() {
               </Button>
             )}
             {a.confirm && (
-              <Button
-                type="link"
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  try {
-                    await confirmOnboardingApplication(row.id);
-                    message.success('已确认入职（账号已开通）');
-                    load();
-                  } catch (err) {
-                    message.error((err as Error)?.message || '确认失败');
-                  }
-                }}
+              <Tooltip
+                title={a.confirmReady
+                  ? undefined
+                  : `预计入职日 ${row.expectedOnboardDate || ''} 未到，请到期后再确认或先改入职日`}
               >
-                确认入职
-              </Button>
+                <span>
+                  <Button
+                    type="link"
+                    disabled={!a.confirmReady}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!a.confirmReady) return;
+                      try {
+                        await confirmOnboardingApplication(row.id);
+                        message.success('已确认入职（账号已开通）');
+                        load();
+                      } catch (err) {
+                        message.error((err as Error)?.message || '确认失败');
+                      }
+                    }}
+                  >
+                    确认入职
+                  </Button>
+                </span>
+              </Tooltip>
             )}
             {a.abandon && (
               <Button
@@ -622,10 +637,10 @@ export default function OnboardingPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="姓名" rules={[{ required: true }]}>
+          <Form.Item name="name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="gender" label="性别" rules={[{ required: true }]}>
+          <Form.Item name="gender" label="性别" rules={[{ required: true, message: '请选择性别' }]}>
             <Select
               options={[
                 { value: 'MALE', label: '男' },
@@ -663,8 +678,12 @@ export default function OnboardingPage() {
           >
             <Input />
           </Form.Item>
-          <Form.Item name="expectedOnboardDate" label="预计入职日" rules={[{ required: true }]}>
-            <DatePicker style={{ width: '100%' }} />
+          <Form.Item
+            name="expectedOnboardDate"
+            label="预计入职日"
+            rules={[{ required: true, message: '请选择预计入职日' }]}
+          >
+            <DatePicker style={{ width: '100%' }} placeholder="请选择日期" />
           </Form.Item>
           <Form.Item name="departmentId" label="部门" rules={[{ required: true, message: '请选择部门' }]}>
             <TreeSelect
@@ -689,7 +708,11 @@ export default function OnboardingPage() {
               onChange={onPositionChange}
             />
           </Form.Item>
-          <Form.Item name="employmentType" label="用工类型" rules={[{ required: true }]}>
+          <Form.Item
+            name="employmentType"
+            label="用工类型"
+            rules={[{ required: true, message: '请选择用工类型' }]}
+          >
             <Select
               options={[
                 { value: 'fulltime', label: '全职' },
@@ -698,10 +721,18 @@ export default function OnboardingPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="probationMonths" label="试用月数" rules={[{ required: true }]}>
+          <Form.Item
+            name="probationMonths"
+            label="试用月数"
+            rules={[{ required: true, message: '请输入试用月数' }]}
+          >
             <InputNumber min={0} max={12} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="probationSalaryRatio" label="试用薪资比例" rules={[{ required: true }]}>
+          <Form.Item
+            name="probationSalaryRatio"
+            label="试用薪资比例"
+            rules={[{ required: true, message: '请输入试用薪资比例' }]}
+          >
             <InputNumber min={0.8} max={1} step={0.01} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item
@@ -724,7 +755,7 @@ export default function OnboardingPage() {
           <Form.Item
             name="baseSalary"
             label="约定薪资"
-            rules={[{ required: true }]}
+            rules={[{ required: true, message: '请输入约定薪资' }]}
             extra="超过职位职级薪资上限将触发 HR 二审"
           >
             <InputNumber style={{ width: '100%' }} min={0} />
@@ -757,9 +788,13 @@ export default function OnboardingPage() {
           <Form.Item
             name="expectedOnboardDate"
             label="预计入职日"
-            rules={[{ required: true }]}
+            rules={[{ required: true, message: '请选择预计入职日' }]}
           >
-            <DatePicker style={{ width: '100%' }} disabledDate={(d) => d.isBefore(dayjs(), 'day')} />
+            <DatePicker
+              style={{ width: '100%' }}
+              placeholder="请选择日期"
+              disabledDate={(d) => d.isBefore(dayjs(), 'day')}
+            />
           </Form.Item>
         </Form>
       </Modal>
