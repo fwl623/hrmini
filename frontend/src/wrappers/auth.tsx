@@ -1,8 +1,8 @@
 import { history, Outlet, useLocation, useModel } from '@umijs/max';
 import { Spin } from 'antd';
 import React, { useEffect } from 'react';
-import { ADMIN_ROLES, type RoleCode } from '@/constants/roles';
-import { getHomePath } from '@/utils/authSession';
+import { ADMIN_ROLES, ROLES, type RoleCode } from '@/constants/roles';
+import { getHomePath, normalizeRoles } from '@/utils/authSession';
 import { getAccessToken } from '@/utils/token';
 
 const AuthWrapper: React.FC = () => {
@@ -28,13 +28,22 @@ const AuthWrapper: React.FC = () => {
     );
   }
 
-  const roles = initialState.currentUser.roles ?? [];
+  const roles = normalizeRoles(initialState.currentUser.roles);
   const isAdminRoute = location.pathname.startsWith('/admin');
-  const hasAdminRole = roles.some((role: string) => ADMIN_ROLES.includes(role as RoleCode));
+  const hasAdminRole =
+    roles.some((role) => ADMIN_ROLES.includes(role as RoleCode)) ||
+    roles.includes(ROLES.DEPT_MANAGER);
 
   // 无管理端角色时不可进 /admin，按角色回首页（员工→门户，其它→登录由 getHomePath 兜底）
   if (isAdminRoute && !hasAdminRole) {
     history.replace(getHomePath(roles));
+    return null;
+  }
+
+  // 部门经理等管理端角色误入门户时，拉回管理后台
+  const isPortalRoute = location.pathname.startsWith('/portal');
+  if (isPortalRoute && hasAdminRole) {
+    history.replace('/admin/workbench');
     return null;
   }
 
