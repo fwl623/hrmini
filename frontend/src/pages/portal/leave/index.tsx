@@ -23,9 +23,11 @@ import {
   Tag,
   Timeline,
   Typography,
+  Upload,
   message,
 } from 'antd';
-import dayjs from 'dayjs';
+import { UploadOutlined } from '@ant-design/icons';
+import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
 
 import {
   calcLeaveDays,
@@ -34,6 +36,7 @@ import {
   getLeaveBalances,
   submitLeave,
 } from '@/services/attendance';
+import { uploadFile } from '@/services/file';
 import { fetchInstanceDetail, type ApprovalTimelineItem } from '@/services/workflow';
 import { LEAVE_TYPE_OPTIONS, leaveTypeLabel } from '@/constants/leave';
 
@@ -60,6 +63,10 @@ const nodeStateToStep: Record<string, 'wait' | 'process' | 'finish' | 'error'> =
 /** 需附件的请假类型 */
 const ATTACHMENT_REQUIRED_TYPES = ['sick', 'marriage', 'maternity'];
 
+const ACCEPT_TYPES =
+  'image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,image/jpeg,image/png,image/gif,image/webp,image/bmp';
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 const LeavePage: React.FC = () => {
   const [balances, setBalances] = useState<{ leaveType: string; balance: number }[]>([]);
   const [records, setRecords] = useState<API.LeaveApplicationVO[]>([]);
@@ -67,8 +74,8 @@ const LeavePage: React.FC = () => {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const [previewDays, setPreviewDays] = useState<number | null>(null);
-  const [selectedLeaveType, setSelectedLeaveType] = useState<string>('');
   const [needAttachment, setNeedAttachment] = useState(false);
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
 
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressLoading, setProgressLoading] = useState(false);
@@ -77,6 +84,13 @@ const LeavePage: React.FC = () => {
   const [progressTimeline, setProgressTimeline] = useState<ApprovalTimelineItem[]>([]);
   const [progressStatus, setProgressStatus] = useState('');
   const [progressCurrent, setProgressCurrent] = useState('');
+
+  const resetModal = () => {
+    form.resetFields();
+    setPreviewDays(null);
+    setNeedAttachment(false);
+    setFileList([]);
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -101,6 +115,14 @@ const LeavePage: React.FC = () => {
           endTime: values.endTime.toISOString(),
         });
         setPreviewDays(res.data?.days ?? null);
+        const leaveType = values.leaveType as string | undefined;
+        if (leaveType) {
+          const days = res.data?.days ?? 1;
+          const needsAtt =
+            ATTACHMENT_REQUIRED_TYPES.includes(leaveType) &&
+            (leaveType === 'sick' ? days > 1 : true);
+          setNeedAttachment(needsAtt);
+        }
       } catch {
         setPreviewDays(null);
       }
@@ -108,19 +130,68 @@ const LeavePage: React.FC = () => {
   };
 
   const handleTypeChange = (value: string) => {
-    setSelectedLeaveType(value);
     const days = previewDays || form.getFieldValue('days') || 1;
-    const needsAtt = ATTACHMENT_REQUIRED_TYPES.includes(value)
-      && (value === 'sick' ? (days > 1) : true);
+    const needsAtt =
+      ATTACHMENT_REQUIRED_TYPES.includes(value) && (value === 'sick' ? days > 1 : true);
     setNeedAttachment(needsAtt);
+  };
+
+  const beforeUpload: UploadProps['beforeUpload'] = (file) => {
+    const name = file.name.toLowerCase();
+    const allowedExt = /\.(jpe?g|png|gif|webp|bmp|pdf|docx?|xlsx?|txt)$/i.test(name);
+    const isImage = (file.type || '').startsWith('image/');
+    if (!allowedExt && !isImage) {
+      message.error('仅支持上传图片或文件（jpg/png/pdf/doc/docx/xls/xlsx 等）');
+      return Upload.LIST_IGNORE;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      message.error('文件大小不能超过 10MB');
+      return Upload.LIST_IGNORE;
+    }
+    return true;
+  };
+
+  const handleUploadChange: UploadProps['onChange'] = ({ fileList: next }) => {
+    setFileList(next.slice(-1));
+    const file = next[0];
+    if (!file || file.status === 'removed') {
+      form.setFieldsValue({ attachment: undefined });
+      return;
+    }
+    if (file.status === 'done') {
+      const url = (file.response as { url?: string } | undefined)?.url;
+      form.setFieldsValue({ attachment: url });
+      if (url) {
+        form.validateFields(['attachment']).catch(() => undefined);
+      }
+    }
+    if (file.status === 'error') {
+      form.setFieldsValue({ attachment: undefined });
+    }
+  };
+
+  const customRequest: UploadProps['customRequest'] = async (options) => {
+    const { file, onSuccess, onError } = options;
+    try {
+      const res = await uploadFile(file as File);
+      if (res.code !== 0 || !res.data?.url) {
+        throw new Error(res.message || '上传失败');
+      }
+      onSuccess?.(res.data);
+      message.success('证明材料上传成功');
+    } catch (e) {
+      message.error((e as Error).message || '上传失败');
+      onError?.(e as Error);
+    }
   };
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
       // 病假>1天 或 婚假/产假 需上传附件
-      const needsAtt = ATTACHMENT_REQUIRED_TYPES.includes(values.leaveType)
-        && (values.leaveType === 'sick' ? ((previewDays || values.days || 1) > 1) : true);
+      const needsAtt =
+        ATTACHMENT_REQUIRED_TYPES.includes(values.leaveType) &&
+        (values.leaveType === 'sick' ? (previewDays || values.days || 1) > 1 : true);
       if (needsAtt && !values.attachment) {
         message.warning('该请假类型需要上传证明材料');
         return;
@@ -136,8 +207,7 @@ const LeavePage: React.FC = () => {
       });
       message.success('请假申请已提交');
       setModalOpen(false);
-      form.resetFields();
-      setPreviewDays(null);
+      resetModal();
       await loadData();
     } catch (err: any) {
       if (err?.message) message.error(err.message);
@@ -268,8 +338,7 @@ const LeavePage: React.FC = () => {
         onOk={handleSubmit}
         onCancel={() => {
           setModalOpen(false);
-          form.resetFields();
-          setPreviewDays(null);
+          resetModal();
         }}
         confirmLoading={submitting}
         width={600}
@@ -278,7 +347,7 @@ const LeavePage: React.FC = () => {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="leaveType" label="请假类型" rules={[{ required: true }]}>
-            <Select options={LEAVE_TYPE_OPTIONS} />
+            <Select options={LEAVE_TYPE_OPTIONS} onChange={handleTypeChange} />
           </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
             <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>
@@ -303,10 +372,29 @@ const LeavePage: React.FC = () => {
               style={{ marginBottom: 16 }}
             />
           )}
-          <Form.Item name="attachment" label="证明材料（附件URL）"
-            rules={needAttachment ? [{ required: true, message: '该请假类型需上传证明材料' }] : []}
+          <Form.Item
+            name="attachment"
+            rules={needAttachment ? [{ required: true, message: '请上传证明材料' }] : []}
+            hidden
           >
-            <Input placeholder="请输入附件URL（或使用上传组件）" />
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label="证明材料"
+            required={needAttachment}
+            extra="仅支持从本机上传图片或文件，单文件不超过 10MB"
+          >
+            <Upload
+              accept={ACCEPT_TYPES}
+              listType="picture"
+              maxCount={1}
+              fileList={fileList}
+              beforeUpload={beforeUpload}
+              customRequest={customRequest}
+              onChange={handleUploadChange}
+            >
+              <Button icon={<UploadOutlined />}>上传本机材料</Button>
+            </Upload>
           </Form.Item>
         </Form>
       </Modal>

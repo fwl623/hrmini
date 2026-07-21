@@ -14,6 +14,8 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   abandoned: { color: 'error', label: '已放弃' },
   approved: { color: 'success', label: '已通过' },
   APPROVED: { color: 'success', label: '已通过' },
+  COMPLETED: { color: 'success', label: '已完成' },
+  completed: { color: 'success', label: '已完成' },
   PENDING_RESIGN: { color: 'warning', label: '待离职' },
   pending_resign: { color: 'warning', label: '待离职' },
   RESIGNED: { color: 'default', label: '已离职' },

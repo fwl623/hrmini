@@ -13,6 +13,7 @@ import {
   type SystemPermission,
   type SystemRole,
 } from '@/services/system';
+import { roleLabel } from '@/constants/roles';
 import { getRequestErrorMessage } from '@/utils/requestError';
 
 const RolesPage: React.FC = () => {
@@ -145,7 +146,11 @@ const RolesPage: React.FC = () => {
             dataIndex: 'code',
             render: (code: string) => <Tag>{code}</Tag>,
           },
-          { title: '名称', dataIndex: 'name' },
+          {
+            title: '名称',
+            dataIndex: 'name',
+            render: (name: string, row) => roleLabel(row.code) || name,
+          },
           { title: '数据范围', dataIndex: 'dataScope' },
           {
             title: '权限数',

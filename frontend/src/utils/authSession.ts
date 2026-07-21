@@ -7,23 +7,26 @@ import { stopIdleDetector } from '@/utils/idleDetector';
 import { getAccessToken, clearTokens } from '@/utils/token';
 import { stopTokenRefresher } from '@/utils/tokenRefresher';
 
-/** 规范化角色列表（兼容异常返回） */
+/** 规范化角色列表（兼容异常返回；统一大写便于比对） */
 export function normalizeRoles(roles: unknown): string[] {
   if (!Array.isArray(roles)) {
     return [];
   }
-  return roles.map((r) => String(r)).filter(Boolean);
+  return roles
+    .map((r) => String(r).trim().toUpperCase())
+    .filter(Boolean);
 }
 
 /**
  * 登录后首页：
- * - 有管理端角色（SYS_ADMIN / HR / 主管 / 财务）→ 管理后台工作台
+ * - 有管理端角色（SYS_ADMIN / HR / 部门经理 / 财务）→ 管理后台工作台
  * - 仅普通员工 → 员工门户
  */
 export function getHomePath(roles: string[] = []): string {
   const list = normalizeRoles(roles);
+  // 部门经理等管理端角色一律进后台（勿进门户）
   const hasAdminRole = list.some((role) => ADMIN_ROLES.includes(role as RoleCode));
-  if (hasAdminRole) {
+  if (hasAdminRole || list.includes(ROLES.DEPT_MANAGER)) {
     return '/admin/workbench';
   }
   const primary = resolvePrimaryRole(list);

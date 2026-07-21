@@ -210,7 +210,7 @@ const AdminLayout: React.FC = () => {
       key: 'profile',
       icon: <IdcardOutlined />,
       label: '个人中心',
-      onClick: () => history.push('/portal/profile'),
+      onClick: () => history.push('/admin/personal/profile'),
     },
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: handleLogout },

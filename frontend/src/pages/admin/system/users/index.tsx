@@ -14,6 +14,7 @@ import {
   type SystemRole,
   type SystemUser,
 } from '@/services/system';
+import { roleLabel } from '@/constants/roles';
 import { getRequestErrorMessage } from '@/utils/requestError';
 
 const UsersPage: React.FC = () => {
@@ -56,7 +57,7 @@ const UsersPage: React.FC = () => {
       render: (_, row) =>
         (row.roles || []).map((r) => (
           <Tag key={r} style={{ marginBottom: 2 }}>
-            {r}
+            {roleLabel(r)}
           </Tag>
         )),
     },
@@ -217,7 +218,10 @@ const UsersPage: React.FC = () => {
           >
             <Select
               mode="multiple"
-              options={roles.map((r) => ({ label: `${r.name}（${r.code}）`, value: r.id }))}
+              options={roles.map((r) => ({
+                label: roleLabel(r.code) || r.name,
+                value: r.id,
+              }))}
               placeholder="选择角色"
             />
           </Form.Item>
@@ -243,7 +247,7 @@ const UsersPage: React.FC = () => {
           style={{ width: '100%' }}
           value={roleIds}
           onChange={setRoleIds}
-          options={roles.map((r) => ({ label: `${r.name}（${r.code}）`, value: r.id }))}
+          options={roles.map((r) => ({ label: roleLabel(r.code) || r.name, value: r.id }))}
           placeholder="选择角色"
         />
       </Modal>

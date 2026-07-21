@@ -7,6 +7,41 @@ servers:
   - url: http://localhost:8080/api/v1
   - url: http://39.101.67.167:8080/api/v1
 paths:
+  /files:
+    post:
+      tags: [Common]
+      summary: 上传本地文件（图片/文档）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 成功，返回 url / fileName / storedName
+  /files/{storedName}:
+    get:
+      tags: [Common]
+      summary: 下载或预览已上传文件
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: storedName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 文件流
   /ai/capabilities:
     get:
       tags: [AI]
@@ -128,6 +163,28 @@ paths:
           description: 成功；data 为候选列表（employeeId/name/empNo/department）
         "403":
           description: 无权限
+  /approvals/delegate-candidates:
+    get:
+      tags: [Approval]
+      summary: 审批委托候选人（仅有审批权限的启用用户）
+      description: |
+        供「审批委托」选人：仅返回具备审批能力的启用账号
+        （角色 SYS_ADMIN / HR_STAFF / DEPT_MANAGER / FINANCE_MANAGER，
+        或权限 approval:handle / approval:action / menu:workflow / menu:approval），
+        并排除当前登录用户。
+        keyword 为空时返回前若干条；可按姓名、工号、用户名模糊搜索。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 姓名 / 工号 / 用户名关键词
+      responses:
+        "200":
+          description: 成功；data 为候选列表（userId/name/username/empNo/department）
   /workbench/summary:
     get:
       tags: [Workbench]
