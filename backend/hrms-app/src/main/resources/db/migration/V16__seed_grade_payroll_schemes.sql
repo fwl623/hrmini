@@ -3,10 +3,6 @@
 -- 实习生 / 试用员工 / M序列 / P序列 / S序列
 -- =============================================================
 
--- 添加唯一约束防止重复
-ALTER TABLE payroll_scheme_item ADD UNIQUE KEY IF NOT EXISTS uk_scheme_item (scheme_id, item_code);
-ALTER TABLE payroll_scheme_scope ADD UNIQUE KEY IF NOT EXISTS uk_scheme_scope (scheme_id, scope_type, scope_id);
-
 -- 1. 创建账套
 INSERT IGNORE INTO payroll_scheme (id, name, description, effective_date, status, deleted) VALUES
 (2, '实习生薪酬方案', '实习生：劳务报酬，无社保公积金', '2026-01-01', 'enabled', 0),

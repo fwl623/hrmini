@@ -13,8 +13,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 离职双通道（PRD §5.4）：
- * 1) 员工门户申请 RESIGNATION_REQUEST → HR 审批；
+ * 离职双通道：
+ * 1) 员工门户申请：仅登记意向（PENDING），不进审批中心；
  * 2) HR 发起正式离职 RESIGNATION → 部门负责人（确认交接）→ HR → 待离职 → 已离职。
  */
 @RestController

@@ -29,6 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -59,8 +61,9 @@ public class ResignationService {
     }
 
     /**
-     * 门户员工发起离职申请（PRD §5.4 双通道第一阶段）。
-     * 审批通过后由 HR 决定是否立即发起正式离职。
+     * 门户员工发起离职申请（双通道第一阶段）。
+     * 仅登记意向，不走审批中心；由 HR 在离职管理中「发起正式离职」后，
+     * 才进入部门负责人确认交接 → HR 审批。
      */
     @Transactional
     public LifecycleDtos.ResignationRequestVO createMyRequest(LifecycleDtos.ResignationRequestCreate req) {
@@ -95,8 +98,18 @@ public class ResignationService {
     }
 
     public PageResult<LifecycleDtos.ResignationRequestVO> listRequests(int page, int pageSize, String status) {
+        // 排除已转入正式离职的申请，以及 HR 直提时落库的占位单（二者均已有 resignation_application）
+        Set<Long> linkedRequestIds = resignationMapper.selectList(new LambdaQueryWrapper<ResignationApplication>()
+                        .select(ResignationApplication::getRequestId))
+                .stream()
+                .map(ResignationApplication::getRequestId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
         LambdaQueryWrapper<EmployeeResignationRequest> q = new LambdaQueryWrapper<EmployeeResignationRequest>()
                 .orderByDesc(EmployeeResignationRequest::getId);
+        if (!linkedRequestIds.isEmpty()) {
+            q.notIn(EmployeeResignationRequest::getId, linkedRequestIds);
+        }
         if (status != null && !status.isBlank()) {
             q.eq(EmployeeResignationRequest::getStatus, status.toUpperCase(Locale.ROOT));
         }
@@ -138,24 +151,46 @@ public class ResignationService {
         }
         long userId = currentUserProvider.requireUserId();
 
-        // requestId 可选：无则落一条线下协商占位（APPROVED），满足表 request_id NOT NULL
+        // requestId 可选：无则落一条「无审批实例」占位单（满足 request_id NOT NULL），不进「员工申请」列表
         Long requestId = req.getRequestId();
         if (requestId != null) {
             EmployeeResignationRequest request = requestMapper.selectById(requestId);
             if (request == null) {
                 throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "关联离职申请不存在");
             }
-            if (!"APPROVED".equalsIgnoreCase(request.getStatus())) {
-                throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "须关联已批准的离职申请");
+            String st = request.getStatus() == null ? "" : request.getStatus().toUpperCase(Locale.ROOT);
+            // 员工申请：PENDING（待 HR 受理）或历史 APPROVED；排除已撤销/驳回
+            if (!"PENDING".equals(st) && !"APPROVED".equals(st)) {
+                throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "仅可关联待受理或已通过的离职申请");
             }
             if (!req.getEmployeeId().equals(request.getEmployeeId())) {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, "employeeId 与 requestId 不匹配");
+            }
+            long alreadyFormal = resignationMapper.selectCount(new LambdaQueryWrapper<ResignationApplication>()
+                    .eq(ResignationApplication::getRequestId, requestId));
+            if (alreadyFormal > 0) {
+                throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "该离职申请已发起正式离职");
+            }
+            // 若仍有历史「员工申请」审批单，一并撤回，避免 HR 待办残留
+            if (request.getInstanceId() != null) {
+                try {
+                    dbApprovalService.withdrawInstance(request.getInstanceId(), userId);
+                } catch (Exception e) {
+                    log.warn("撤回离职申请审批实例失败 requestId={} instanceId={}: {}",
+                            requestId, request.getInstanceId(), e.getMessage());
+                }
+            }
+            if (!"APPROVED".equals(st)) {
+                request.setStatus("APPROVED");
+                request.setUpdatedAt(LocalDateTime.now());
+                requestMapper.updateById(request);
             }
         } else {
             LocalDateTime now = LocalDateTime.now();
             EmployeeResignationRequest placeholder = new EmployeeResignationRequest();
             placeholder.setEmployeeId(req.getEmployeeId());
             placeholder.setStatus("APPROVED");
+            // instanceId 刻意留空：HR 直提占位，listRequests 按已关联正式单过滤
             placeholder.setExpectedResignDate(resignDate);
             placeholder.setReasonCategory(req.getReasonCategory());
             placeholder.setResignationType(req.getResignationType());
@@ -198,19 +233,20 @@ public class ResignationService {
     }
 
     /**
-     * 部门负责人审批同意时确认工作交接人（PRD：确认交接安排）。
+     * 部门负责人审批同意时可选确认工作交接人。
+     * handoverEmployeeId 为空表示暂不指定交接人。
      */
     @Transactional
     public void confirmHandover(Long appId, Long handoverEmployeeId) {
         if (appId == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "离职单 ID 无效");
         }
-        if (handoverEmployeeId == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "请指定工作交接人");
-        }
         ResignationApplication app = resignationMapper.selectById(appId);
         if (app == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "离职申请不存在");
+        }
+        if (handoverEmployeeId == null) {
+            return;
         }
         validateHandover(app.getEmployeeId(), handoverEmployeeId);
         app.setHandoverEmployeeId(handoverEmployeeId);
@@ -390,9 +426,6 @@ public class ResignationService {
             return;
         }
         requireStatus(app.getStatus(), "PENDING", "APPROVING");
-        if (app.getHandoverEmployeeId() == null) {
-            throw new BusinessException(ErrorCode.PARAM_INVALID, "离职单缺少工作交接人，无法进入待离职");
-        }
         Employee emp = employeeLifecycleService.requireEmployee(app.getEmployeeId());
         // 员工已离职：同步单状态，并补齐账号禁用（避免手工改 40 后仍可登录）
         if (emp.getEmploymentStatus() != null && emp.getEmploymentStatus() == 40) {
@@ -495,14 +528,28 @@ public class ResignationService {
         }
 
         Employee emp = employeeLifecycleService.requireEmployee(employeeId);
-        long pending = requestMapper.selectCount(new LambdaQueryWrapper<EmployeeResignationRequest>()
-                .eq(EmployeeResignationRequest::getEmployeeId, employeeId)
-                .eq(EmployeeResignationRequest::getStatus, "PENDING"));
-        if (pending > 0) {
-            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, "已有进行中的离职申请");
+        Integer empStatus = emp.getEmploymentStatus();
+        if (empStatus != null && (empStatus == 30 || empStatus == 40)) {
+            throw new BusinessException(ErrorCode.EMPLOYEE_STATUS_INVALID,
+                    empStatus == 40 ? "您已离职，不可再发起离职申请" : "您已在待离职流程中，不可重复申请");
         }
 
-        long userId = currentUserProvider.requireUserId();
+        // 已有待受理 / 已受理（待 HR 正式离职）的申请则不可再提
+        long activeRequest = requestMapper.selectCount(new LambdaQueryWrapper<EmployeeResignationRequest>()
+                .eq(EmployeeResignationRequest::getEmployeeId, employeeId)
+                .in(EmployeeResignationRequest::getStatus, "PENDING", "APPROVED"));
+        if (activeRequest > 0) {
+            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, "已有进行中的离职申请，请勿重复提交");
+        }
+
+        // 已有审批中 / 待离职的正式单
+        long activeFormal = resignationMapper.selectCount(new LambdaQueryWrapper<ResignationApplication>()
+                .eq(ResignationApplication::getEmployeeId, employeeId)
+                .in(ResignationApplication::getStatus, "APPROVING", "PENDING_RESIGN"));
+        if (activeFormal > 0) {
+            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, "已有正式离职流程进行中，不可再发起申请");
+        }
+
         LocalDateTime now = LocalDateTime.now();
         EmployeeResignationRequest app = new EmployeeResignationRequest();
         app.setEmployeeId(employeeId);
@@ -513,34 +560,9 @@ public class ResignationService {
         app.setReasonDetail(req.getReasonDetail());
         app.setCreatedAt(now);
         app.setUpdatedAt(now);
+        // 不创建审批实例：员工申请仅登记，正式离职才走部门负责人→HR 审批
         requestMapper.insert(app);
-
-        List<ProcessNodeDef> nodes = buildResignationRequestNodes(emp, userId);
-        Long instanceId = dbApprovalService.createInstance(
-                "RESIGNATION_REQUEST",
-                String.valueOf(app.getId()),
-                userId,
-                nodes,
-                DbApprovalService.InstanceDisplay.of(
-                        emp.getName() + "离职申请",
-                        emp.getName(),
-                        null,
-                        "RR-" + app.getId()),
-                null);
-        app.setInstanceId(instanceId);
-        requestMapper.updateById(app);
         return toRequestVo(app);
-    }
-
-    /** 员工离职申请：由 HR 审批（写入真实 assigneeUserId） */
-    private List<ProcessNodeDef> buildResignationRequestNodes(Employee emp, long initiatorUserId) {
-        Long hrUserId = employeeLifecycleService.resolveHrApproverUserId(initiatorUserId);
-        ProcessNodeDef n1 = new ProcessNodeDef();
-        n1.setOrder(1);
-        n1.setLabel("HR 审批");
-        n1.setAssigneeType("HR_STAFF");
-        n1.setAssigneeUserId(hrUserId);
-        return List.of(n1);
     }
 
     private Long requireSelfEmployeeId() {

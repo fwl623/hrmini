@@ -126,32 +126,22 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #f0f5ff 0%, #ffffff 60%)',
-        padding: 24,
-      }}
-    >
-      <Card style={{ width: 420 }}>
-        <Typography.Title level={3} style={{ marginBottom: 4, textAlign: 'center' }}>
-          HRMini
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ textAlign: 'center', marginBottom: 24 }}>
-          人力资源管理系统
-        </Typography.Paragraph>
+    <div className="hrms-login-page">
+      <Card className="hrms-login-card">
+        <div className="hrms-login-title">
+          <h1>HRMini</h1>
+          <p>人力资源管理系统</p>
+        </div>
 
         <Alert
+          className="hrms-login-alert"
           type="info"
           showIcon
-          style={{ marginBottom: 20 }}
           message="联调账号：13800001000 / Admin@12345（管理员登录后进入管理后台）"
         />
 
         <Form<LoginForm>
+          className="hrms-login-form"
           form={form}
           layout="vertical"
           onFinish={onFinish}

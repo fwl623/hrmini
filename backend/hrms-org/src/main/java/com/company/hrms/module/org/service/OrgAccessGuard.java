@@ -32,7 +32,7 @@ public final class OrgAccessGuard {
 
     public static void requireDeptRead() {
         LoginUser user = SecurityUtils.requireLoginUser();
-        if (isOrgPrivilegedRole(user)
+        if (isOrgReader(user)
                 || user.hasPermission(PERM_DEPT_VIEW)
                 || user.hasPermission(PERM_DEPT_EDIT)
                 || user.hasPermission(PERM_MENU_ORG)) {
@@ -51,7 +51,7 @@ public final class OrgAccessGuard {
 
     public static void requirePositionRead() {
         LoginUser user = SecurityUtils.requireLoginUser();
-        if (isOrgPrivilegedRole(user)
+        if (isOrgReader(user)
                 || user.hasPermission(PERM_POSITION_VIEW)
                 || user.hasPermission(PERM_POSITION_EDIT)
                 || user.hasPermission(PERM_MENU_ORG)) {
@@ -72,8 +72,8 @@ public final class OrgAccessGuard {
         return user.hasRole(RoleCode.SYS_ADMIN.name()) || user.hasRole(RoleCode.HR_STAFF.name());
     }
 
-    /** 可选部门/职位的管理端角色（不含 FINANCE / 纯 EMPLOYEE） */
-    private static boolean isOrgPrivilegedRole(LoginUser user) {
+    /** 可读部门/职位：HR/管理员 + 部门负责人（只读，写操作仍走 isHrOrAdmin） */
+    private static boolean isOrgReader(LoginUser user) {
         return isHrOrAdmin(user) || user.hasRole(RoleCode.DEPT_MANAGER.name());
     }
 }

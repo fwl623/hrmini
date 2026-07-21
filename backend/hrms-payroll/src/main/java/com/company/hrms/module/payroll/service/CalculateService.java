@@ -618,7 +618,7 @@ public class CalculateService {
 
         // 本期社保 + 公积金（取绝对值，正数）
         BigDecimal currentSsHf = detailItems.stream()
-                .filter(d -> "SS_DEDUCT".equals(d.getType()) || "HF_DEDUCT".equals(d.getType()))
+                .filter(d -> "SS_DEDUCT".equals(d.getItemCode()) || "HF_DEDUCT".equals(d.getItemCode()))
                 .map(d -> opt(d.getAmount()).abs())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 

@@ -15,9 +15,14 @@ import com.company.hrms.attendance.mapper.AttendanceRecordMapper;
 import com.company.hrms.attendance.entity.AttendanceRecord;
 import com.company.hrms.attendance.entity.AttendanceDailySummary;
 import com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper;
+import com.company.hrms.attendance.entity.HolidayCalendar;
+import com.company.hrms.attendance.mapper.HolidayCalendarMapper;
+import com.company.hrms.attendance.entity.WorkdayConfig;
+import com.company.hrms.attendance.mapper.WorkdayConfigMapper;
 import com.company.hrms.common.event.ApprovalCompletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.context.event.EventListener;
@@ -26,6 +31,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 审批完成事件监听器
@@ -48,6 +54,12 @@ public class ApprovalEventListener {
     private final com.company.hrms.attendance.mapper.AttendanceMonthLockMapper attendanceMonthLockMapper;
     private final com.company.hrms.attendance.mapper.AttendanceGroupMapper attendanceGroupMapper;
     private final com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper attendanceGroupMemberMapper;
+    private final HolidayCalendarMapper holidayCalendarMapper;
+    private final WorkdayConfigMapper workdayConfigMapper;
+    private final StringRedisTemplate stringRedisTemplate;
+
+    /** Redis key 前缀：补卡计数 */
+    private static final String SUPPLEMENT_KEY = "supplement:";
 
     @EventListener
     @Transactional(rollbackFor = Exception.class)
@@ -105,6 +117,10 @@ public class ApprovalEventListener {
             Long empId = app.getEmployeeId();
             java.time.LocalDate startDate = app.getStartTime().toLocalDate();
             java.time.LocalDate endDate = app.getEndTime().toLocalDate();
+            // 结束时间为午夜00:00时不包含结束日（与 getCalendar 逻辑一致）
+            if (app.getEndTime().toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+                endDate = endDate.minusDays(1);
+            }
             java.math.BigDecimal leaveDays = app.getLeaveDays() != null ? app.getLeaveDays() : java.math.BigDecimal.ZERO;
             long totalDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate) + 1;
 
@@ -133,8 +149,10 @@ public class ApprovalEventListener {
                     // 同一天请假
                     java.time.LocalTime s = app.getStartTime().toLocalTime();
                     java.time.LocalTime e = app.getEndTime().toLocalTime();
-                    coversAm = s.isBefore(java.time.LocalTime.NOON) && e.isAfter(java.time.LocalTime.MIDNIGHT);
-                    coversPm = e.isAfter(java.time.LocalTime.NOON) && s.isBefore(java.time.LocalTime.MIDNIGHT);
+                    coversAm = s.isBefore(java.time.LocalTime.NOON)
+                            && (e.isAfter(java.time.LocalTime.MIDNIGHT) || e.equals(java.time.LocalTime.MIDNIGHT));
+                    coversPm = (e.isAfter(java.time.LocalTime.NOON) || e.equals(java.time.LocalTime.MIDNIGHT))
+                            && s.isBefore(java.time.LocalTime.MIDNIGHT);
                 } else if (isFirstDay) {
                     java.time.LocalTime s = app.getStartTime().toLocalTime();
                     coversAm = s.isBefore(java.time.LocalTime.NOON);
@@ -142,7 +160,7 @@ public class ApprovalEventListener {
                 } else if (isLastDay) {
                     java.time.LocalTime e = app.getEndTime().toLocalTime();
                     coversAm = true;  // 跨天请假，到末日时 =00:00 开始，覆盖整个上午
-                    coversPm = e.isAfter(java.time.LocalTime.NOON);
+                    coversPm = e.isAfter(java.time.LocalTime.NOON) || e.equals(java.time.LocalTime.MIDNIGHT);
                 } else {
                     coversAm = true;
                     coversPm = true;
@@ -296,56 +314,68 @@ public class ApprovalEventListener {
                 } catch (Exception e) { /* 解析失败用默认值 */ }
             }
 
-            // 仅重算被补卡的槽位（读取考勤组配置，支持弹性班）
-            java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
-            java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
-            int lateThreshold = 15;
-            boolean isFlexible = false;
-            java.time.LocalTime flexEarliest = null;
-            java.time.LocalTime flexLatest = null;
-            try {
-                com.company.hrms.attendance.entity.AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(empId);
-                if (agm != null) {
-                    com.company.hrms.attendance.entity.AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
-                    if (grp != null) {
-                        if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
-                        if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
-                        if (grp.getLateThresholdMinutes() != null) lateThreshold = grp.getLateThresholdMinutes();
-                        if ("FLEXIBLE".equals(grp.getShiftType())) {
-                            isFlexible = true;
-                            flexEarliest = grp.getFlexStartEarliest();
-                            flexLatest = grp.getFlexStartLatest();
+            // ── 请假覆盖保护（技术补充说明 §1.6）─────────────────────────────
+            // 如果目标槽位已被已审批通过的请假覆盖（状态码 4），跳过重算保持请假状态
+            boolean slotCoveredByLeave = ("IN".equals(punchType) && amCode == 4)
+                    || ("OUT".equals(punchType) && pmCode == 4);
+            // 记录当前是否有任何槽位处于请假状态，用于决定 leaveDays 是否归零
+            boolean anySlotLeave = (amCode == 4 || pmCode == 4);
+
+            if (slotCoveredByLeave) {
+                log.info("请假覆盖保护，跳过补卡重算: empId={}, date={}, type={}, status=am:{} pm:{}",
+                        empId, punchDate, punchType, amCode, pmCode);
+            } else {
+                // 读取考勤组配置，用于重算槽位状态
+                java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
+                java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
+                int lateThreshold = 15;
+                boolean isFlexible = false;
+                java.time.LocalTime flexEarliest = null;
+                java.time.LocalTime flexLatest = null;
+                try {
+                    com.company.hrms.attendance.entity.AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(empId);
+                    if (agm != null) {
+                        com.company.hrms.attendance.entity.AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
+                        if (grp != null) {
+                            if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
+                            if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
+                            if (grp.getLateThresholdMinutes() != null) lateThreshold = grp.getLateThresholdMinutes();
+                            if ("FLEXIBLE".equals(grp.getShiftType())) {
+                                isFlexible = true;
+                                flexEarliest = grp.getFlexStartEarliest();
+                                flexLatest = grp.getFlexStartLatest();
+                            }
                         }
                     }
-                }
-            } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
+                } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
 
-            if ("IN".equals(punchType)) {
-                // 补上班卡 → 仅重算 AM 槽位（支持弹性班）
-                java.time.LocalTime t = sup.getMakeupTime().toLocalTime();
-                if (isFlexible && flexEarliest != null && flexLatest != null) {
-                    amCode = (!t.isBefore(flexEarliest) && !t.isAfter(flexLatest)) ? 0 : 1;
-                } else {
-                    if (!t.isAfter(workStart)) {
-                        amCode = 0;
-                    } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
-                        amCode = 1;
+                if ("IN".equals(punchType)) {
+                    // 补上班卡 → 仅重算 AM 槽位（支持弹性班）
+                    java.time.LocalTime t = sup.getMakeupTime().toLocalTime();
+                    if (isFlexible && flexEarliest != null && flexLatest != null) {
+                        amCode = (!t.isBefore(flexEarliest) && !t.isAfter(flexLatest)) ? 0 : 1;
                     } else {
-                        amCode = 3;
+                        if (!t.isAfter(workStart)) {
+                            amCode = 0;
+                        } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
+                            amCode = 1;
+                        } else {
+                            amCode = 3;
+                        }
                     }
-                }
-                // PM 保持不变
-            } else {
-                // 补下班卡 → 仅重算 PM 槽位
-                java.time.LocalTime t = sup.getMakeupTime().toLocalTime();
-                if (!t.isBefore(workEnd)) {
-                    pmCode = 0;
-                } else if (!t.isBefore(workEnd.minusMinutes(lateThreshold))) {
-                    pmCode = 2;
+                    // PM 保持不变
                 } else {
-                    pmCode = 3;
+                    // 补下班卡 → 仅重算 PM 槽位
+                    java.time.LocalTime t = sup.getMakeupTime().toLocalTime();
+                    if (!t.isBefore(workEnd)) {
+                        pmCode = 0;
+                    } else if (!t.isBefore(workEnd.minusMinutes(lateThreshold))) {
+                        pmCode = 2;
+                    } else {
+                        pmCode = 3;
+                    }
+                    // AM 保持不变
                 }
-                // AM 保持不变
             }
 
             if (summary == null) {
@@ -359,7 +389,10 @@ public class ApprovalEventListener {
             } else {
                 summary.setClockOutTime(sup.getMakeupTime());
             }
-            summary.setLeaveDays(java.math.BigDecimal.ZERO);
+            // 请假覆盖保护：如果任何槽位处于请假状态，保留现有 leaveDays
+            if (!anySlotLeave) {
+                summary.setLeaveDays(java.math.BigDecimal.ZERO);
+            }
             summary.setOvertimeHours(java.math.BigDecimal.ZERO);
             if (summary.getId() == null) {
                 attendanceDailySummaryMapper.insert(summary);
@@ -372,7 +405,13 @@ public class ApprovalEventListener {
         } else if ("REJECTED".equals(result)) {
             sup.setStatus("REJECTED");
             attendanceSupplementMapper.updateById(sup);
+            decrementSupplementQuota(sup);
             log.info("补卡已驳回: id={}", supplementId);
+        } else if ("CANCELLED".equals(result)) {
+            sup.setStatus("CANCELLED");
+            attendanceSupplementMapper.updateById(sup);
+            decrementSupplementQuota(sup);
+            log.info("补卡已撤回: id={}", supplementId);
         }
     }
 
@@ -400,10 +439,18 @@ public class ApprovalEventListener {
             ledger.setLedgerDate(overtimeDate);
             overtimeLedgerMapper.insert(ledger);
 
-            // 更新日汇总：该日加班时长累加
+            // 更新日汇总：该日加班时长累加（日汇总不存在则创建）
             Long empId = app.getEmployeeId();
             AttendanceDailySummary daily = attendanceDailySummaryMapper.selectByEmployeeAndDate(empId, overtimeDate);
-            if (daily != null) {
+            if (daily == null) {
+                daily = new AttendanceDailySummary();
+                daily.setEmployeeId(empId);
+                daily.setSummaryDate(overtimeDate);
+                daily.setDayStatus("am:5,pm:5");
+                daily.setLeaveDays(java.math.BigDecimal.ZERO);
+                daily.setOvertimeHours(app.getHours());
+                attendanceDailySummaryMapper.insert(daily);
+            } else {
                 java.math.BigDecimal currentOt = daily.getOvertimeHours() != null
                         ? daily.getOvertimeHours() : java.math.BigDecimal.ZERO;
                 daily.setOvertimeHours(currentOt.add(app.getHours()));
@@ -487,12 +534,62 @@ public class ApprovalEventListener {
         }
     }
 
-    /** 计算加班倍率（与服务层逻辑一致） */
+    /** 计算加班倍率：法定假日3.0 / 休息日2.0 / 工作日1.5（含调休工作日的换算） */
     private int calculateRateType(LocalDate date) {
-        // 简化：工作日1.5、休息日2.0、节假日3.0
-        // 此处实际应查 holiday_calendar 和 workday_config
+        // 1. 法定节假日 → 3.0
+        try {
+            long holidayCount = holidayCalendarMapper.selectCount(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<HolidayCalendar>()
+                            .eq(HolidayCalendar::getHolidayDate, date));
+            if (holidayCount > 0) {
+                return 30;
+            }
+        } catch (Exception e) {
+            log.warn("查询法定节假日失败，回退周判断", e);
+        }
+
+        // 2. 查工作日配置：调休上班的周末应为 1.5，而非 2.0
+        try {
+            java.util.List<WorkdayConfig> configs = workdayConfigMapper.selectList(null);
+            java.util.Set<Integer> workdaySet = configs.stream()
+                    .filter(w -> w.getIsWorkday() == 1)
+                    .map(WorkdayConfig::getDayOfWeek)
+                    .collect(java.util.stream.Collectors.toSet());
+            int dow = date.getDayOfWeek().getValue();
+            if (workdaySet.contains(dow)) {
+                return 15; // 工作日或调休工作日 → 1.5
+            }
+        } catch (Exception e) {
+            log.warn("查询工作日配置失败，回退周判断", e);
+        }
+
+        // 3. 兜底：按周几判断
         int dow = date.getDayOfWeek().getValue();
-        if (dow >= 6) return 20; // 周末2.0
-        return 15; // 工作日1.5
+        return (dow >= 6) ? 20 : 15; // 周末2.0 / 工作日1.5
+    }
+
+    /**
+     * 补卡驳回/撤回时递减 Redis 配额计数。
+     * 此时 countByEmployeeAndMonth（仅 APPROVED）不再计入该记录，
+     * 但 Redis 在提交时已 INCR，需要通过 DECR 回退。
+     * 此方法为 best-effort：Redis 不可用仅记日志，不影响主流程。
+     */
+    private void decrementSupplementQuota(AttendanceSupplement sup) {
+        try {
+            String ym = sup.getMakeupDate() != null && sup.getMakeupDate().length() >= 7
+                    ? sup.getMakeupDate().substring(0, 7)
+                    : java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+            String quotaKey = SUPPLEMENT_KEY + sup.getEmployeeId() + ":" + ym;
+            Long after = stringRedisTemplate.opsForValue().decrement(quotaKey);
+            if (after != null && after < 0) {
+                // 避免负值，归零
+                stringRedisTemplate.opsForValue().set(quotaKey, "0", 60, TimeUnit.SECONDS);
+            } else if (after == null) {
+                // 键不存在（已过期），无需处理
+            }
+            log.info("补卡配额 DECR: empId={}, ym={}, after={}", sup.getEmployeeId(), ym, after);
+        } catch (Exception e) {
+            log.warn("补卡配额 Redis 递减失败: empId={}, err={}", sup.getEmployeeId(), e.getMessage());
+        }
     }
 }

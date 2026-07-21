@@ -74,7 +74,7 @@ public final class ApprovalDtos {
         private String action;
         private String comment;
         private Long targetUserId;
-        /** 正式离职：部门负责人同意时必填，指定工作交接人 */
+        /** 正式离职：部门负责人同意时可指定工作交接人（可选） */
         private Long handoverEmployeeId;
     }
 

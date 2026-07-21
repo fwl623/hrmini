@@ -48,6 +48,7 @@ type ShortcutDef = {
   /** access 字段名；不填则始终可选 */
   accessKey?:
     | 'canViewEmployee'
+    | 'canViewAnalytics'
     | 'canViewDept'
     | 'canViewPosition'
     | 'canManageWorkflow'
@@ -59,6 +60,7 @@ type ShortcutDef = {
 };
 
 const SHORTCUT_CATALOG: ShortcutDef[] = [
+  { title: '数据分析', path: '/admin/analytics', accessKey: 'canViewAnalytics' },
   { title: '花名册', path: '/admin/employee/list', accessKey: 'canViewEmployee' },
   { title: '手机号变更', path: '/admin/employee/mobile-change', accessKey: 'canViewEmployee' },
   { title: '部门管理', path: '/admin/org/departments', accessKey: 'canViewDept' },
@@ -227,9 +229,10 @@ const WorkbenchPage: React.FC = () => {
 
   return (
     <>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        工作台
-      </Typography.Title>
+      <div className="hrms-page-header">
+        <h2>工作台</h2>
+        <p>欢迎回来，以下是系统概览</p>
+      </div>
       {degraded && (
         <Alert
           type="warning"
@@ -246,6 +249,7 @@ const WorkbenchPage: React.FC = () => {
               loading={loading}
               size="small"
               hoverable={!!card.path}
+              className="hrms-stat-card"
               onClick={() => {
                 if (card.path) history.push(card.path);
               }}
@@ -259,7 +263,6 @@ const WorkbenchPage: React.FC = () => {
                   </Space>
                 }
                 value={card.value}
-                valueStyle={{ color: card.color }}
               />
               {card.path ? (
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
