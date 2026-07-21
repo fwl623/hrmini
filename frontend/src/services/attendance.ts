@@ -282,6 +282,11 @@ export async function getPunchFixQuota() {
   return request<API.Result<{ totalQuota: number; usedQuota: number; remainingQuota: number }>>(`${API_PREFIX}/punch-fix/quota`);
 }
 
+/** 昨日打卡概览（管理端） */
+export async function getYesterdayOverview() {
+  return request<API.Result<API.TodayPunchVO>>(`${API_PREFIX}/punch/yesterday-overview`);
+}
+
 // ========== 假期 & 请假 ==========
 
 /**

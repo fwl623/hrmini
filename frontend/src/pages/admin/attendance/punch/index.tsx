@@ -1,51 +1,42 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import {
   Card, Row, Col, Button, Statistic, Tag, Typography, message, Space, Modal,
-  Form, DatePicker, TimePicker, Input, Select, Descriptions,
+  Form, DatePicker, TimePicker, Input, Select,
 } from 'antd';
 import {
-  ClockCircleOutlined, CloseCircleOutlined, AimOutlined, PlusOutlined, UserOutlined,
+  ClockCircleOutlined, CloseCircleOutlined, AimOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 
 import {
-  getTodayPunchStatus, getPunchRecords, punch, applyPunchFix, getPunchFixQuota,
+  getPunchRecords, punch, applyPunchFix, getPunchFixQuota, getYesterdayOverview,
 } from '@/services/attendance';
 import { getEmployeeList } from '@/services/employee';
 
 /* 打卡状态 → 颜色映射 */
 const statusColorMap: Record<string, string> = {
-  NORMAL: 'green',
-  LATE: 'orange',
-  EARLY_LEAVE: 'orange',
-  ABSENT_HALF: 'red',
-  ABSENT: 'red',
+  NORMAL: 'green', LATE: 'orange', EARLY_LEAVE: 'orange',
+  ABSENT_HALF: 'red', ABSENT: 'red',
 };
 
 /* 打卡状态 → 中文标签 */
 const statusLabelMap: Record<string, string> = {
-  NORMAL: '正常',
-  LATE: '迟到',
-  EARLY_LEAVE: '早退',
-  ABSENT_HALF: '旷工半天',
-  ABSENT: '旷工',
+  NORMAL: '正常', LATE: '迟到', EARLY_LEAVE: '早退',
+  ABSENT_HALF: '旷工半天', ABSENT: '旷工',
 };
 
 /* 打卡来源 → 中文标签 */
 const sourceLabelMap: Record<string, string> = {
-  CARD: '打卡机',
-  APP: '手机端',
-  ADMIN: '代打',
-  FIX: '补卡',
+  CARD: '打卡机', APP: '手机端', ADMIN: '代打', FIX: '补卡',
 };
 
 const PunchAdminPage: React.FC = () => {
   const actionRef = useRef<ActionType>();
 
-  // ── 今日概览 ──
-  const [todayStatus, setTodayStatus] = useState({
+  // ── 昨日概览 ──
+  const [yesterdayStatus, setYesterdayStatus] = useState({
     clockedCount: 0, totalCount: 0, lateCount: 0, earlyLeaveCount: 0, absentCount: 0,
   });
 
@@ -61,23 +52,23 @@ const PunchAdminPage: React.FC = () => {
   const [fixSubmitting, setFixSubmitting] = useState(false);
 
   // ── 员工搜索 ──
-  const [empSearchText, setEmpSearchText] = useState('');
   const [empOptions, setEmpOptions] = useState<{ label: string; value: number }[]>([]);
   const [empLoading, setEmpLoading] = useState(false);
 
-  /** 加载今日概览 + 配额 */
+  /** 加载昨日概览 + 配额 */
   const loadOverview = useCallback(async () => {
     try {
-      const [statusRes, quotaRes] = await Promise.all([
-        getTodayPunchStatus(),
+      const [yesterdayRes, quotaRes] = await Promise.all([
+        getYesterdayOverview(),
         getPunchFixQuota(),
       ]);
-      if (statusRes.data) setTodayStatus(statusRes.data);
+      if (yesterdayRes.data) setYesterdayStatus(yesterdayRes.data);
       if (quotaRes.data) setQuota(quotaRes.data);
     } catch { /* silent */ }
   }, []);
 
-  useEffect(() => { loadOverview(); }, [loadOverview]);
+  // 仅在首次渲染时加载
+  React.useEffect(() => { loadOverview(); }, [loadOverview]);
 
   /** 搜索员工（自动补全） */
   const searchEmployees = useCallback(async (keyword: string) => {
@@ -205,57 +196,36 @@ const PunchAdminPage: React.FC = () => {
 
   return (
     <>
-      {/* ═══════════════ 今日打卡概览 ═══════════════ */}
+      {/* ═══════════════ 昨日打卡概览 ═══════════════ */}
       <Card style={{ marginBottom: 16 }}>
         <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 16 }}>
-          今日打卡概览
+          昨日打卡概览（{dayjs().subtract(1, 'day').format('YYYY-MM-DD')}）
         </Typography.Title>
         <Row gutter={[16, 16]}>
           <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="已打卡"
-              value={todayStatus.clockedCount}
-              suffix={`/ ${todayStatus.totalCount}`}
-              valueStyle={{ color: '#1890ff' }}
-            />
+            <Statistic title="应打卡" value={yesterdayStatus.totalCount} suffix="人" valueStyle={{ color: '#1890ff' }} />
           </Col>
           <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="应打卡"
-              value={todayStatus.totalCount}
-              valueStyle={{ color: '#52c41a' }}
-            />
+            <Statistic title="已打卡" value={yesterdayStatus.clockedCount} suffix="人" valueStyle={{ color: '#52c41a' }} />
           </Col>
           <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="迟到"
-              value={todayStatus.lateCount}
-              valueStyle={{ color: todayStatus.lateCount > 0 ? '#faad14' : undefined }}
-              prefix={<ClockCircleOutlined />}
-            />
+            <Statistic title="迟到" value={yesterdayStatus.lateCount} suffix="人"
+              valueStyle={{ color: yesterdayStatus.lateCount > 0 ? '#faad14' : undefined }} prefix={<ClockCircleOutlined />} />
           </Col>
           <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="早退"
-              value={todayStatus.earlyLeaveCount}
-              valueStyle={{ color: todayStatus.earlyLeaveCount > 0 ? '#faad14' : undefined }}
-              prefix={<ClockCircleOutlined />}
-            />
+            <Statistic title="早退" value={yesterdayStatus.earlyLeaveCount} suffix="人"
+              valueStyle={{ color: yesterdayStatus.earlyLeaveCount > 0 ? '#faad14' : undefined }} prefix={<ClockCircleOutlined />} />
           </Col>
           <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="缺卡"
-              value={todayStatus.absentCount}
-              valueStyle={{ color: todayStatus.absentCount > 0 ? '#ff4d4f' : undefined }}
-              prefix={<CloseCircleOutlined />}
-            />
+            <Statistic title="缺勤" value={yesterdayStatus.absentCount} suffix="人"
+              valueStyle={{ color: yesterdayStatus.absentCount > 0 ? '#ff4d4f' : undefined }} prefix={<CloseCircleOutlined />} />
           </Col>
         </Row>
       </Card>
 
-      {/* ═══════════════ 打卡记录列表 ═══════════════ */}
+      {/* ═══════════════ 今日打卡记录 ═══════════════ */}
       <Card
-        title="打卡记录"
+        title={`今日打卡记录（${dayjs().format('YYYY-MM-DD')}）`}
         extra={
           <Space>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -274,14 +244,12 @@ const PunchAdminPage: React.FC = () => {
           rowKey={(r) => `${r.employeeId}-${r.punchDate}`}
           columns={columns}
           request={async (params) => {
-            const { current, pageSize, keyword, dateFrom, dateTo } = params;
+            const { current, pageSize } = params;
+            const today = dayjs().format('YYYY-MM-DD');
             try {
               const res = await getPunchRecords({
-                page: current,
-                size: pageSize,
-                keyword,
-                dateFrom,
-                dateTo,
+                page: current, size: pageSize,
+                dateFrom: today, dateTo: today,
               });
               return {
                 data: res.data?.list || [],
@@ -293,15 +261,9 @@ const PunchAdminPage: React.FC = () => {
             }
           }}
           pagination={{ showSizeChanger: true, defaultPageSize: 20 }}
-          search={{
-            filterType: 'light',
-            defaultCollapsed: true,
-            labelWidth: 'auto',
-          }}
+          search={false}
           actionRef={actionRef}
           toolBarRender={false}
-          dateFormatter="string"
-          headerTitle={false}
         />
       </Card>
 

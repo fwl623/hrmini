@@ -329,6 +329,46 @@ public class PunchService {
                 missingInCount + missingOutCount);
     }
 
+    /**
+     * 昨日打卡概览（全员工聚合，管理端使用）
+     */
+    public TodayPunchVO getYesterdayOverview() {
+        LocalDate yesterday = LocalDate.now(CST).minusDays(1);
+        // 查昨天所有日汇总
+        List<com.company.hrms.attendance.entity.AttendanceDailySummary> all = attendanceDailySummaryMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.AttendanceDailySummary>()
+                        .eq(com.company.hrms.attendance.entity.AttendanceDailySummary::getSummaryDate, yesterday));
+        long total = all.size();
+        long clocked = 0, late = 0, early = 0, absent = 0;
+        for (com.company.hrms.attendance.entity.AttendanceDailySummary ds : all) {
+            String raw = ds.getDayStatus();
+            if (raw != null && raw.startsWith("am:")) {
+                try {
+                    String[] parts = raw.split(",");
+                    int am = Integer.parseInt(parts[0].split(":")[1]);
+                    int pm = Integer.parseInt(parts[1].split(":")[1]);
+                    if (am == 4 || pm == 4) continue; // 请假不计入
+                    boolean hasIn = (am != 5 && am != 3);
+                    boolean hasOut = (pm != 5 && pm != 3);
+                    if (hasIn || hasOut) clocked++;
+                    if (am == 1) late++;
+                    if (pm == 2) early++;
+                    if (am == 5 && pm == 5) absent++;
+                    else if (am == 3 && pm == 5) absent++;
+                    else if (am == 5 && pm == 3) absent++;
+                    else if (am == 3 && pm == 3) absent++;
+                } catch (Exception e) {}
+            } else {
+                // 旧格式兼容
+                if ("NORMAL".equals(raw) || "LATE".equals(raw) || "EARLY_LEAVE".equals(raw)) clocked++;
+                if ("LATE".equals(raw)) late++;
+                if ("EARLY_LEAVE".equals(raw)) early++;
+                if ("ABSENT".equals(raw) || "ABSENT_HALF".equals(raw)) absent++;
+            }
+        }
+        return new TodayPunchVO(clocked, total, late, early, absent);
+    }
+
     // ========== 打卡记录分页 ==========
 
     /**
