@@ -448,22 +448,47 @@ public class SummaryService {
         BigDecimal overtimeHours = BigDecimal.ZERO;
 
         for (AttendanceDailySummary daily : dailyList) {
+            String raw = daily.getDayStatus();
             shouldAttendDays++;
-            if ("NORMAL".equals(daily.getDayStatus()) || "LATE".equals(daily.getDayStatus())
-                    || "EARLY_LEAVE".equals(daily.getDayStatus())) {
-                actualAttendDays = actualAttendDays.add(BigDecimal.ONE);
-            } else if ("ABSENT_HALF".equals(daily.getDayStatus())) {
-                actualAttendDays = actualAttendDays.add(BigDecimal.valueOf(0.5));
-                absentDays = absentDays.add(BigDecimal.valueOf(0.5));
-            } else if ("ABSENT".equals(daily.getDayStatus())) {
-                absentDays = absentDays.add(BigDecimal.ONE);
-            } else if ("LEAVE".equals(daily.getDayStatus())) {
-                leaveDays = leaveDays.add(daily.getLeaveDays());
+            int amCode = -1, pmCode = -1;
+            boolean isNewFormat = (raw != null && raw.startsWith("am:"));
+            if (isNewFormat) {
+                try {
+                    String[] parts = raw.split(",");
+                    amCode = Integer.parseInt(parts[0].split(":")[1]);
+                    pmCode = Integer.parseInt(parts[1].split(":")[1]);
+                } catch (Exception e) {}
             }
 
-            if ("LATE".equals(daily.getDayStatus())) lateCount++;
-            if ("EARLY_LEAVE".equals(daily.getDayStatus())) earlyLeaveCount++;
-            overtimeHours = overtimeHours.add(daily.getOvertimeHours());
+            if (isNewFormat && (amCode == 4 || pmCode == 4)) {
+                // v2.1: 请假 - 按 leave_days 计
+                leaveDays = leaveDays.add(daily.getLeaveDays() != null ? daily.getLeaveDays() : BigDecimal.ZERO);
+            } else if (isNewFormat) {
+                // v2.1: 解析 am/pm 码
+                boolean amOk = (amCode == 0 || amCode == 1);
+                boolean pmOk = (pmCode == 0 || pmCode == 2);
+                if (amOk && pmOk) actualAttendDays = actualAttendDays.add(BigDecimal.ONE);
+                else if (amOk || pmOk) actualAttendDays = actualAttendDays.add(BigDecimal.valueOf(0.5));
+                if (amCode == 1) lateCount++;
+                if (pmCode == 2) earlyLeaveCount++;
+                if (amCode == 3) absentDays = absentDays.add(BigDecimal.valueOf(0.5));
+                if (pmCode == 3) absentDays = absentDays.add(BigDecimal.valueOf(0.5));
+            } else {
+                // 旧格式兼容
+                if ("NORMAL".equals(raw) || "LATE".equals(raw) || "EARLY_LEAVE".equals(raw)) {
+                    actualAttendDays = actualAttendDays.add(BigDecimal.ONE);
+                } else if ("ABSENT_HALF".equals(raw)) {
+                    actualAttendDays = actualAttendDays.add(BigDecimal.valueOf(0.5));
+                    absentDays = absentDays.add(BigDecimal.valueOf(0.5));
+                } else if ("ABSENT".equals(raw)) {
+                    absentDays = absentDays.add(BigDecimal.ONE);
+                } else if ("LEAVE".equals(raw)) {
+                    leaveDays = leaveDays.add(daily.getLeaveDays());
+                }
+                if ("LATE".equals(raw)) lateCount++;
+                if ("EARLY_LEAVE".equals(raw)) earlyLeaveCount++;
+            }
+            overtimeHours = overtimeHours.add(daily.getOvertimeHours() != null ? daily.getOvertimeHours() : BigDecimal.ZERO);
         }
 
         monthly.setShouldAttendDays(shouldAttendDays);

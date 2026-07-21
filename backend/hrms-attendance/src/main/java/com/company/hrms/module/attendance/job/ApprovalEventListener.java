@@ -185,7 +185,20 @@ public class ApprovalEventListener {
             java.math.BigDecimal totalLeaveDays = java.math.BigDecimal.ZERO;
             for (AttendanceDailySummary ds : dailyList) {
                 shouldAttendDays++;
-                if ("LEAVE".equals(ds.getDayStatus())) {
+                // v2.1: 解析 am:x,pm:y 格式判断是否请假
+                boolean isLeave = false;
+                String raw2 = ds.getDayStatus();
+                if (raw2 != null && raw2.startsWith("am:")) {
+                    try {
+                        String[] p = raw2.split(",");
+                        int ac = Integer.parseInt(p[0].split(":")[1]);
+                        int pc = Integer.parseInt(p[1].split(":")[1]);
+                        isLeave = (ac == 4 || pc == 4);
+                    } catch (Exception e) {}
+                } else {
+                    isLeave = "LEAVE".equals(raw2);
+                }
+                if (isLeave) {
                     totalLeaveDays = totalLeaveDays.add(ds.getLeaveDays() != null ? ds.getLeaveDays() : java.math.BigDecimal.ZERO);
                 }
             }
