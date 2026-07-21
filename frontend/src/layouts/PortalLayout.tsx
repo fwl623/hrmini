@@ -66,38 +66,34 @@ const PortalLayout: React.FC = () => {
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider
         theme="light"
-        width={200}
-        className="hrms-sider-scroll"
-        style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden' }}
+        width={220}
+        className="hrms-portal-sider"
+        style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden', background: '#fff' }}
       >
-        <div style={{ padding: 16, fontWeight: 600 }}>个人中心</div>
+        <div className="hrms-sider-logo" style={{ borderBottom: '1px solid var(--hrms-border-light, #f0f1f3)' }}>
+          <span className="logo-text" style={{ color: '#1D2129', fontSize: 16, fontWeight: 600 }}>个人中心</span>
+        </div>
         <Menu
           mode="inline"
           selectedKeys={[location.pathname]}
           items={portalMenuItems}
           onClick={({ key }) => history.push(key)}
+          style={{ borderInlineEnd: 'none', background: '#fff' }}
         />
       </Sider>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
-        <Header
-          style={{
-            background: '#fff',
-            padding: '0 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-          }}
-        >
-          <Typography.Text>员工自助</Typography.Text>
+        <Header className="hrms-header">
+          <span className="hrms-header-title">员工自助门户</span>
           <Dropdown menu={{ items: userMenu }} placement="bottomRight">
-            <Space style={{ cursor: 'pointer' }}>
-              <UserOutlined />
-              <span>{username}</span>
+            <Space className="hrms-header-right">
+              <span className="hrms-header-avatar">
+                <UserOutlined />
+              </span>
+              <span className="hrms-header-username">{username}</span>
             </Space>
           </Dropdown>
         </Header>
-        <Content style={{ margin: 24, overflow: 'auto', flex: 1, minHeight: 0 }}>
+        <Content className="hrms-content">
           <Outlet />
         </Content>
       </Layout>

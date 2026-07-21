@@ -46,6 +46,7 @@ const AdminLayout: React.FC = () => {
   // 系统管理员是功能账号，管理端不展示「个人中心」菜单（权限逻辑不变）
   const menuAccess: Record<string, boolean> = {
     workbench: true,
+    analytics: access.canViewAnalytics,
     org: access.canViewDept || access.canViewPosition,
     employee: access.canViewEmployee,
     lifecycle: access.canManageWorkflow || access.canHr,
@@ -73,6 +74,7 @@ const AdminLayout: React.FC = () => {
         ],
       },
       { key: '/admin/workbench', label: '工作台', accessKey: 'workbench' },
+      { key: '/admin/analytics', label: '数据分析', accessKey: 'analytics' },
       {
         key: '/admin/org',
         label: '组织管理',
@@ -225,13 +227,17 @@ const AdminLayout: React.FC = () => {
   return (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider
-        theme="light"
+        theme="dark"
         width={220}
         className="hrms-sider-scroll"
-        style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden' }}
+        style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden', background: '#001529' }}
       >
-        <div style={{ padding: 16, fontWeight: 600 }}>HRMS 管理后台</div>
+        <div className="hrms-sider-logo">
+          <div className="logo-icon">H</div>
+          <span className="logo-text">HRMS 管理后台</span>
+        </div>
         <Menu
+          theme="dark"
           mode="inline"
           selectedKeys={[location.pathname]}
           defaultOpenKeys={openKeys}
@@ -243,25 +249,18 @@ const AdminLayout: React.FC = () => {
         />
       </Sider>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
-        <Header
-          style={{
-            background: '#fff',
-            padding: '0 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-          }}
-        >
-          <Typography.Text>人力资源管理系统</Typography.Text>
+        <Header className="hrms-header">
+          <span className="hrms-header-title">人力资源管理系统</span>
           <Dropdown menu={{ items: userMenu }} placement="bottomRight">
-            <Space style={{ cursor: 'pointer' }}>
-              <UserOutlined />
-              <span>{username}</span>
+            <Space className="hrms-header-right">
+              <span className="hrms-header-avatar">
+                <UserOutlined />
+              </span>
+              <span className="hrms-header-username">{username}</span>
             </Space>
           </Dropdown>
         </Header>
-        <Content style={{ margin: 24, overflow: 'auto', flex: 1, minHeight: 0 }}>
+        <Content className="hrms-content">
           <Outlet />
         </Content>
       </Layout>

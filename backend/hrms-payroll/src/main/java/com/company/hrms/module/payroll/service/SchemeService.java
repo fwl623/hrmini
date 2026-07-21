@@ -36,7 +36,7 @@ public class SchemeService {
     public List<PayrollScheme> list() {
         List<PayrollScheme> schemes = schemeMapper.selectList(new LambdaQueryWrapper<PayrollScheme>()
                 .eq(PayrollScheme::getDeleted, 0)
-                .orderByDesc(PayrollScheme::getCreatedAt));
+                .orderByAsc(PayrollScheme::getId));
         // 填充每个账套的工资项目
         for (PayrollScheme scheme : schemes) {
             scheme.setItems(schemeItemMapper.selectBySchemeId(scheme.getId()));

@@ -1,0 +1,1110 @@
+/* ============================================================
+   HRMS 全局样式 — 简约商务蓝白风
+   仅修改外观，不动功能逻辑
+   ============================================================ */
+
+/* ---------- CSS 变量 ---------- */
+:root {
+  --hrms-primary: #165dff;
+  --hrms-primary-light: #4080ff;
+  --hrms-primary-bg: #e8f0ff;
+  --hrms-bg: #f5f7fa;
+  --hrms-bg-card: #ffffff;
+  --hrms-text: #1d2129;
+  --hrms-text-secondary: #4e5969;
+  --hrms-text-muted: #86909c;
+  --hrms-border: #e5e6eb;
+  --hrms-border-light: #f0f1f3;
+  --hrms-radius: 8px;
+  --hrms-radius-sm: 6px;
+  --hrms-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --hrms-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.04);
+  --hrms-header-height: 60px;
+  --hrms-sider-width: 220px;
+  --hrms-transition: 0.2s ease;
+}
+
+/* ---------- 全局基础 ---------- */
+body {
+  background-color: var(--hrms-bg) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c9cdd4;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a9adb4;
+}
+
+/* ---------- Layout 布局 ---------- */
+/* 侧边栏遮罩层 */
+.ant-layout-sider {
+  transition: all var(--hrms-transition) !important;
+}
+
+/* 侧边栏内部容器 */
+.ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  background: #001529;
+}
+
+/* Logo/品牌区域 */
+.hrms-sider-logo {
+  padding: 20px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.hrms-sider-logo .logo-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--hrms-primary);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.hrms-sider-logo .logo-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+}
+
+/* ---------- Ant Design Menu (深色侧边栏) ---------- */
+.ant-menu.ant-menu-root.ant-menu-inline {
+  border-inline-end: none !important;
+  background: transparent;
+}
+
+/* 一级菜单项 */
+.ant-layout-sider .ant-menu-item {
+  margin: 2px 8px !important;
+  width: auto !important;
+  border-radius: 6px !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  font-size: 14px !important;
+  transition: all var(--hrms-transition) !important;
+}
+
+.ant-layout-sider .ant-menu-item:hover {
+  color: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.ant-layout-sider .ant-menu-item-selected {
+  color: #fff !important;
+  background: var(--hrms-primary) !important;
+  font-weight: 500 !important;
+}
+
+.ant-layout-sider .ant-menu-item-selected:hover {
+  color: #fff !important;
+  background: var(--hrms-primary-light) !important;
+}
+
+.ant-layout-sider .ant-menu-item-selected .ant-menu-item-icon,
+.ant-layout-sider .ant-menu-item-selected .anticon {
+  color: #fff !important;
+}
+
+/* 子菜单 */
+.ant-layout-sider .ant-menu-submenu {
+  margin: 2px 8px !important;
+  width: auto !important;
+  border-radius: 6px !important;
+}
+
+.ant-layout-sider .ant-menu-submenu-title {
+  margin: 0 !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  font-size: 14px !important;
+  border-radius: 6px !important;
+  transition: all var(--hrms-transition) !important;
+}
+
+.ant-layout-sider .ant-menu-submenu-title:hover {
+  color: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.ant-layout-sider .ant-menu-submenu-selected .ant-menu-submenu-title {
+  color: var(--hrms-primary) !important;
+}
+
+.ant-layout-sider .ant-menu-submenu-open > .ant-menu-submenu-title {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* 子菜单弹出层 */
+.ant-layout-sider .ant-menu-sub {
+  background: transparent !important;
+}
+
+.ant-layout-sider .ant-menu-sub .ant-menu-item {
+  padding-left: 48px !important;
+  margin: 1px 0 !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  font-size: 13px !important;
+}
+
+.ant-layout-sider .ant-menu-sub .ant-menu-item:hover {
+  color: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.ant-layout-sider .ant-menu-sub .ant-menu-item-selected {
+  color: #fff !important;
+  background: var(--hrms-primary) !important;
+}
+
+/* 子菜单箭头 */
+.ant-layout-sider .ant-menu-submenu-arrow {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* ---------- Header 顶部导航 ---------- */
+.hrms-header {
+  background: #fff !important;
+  height: var(--hrms-header-height) !important;
+  line-height: var(--hrms-header-height) !important;
+  padding: 0 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  border-bottom: 1px solid var(--hrms-border-light) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.hrms-header-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--hrms-text);
+  letter-spacing: 0.3px;
+}
+
+.hrms-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--hrms-radius-sm);
+  transition: background var(--hrms-transition);
+}
+
+.hrms-header-right:hover {
+  background: var(--hrms-bg);
+}
+
+.hrms-header-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--hrms-primary-bg);
+  color: var(--hrms-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.hrms-header-username {
+  font-size: 14px;
+  color: var(--hrms-text-secondary);
+  font-weight: 500;
+}
+
+/* ---------- Content 主内容区 ---------- */
+.hrms-content {
+  margin: 20px !important;
+  overflow: auto !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+}
+
+/* ---------- Ant Design Card 卡片 ---------- */
+.ant-card {
+  border-radius: var(--hrms-radius) !important;
+  border: 1px solid var(--hrms-border-light) !important;
+  box-shadow: var(--hrms-shadow-sm) !important;
+  transition: box-shadow var(--hrms-transition);
+}
+
+.ant-card:hover {
+  box-shadow: var(--hrms-shadow) !important;
+}
+
+.ant-card-head {
+  border-bottom: 1px solid var(--hrms-border-light) !important;
+  padding: 0 20px !important;
+  min-height: 48px !important;
+}
+
+.ant-card-head-title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: var(--hrms-text) !important;
+  padding: 12px 0 !important;
+}
+
+.ant-card-body {
+  padding: 20px !important;
+}
+
+.ant-card-small .ant-card-body {
+  padding: 14px 16px !important;
+}
+
+/* 统计卡片装饰线 */
+.hrms-stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.hrms-stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--hrms-primary), var(--hrms-primary-light));
+  border-radius: var(--hrms-radius) var(--hrms-radius) 0 0;
+}
+
+.hrms-stat-card .stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--hrms-primary);
+  line-height: 1.2;
+}
+
+.hrms-stat-card .stat-label {
+  font-size: 13px;
+  color: var(--hrms-text-muted);
+  margin-top: 4px;
+}
+
+/* ---------- Ant Design Table 表格 ---------- */
+.ant-table {
+  border-radius: var(--hrms-radius-sm) !important;
+  overflow: hidden;
+}
+
+.ant-table-thead > tr > th {
+  background: #f7f8fa !important;
+  color: var(--hrms-text-secondary) !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  border-bottom: 1px solid var(--hrms-border) !important;
+  padding: 12px 16px !important;
+}
+
+.ant-table-tbody > tr > td {
+  padding: 11px 16px !important;
+  border-bottom: 1px solid var(--hrms-border-light) !important;
+  font-size: 13px !important;
+  color: var(--hrms-text) !important;
+  transition: background var(--hrms-transition);
+}
+
+/* 隔行变色 */
+.ant-table-tbody > tr:nth-child(even) > td {
+  background: #fafbfc;
+}
+
+/* Hover 高亮 */
+.ant-table-tbody > tr:hover > td {
+  background: var(--hrms-primary-bg) !important;
+}
+
+.ant-table-tbody > tr.ant-table-row-selected > td {
+  background: #e8f0ff !important;
+}
+
+.ant-table-placeholder > td {
+  padding: 32px 16px !important;
+}
+
+/* ---------- Ant Design Button 按钮 ---------- */
+.ant-btn {
+  border-radius: var(--hrms-radius-sm) !important;
+  font-size: 14px !important;
+  height: 36px !important;
+  padding: 4px 16px !important;
+  transition: all var(--hrms-transition) !important;
+}
+
+.ant-btn-primary {
+  background: var(--hrms-primary) !important;
+  border-color: var(--hrms-primary) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.ant-btn-primary:hover {
+  background: var(--hrms-primary-light) !important;
+  border-color: var(--hrms-primary-light) !important;
+  opacity: 0.95;
+}
+
+.ant-btn-primary:active {
+  background: #0e42d2 !important;
+  border-color: #0e42d2 !important;
+}
+
+.ant-btn-default {
+  background: #fff !important;
+  border-color: var(--hrms-border) !important;
+  color: var(--hrms-text-secondary) !important;
+}
+
+.ant-btn-default:hover {
+  color: var(--hrms-primary) !important;
+  border-color: var(--hrms-primary) !important;
+}
+
+.ant-btn-link {
+  color: var(--hrms-primary) !important;
+}
+
+.ant-btn-link:hover {
+  color: var(--hrms-primary-light) !important;
+}
+
+.ant-btn-dashed {
+  border-color: var(--hrms-border) !important;
+  color: var(--hrms-text-secondary) !important;
+}
+
+.ant-btn-dashed:hover {
+  color: var(--hrms-primary) !important;
+  border-color: var(--hrms-primary) !important;
+}
+
+.ant-btn-sm {
+  height: 30px !important;
+  font-size: 13px !important;
+  padding: 2px 12px !important;
+}
+
+.ant-btn-lg {
+  height: 42px !important;
+  font-size: 15px !important;
+  padding: 6px 20px !important;
+}
+
+/* ---------- Ant Design Input 输入框 ---------- */
+.ant-input,
+.ant-input-affix-wrapper {
+  border-radius: var(--hrms-radius-sm) !important;
+  border-color: var(--hrms-border) !important;
+  transition: border-color var(--hrms-transition), box-shadow var(--hrms-transition) !important;
+}
+
+.ant-input:hover,
+.ant-input-affix-wrapper:hover {
+  border-color: var(--hrms-primary) !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  border-color: var(--hrms-primary) !important;
+  box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.1) !important;
+}
+
+.ant-input::placeholder {
+  color: var(--hrms-text-muted) !important;
+}
+
+/* Select */
+.ant-select-selector {
+  border-radius: var(--hrms-radius-sm) !important;
+  border-color: var(--hrms-border) !important;
+}
+
+.ant-select-focused .ant-select-selector,
+.ant-select-selector:hover {
+  border-color: var(--hrms-primary) !important;
+}
+
+.ant-select-focused .ant-select-selector {
+  box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.1) !important;
+}
+
+/* DatePicker */
+.ant-picker {
+  border-radius: var(--hrms-radius-sm) !important;
+  border-color: var(--hrms-border) !important;
+}
+
+.ant-picker:hover,
+.ant-picker-focused {
+  border-color: var(--hrms-primary) !important;
+}
+
+.ant-picker-focused {
+  box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.1) !important;
+}
+
+/* ---------- Ant Design Tag 标签 ---------- */
+.ant-tag {
+  border-radius: 4px !important;
+  padding: 0 8px !important;
+  line-height: 24px !important;
+  font-size: 12px !important;
+  border: none !important;
+}
+
+.ant-tag-green {
+  background: #e8f8e8 !important;
+  color: #00b42a !important;
+}
+
+.ant-tag-orange {
+  background: #fff3e0 !important;
+  color: #ff7d00 !important;
+}
+
+.ant-tag-red {
+  background: #ffece8 !important;
+  color: #f53f3f !important;
+}
+
+.ant-tag-blue {
+  background: var(--hrms-primary-bg) !important;
+  color: var(--hrms-primary) !important;
+}
+
+.ant-tag-default,
+.ant-tag-gray {
+  background: #f7f8fa !important;
+  color: var(--hrms-text-secondary) !important;
+}
+
+.ant-tag-purple {
+  background: #f5f0ff !important;
+  color: #722ed1 !important;
+}
+
+/* ---------- Pagination 分页 ---------- */
+.ant-pagination-item {
+  border-radius: var(--hrms-radius-sm) !important;
+  border-color: var(--hrms-border) !important;
+  font-size: 13px !important;
+  transition: all var(--hrms-transition) !important;
+}
+
+.ant-pagination-item:hover {
+  border-color: var(--hrms-primary) !important;
+  color: var(--hrms-primary) !important;
+}
+
+.ant-pagination-item-active {
+  border-color: var(--hrms-primary) !important;
+  background: var(--hrms-primary) !important;
+}
+
+.ant-pagination-item-active a {
+  color: #fff !important;
+}
+
+.ant-pagination-item-active:hover a {
+  color: #fff !important;
+}
+
+.ant-pagination-prev .ant-pagination-item-link,
+.ant-pagination-next .ant-pagination-item-link {
+  border-radius: var(--hrms-radius-sm) !important;
+  border-color: var(--hrms-border) !important;
+  transition: all var(--hrms-transition) !important;
+}
+
+.ant-pagination-prev:hover .ant-pagination-item-link,
+.ant-pagination-next:hover .ant-pagination-item-link {
+  border-color: var(--hrms-primary) !important;
+  color: var(--hrms-primary) !important;
+}
+
+/* ---------- Tabs 标签页 ---------- */
+.ant-tabs-tab {
+  font-size: 14px !important;
+  color: var(--hrms-text-secondary) !important;
+  padding: 8px 0 !important;
+  transition: color var(--hrms-transition) !important;
+}
+
+.ant-tabs-tab:hover {
+  color: var(--hrms-primary) !important;
+}
+
+.ant-tabs-tab-active {
+  color: var(--hrms-primary) !important;
+  font-weight: 500 !important;
+}
+
+.ant-tabs-ink-bar {
+  background: var(--hrms-primary) !important;
+  border-radius: 2px;
+}
+
+.ant-tabs-nav {
+  margin-bottom: 16px !important;
+}
+
+/* ---------- Modal ---------- */
+.ant-modal-content {
+  border-radius: var(--hrms-radius) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.ant-modal-header {
+  padding: 20px 24px 0 !important;
+  border-bottom: none !important;
+  border-radius: var(--hrms-radius) var(--hrms-radius) 0 0 !important;
+}
+
+.ant-modal-title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: var(--hrms-text) !important;
+}
+
+.ant-modal-body {
+  padding: 16px 24px !important;
+}
+
+.ant-modal-footer {
+  padding: 12px 24px 20px !important;
+  border-top: none !important;
+}
+
+/* ---------- Dropdown ---------- */
+.ant-dropdown-menu {
+  border-radius: var(--hrms-radius-sm) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+  padding: 4px !important;
+}
+
+.ant-dropdown-menu-item {
+  border-radius: 4px !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  transition: background var(--hrms-transition) !important;
+}
+
+.ant-dropdown-menu-item:hover {
+  background: var(--hrms-primary-bg) !important;
+  color: var(--hrms-primary) !important;
+}
+
+.ant-dropdown-menu-item-icon {
+  color: var(--hrms-text-muted) !important;
+}
+
+/* ---------- Steps 步骤条 ---------- */
+.ant-steps-item-title {
+  font-size: 14px !important;
+}
+
+.ant-steps-item-description {
+  font-size: 12px !important;
+}
+
+.ant-steps-item-wait .ant-steps-item-icon {
+  border-color: var(--hrms-border) !important;
+}
+
+.ant-steps-item-finish .ant-steps-item-icon {
+  border-color: var(--hrms-primary) !important;
+  background: var(--hrms-primary-bg) !important;
+}
+
+.ant-steps-item-finish .ant-steps-icon {
+  color: var(--hrms-primary) !important;
+}
+
+.ant-steps-item-process .ant-steps-item-icon {
+  background: var(--hrms-primary) !important;
+  border-color: var(--hrms-primary) !important;
+}
+
+/* ---------- Descriptions 描述列表 ---------- */
+.ant-descriptions-title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: var(--hrms-text) !important;
+}
+
+.ant-descriptions-item-label {
+  color: var(--hrms-text-muted) !important;
+  font-size: 13px !important;
+}
+
+.ant-descriptions-item-content {
+  color: var(--hrms-text) !important;
+  font-size: 13px !important;
+}
+
+/* ---------- Statistic 统计数值 ---------- */
+.ant-statistic-title {
+  font-size: 13px !important;
+  color: var(--hrms-text-muted) !important;
+  margin-bottom: 4px !important;
+}
+
+.ant-statistic-content {
+  font-size: 26px !important;
+  font-weight: 700 !important;
+  color: var(--hrms-text) !important;
+}
+
+.ant-statistic-content .ant-statistic-content-value {
+  color: var(--hrms-primary) !important;
+}
+
+/* ---------- Timeline 时间线 ---------- */
+.ant-timeline-item-tail {
+  border-left-color: var(--hrms-border-light) !important;
+}
+
+.ant-timeline-item-head {
+  border-color: var(--hrms-primary) !important;
+}
+
+/* ---------- List ---------- */
+.ant-list-item {
+  padding: 12px 16px !important;
+  border-bottom: 1px solid var(--hrms-border-light) !important;
+  transition: background var(--hrms-transition) !important;
+}
+
+.ant-list-item:hover {
+  background: var(--hrms-bg) !important;
+}
+
+/* ---------- Alert ---------- */
+.ant-alert {
+  border-radius: var(--hrms-radius-sm) !important;
+  border: none !important;
+}
+
+.ant-alert-info {
+  background: var(--hrms-primary-bg) !important;
+}
+
+.ant-alert-success {
+  background: #e8f8e8 !important;
+}
+
+.ant-alert-error {
+  background: #ffece8 !important;
+}
+
+.ant-alert-warning {
+  background: #fff3e0 !important;
+}
+
+/* ---------- Badge ---------- */
+.ant-badge-status-dot {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+/* ---------- Progress ---------- */
+.ant-progress-bg {
+  background: var(--hrms-primary) !important;
+}
+
+/* ---------- Switch ---------- */
+.ant-switch-checked {
+  background: var(--hrms-primary) !important;
+}
+
+/* ---------- Tree ---------- */
+.ant-tree-node-content-wrapper:hover {
+  background: var(--hrms-primary-bg) !important;
+}
+
+.ant-tree-node-selected {
+  background: var(--hrms-primary-bg) !important;
+  color: var(--hrms-primary) !important;
+}
+
+/* ---------- 门户页面特殊样式 ---------- */
+/* 门户侧边栏 */
+.hrms-portal-sider .ant-layout-sider-children {
+  background: #fff;
+  border-right: 1px solid var(--hrms-border-light);
+}
+
+.hrms-portal-sider .hrms-sider-logo {
+  border-bottom: 1px solid var(--hrms-border-light);
+}
+
+.hrms-portal-sider .hrms-sider-logo .logo-text {
+  color: var(--hrms-text);
+}
+
+.hrms-portal-sider .ant-menu-item {
+  color: var(--hrms-text-secondary) !important;
+}
+
+.hrms-portal-sider .ant-menu-item:hover {
+  color: var(--hrms-primary) !important;
+  background: var(--hrms-primary-bg) !important;
+}
+
+.hrms-portal-sider .ant-menu-item-selected {
+  color: var(--hrms-primary) !important;
+  background: var(--hrms-primary-bg) !important;
+  font-weight: 500 !important;
+}
+
+/* ---------- 登录页 ---------- */
+.hrms-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #f0f5ff 0%, #f5f7fa 100%);
+  padding: 24px;
+}
+
+.hrms-login-card {
+  width: 400px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 20px rgba(22, 93, 255, 0.08) !important;
+  border: none !important;
+  overflow: hidden;
+}
+
+.hrms-login-card .ant-card-body {
+  padding: 36px 36px 32px !important;
+}
+
+/* 标题区域 */
+.hrms-login-title {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.hrms-login-title h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: #1d2129;
+  margin: 0 0 4px;
+  letter-spacing: 0.5px;
+}
+
+.hrms-login-title p {
+  font-size: 14px;
+  color: #86909c;
+  margin: 0;
+}
+
+/* 账号提示条 */
+.hrms-login-alert {
+  position: relative;
+  background: #e8f3ff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 10px 14px !important;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.hrms-login-alert::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: #165dff;
+  border-radius: 2px;
+}
+
+.hrms-login-alert .ant-alert-icon {
+  color: #165dff !important;
+  font-size: 14px !important;
+  margin-right: 8px !important;
+}
+
+.hrms-login-alert .ant-alert-message {
+  color: #165dff !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+/* 登录表单 */
+.hrms-login-form .ant-form-item {
+  margin-bottom: 18px !important;
+}
+
+.hrms-login-form .ant-form-item-label {
+  padding-bottom: 4px !important;
+}
+
+.hrms-login-form .ant-form-item-label > label {
+  font-size: 14px !important;
+  color: #4e5969 !important;
+  font-weight: 500 !important;
+  height: 22px !important;
+}
+
+/* 输入框容器 */
+.hrms-login-form .ant-input-affix-wrapper {
+  height: 40px !important;
+  border-radius: 6px !important;
+  border: 1px solid #e5e6eb !important;
+  background: #fff !important;
+  padding: 4px 12px !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.hrms-login-form .ant-input-affix-wrapper:hover {
+  border-color: #165dff !important;
+}
+
+.hrms-login-form .ant-input-affix-wrapper-focused,
+.hrms-login-form .ant-input-affix-wrapper:focus {
+  border-color: #165dff !important;
+  box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.1) !important;
+}
+
+.hrms-login-form .ant-input-prefix {
+  margin-right: 8px !important;
+}
+
+.hrms-login-form .ant-input-prefix .anticon {
+  color: #86909c !important;
+  font-size: 16px !important;
+}
+
+.hrms-login-form .ant-input {
+  font-size: 14px !important;
+  color: #1d2129 !important;
+  height: 30px !important;
+  line-height: 30px !important;
+}
+
+.hrms-login-form .ant-input::placeholder {
+  color: #c9cdd4 !important;
+  font-size: 14px !important;
+}
+
+/* 密码输入框特殊处理 */
+.hrms-login-form .ant-input-password {
+  height: 40px !important;
+  border-radius: 6px !important;
+  border: 1px solid #e5e6eb !important;
+  background: #fff !important;
+  padding: 4px 12px !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.hrms-login-form .ant-input-password:hover {
+  border-color: #165dff !important;
+}
+
+.hrms-login-form .ant-input-password.ant-input-affix-wrapper-focused,
+.hrms-login-form .ant-input-password:focus {
+  border-color: #165dff !important;
+  box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.1) !important;
+}
+
+.hrms-login-form .ant-input-password .ant-input {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.hrms-login-form .ant-input-password .ant-input-prefix {
+  margin-right: 8px !important;
+}
+
+/* 记住登录复选框 */
+.hrms-login-form .ant-checkbox-wrapper {
+  font-size: 13px !important;
+  color: #86909c !important;
+  line-height: 22px;
+}
+
+.hrms-login-form .ant-checkbox {
+  top: 0 !important;
+}
+
+.hrms-login-form .ant-checkbox-checked .ant-checkbox-inner {
+  background-color: #165dff !important;
+  border-color: #165dff !important;
+}
+
+.hrms-login-form .ant-checkbox:hover .ant-checkbox-inner {
+  border-color: #165dff !important;
+}
+
+.hrms-login-form .ant-checkbox-checked::after {
+  border-color: #165dff !important;
+}
+
+/* 登录按钮 */
+.hrms-login-form .ant-form-item:last-child {
+  margin-bottom: 0 !important;
+  margin-top: 4px !important;
+}
+
+.hrms-login-form .ant-btn-primary {
+  width: 100% !important;
+  height: 42px !important;
+  border-radius: 6px !important;
+  background: #165dff !important;
+  border: none !important;
+  color: #fff !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.5px;
+  transition: background 0.2s ease !important;
+  box-shadow: none !important;
+}
+
+.hrms-login-form .ant-btn-primary:hover {
+  background: #4080ff !important;
+}
+
+.hrms-login-form .ant-btn-primary:active {
+  background: #0e42d2 !important;
+}
+
+.hrms-login-form .ant-btn-primary[disabled] {
+  background: #94bfff !important;
+  color: #fff !important;
+}
+
+/* ---------- Page Header 页面标题 ---------- */
+.hrms-page-header {
+  margin-bottom: 20px;
+}
+
+.hrms-page-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--hrms-text);
+  margin: 0;
+}
+
+.hrms-page-header p {
+  font-size: 13px;
+  color: var(--hrms-text-muted);
+  margin: 4px 0 0;
+}
+
+/* ---------- Filter Bar 搜索/筛选栏 ---------- */
+.hrms-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #fff;
+  border-radius: var(--hrms-radius-sm);
+  border: 1px solid var(--hrms-border-light);
+}
+
+/* ---------- Form 表单 ---------- */
+.ant-form-item-label > label {
+  font-size: 14px !important;
+  color: var(--hrms-text-secondary) !important;
+  font-weight: 500 !important;
+}
+
+.ant-form-item {
+  margin-bottom: 20px !important;
+}
+
+.ant-form-item-explain-error {
+  font-size: 12px !important;
+}
+
+/* ---------- Empty 空状态 ---------- */
+.ant-empty-normal {
+  color: var(--hrms-text-muted) !important;
+}
+
+.ant-empty-image {
+  opacity: 0.6;
+}
+
+/* ---------- Spin 加载 ---------- */
+.ant-spin-dot-item {
+  background-color: var(--hrms-primary) !important;
+}
+
+/* ---------- 消息提示 ---------- */
+.ant-message-notice-content {
+  border-radius: var(--hrms-radius-sm) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ---------- Popover ---------- */
+.ant-popover-inner {
+  border-radius: var(--hrms-radius-sm) !important;
+}
+
+/* ---------- Drawer ---------- */
+.ant-drawer-content-wrapper {
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.06) !important;
+}
+
+.ant-drawer-header {
+  border-bottom: 1px solid var(--hrms-border-light) !important;
+}
+
+/* ---------- Collapse ---------- */
+.ant-collapse {
+  border-radius: var(--hrms-radius-sm) !important;
+  border-color: var(--hrms-border-light) !important;
+}
+
+.ant-collapse-header {
+  font-weight: 500 !important;
+}
+
+/* ---------- Tooltip ---------- */
+.ant-tooltip-inner {
+  border-radius: 4px !important;
+  font-size: 12px !important;
+}

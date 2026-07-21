@@ -184,8 +184,8 @@ public class LeaveService {
             vo.setEmployeeName(nameMap.getOrDefault(la.getEmployeeId(), String.valueOf(la.getEmployeeId())));
             vo.setDepartment(deptMap.get(la.getEmployeeId()));
             vo.setLeaveType(la.getLeaveType());
-            vo.setStartTime(la.getStartTime() != null ? la.getStartTime().toString() : null);
-            vo.setEndTime(la.getEndTime() != null ? la.getEndTime().toString() : null);
+            vo.setStartTime(la.getStartTime() != null ? la.getStartTime().toString().replace("T", " ") : null);
+            vo.setEndTime(la.getEndTime() != null ? la.getEndTime().toString().replace("T", " ") : null);
             vo.setLeaveDays(la.getLeaveDays() != null ? la.getLeaveDays().doubleValue() : 0);
             vo.setReason(la.getReason());
             vo.setStatus(la.getStatus());
@@ -391,6 +391,10 @@ public class LeaveService {
         BigDecimal days = BigDecimal.ZERO;
         LocalDate current = start.toLocalDate();
         LocalDate endDate = end.toLocalDate();
+        // 午夜边界：结束时间为00:00时，endDate减一天
+        if (end.toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+            endDate = endDate.minusDays(1);
+        }
 
         while (!current.isAfter(endDate)) {
             DayOfWeek dow = current.getDayOfWeek();
@@ -406,7 +410,20 @@ public class LeaveService {
                 if (isFirstDay && isLastDay && start.toLocalTime().isAfter(end.toLocalTime())) {
                     // 同一天开始结束，无效区间
                 } else if (isFirstDay || isLastDay) {
-                    days = days.add(BigDecimal.valueOf(0.5));
+                    // 首末日按小时折算，与同一天逻辑一致（第 422-430 行）
+                    long partialHours;
+                    if (isFirstDay) {
+                        partialHours = java.time.temporal.ChronoUnit.HOURS.between(
+                                start.toLocalTime(), java.time.LocalTime.MAX);
+                    } else {
+                        partialHours = java.time.temporal.ChronoUnit.HOURS.between(
+                                java.time.LocalTime.MIN, end.toLocalTime());
+                    }
+                    if (partialHours >= 4) {
+                        days = days.add(BigDecimal.ONE);
+                    } else if (partialHours > 0) {
+                        days = days.add(BigDecimal.valueOf(0.5));
+                    }
                 } else {
                     days = days.add(BigDecimal.ONE);
                 }

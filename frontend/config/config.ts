@@ -25,6 +25,11 @@ export default defineConfig({
       routes: [
         { path: '', redirect: '/admin/workbench' },
         { path: 'workbench', component: './admin/workbench' },
+        {
+          path: 'analytics',
+          component: './admin/analytics',
+          access: 'canViewAnalytics',
+        },
 
         // 组织管理（Day 3）
         {

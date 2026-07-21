@@ -269,7 +269,7 @@ const AdminOvertimePage: React.FC = () => {
         }
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="overtimeDate" label="加班日期" rules={[{ required: true }]}>
+          <Form.Item name="overtimeDate" label="加班日期" rules={[{ required: true, message: '请选择加班日期' }]}>
             <DatePicker
               style={{ width: '100%' }}
               disabledDate={(d) => d && d.isBefore(dayjs(), 'day')}
@@ -277,10 +277,10 @@ const AdminOvertimePage: React.FC = () => {
           </Form.Item>
 
           <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>
+            <Form.Item name="startTime" label="开始时间" rules={[{ required: true, message: '请选择开始时间' }]}>
               <TimePicker format="HH:mm" onChange={recalcHours} />
             </Form.Item>
-            <Form.Item name="endTime" label="结束时间" rules={[{ required: true }]}>
+            <Form.Item name="endTime" label="结束时间" rules={[{ required: true, message: '请选择结束时间' }]}>
               <TimePicker format="HH:mm" onChange={recalcHours} />
             </Form.Item>
           </Space>
