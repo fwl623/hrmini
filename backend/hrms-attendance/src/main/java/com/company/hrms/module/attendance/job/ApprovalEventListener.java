@@ -45,6 +45,7 @@ public class ApprovalEventListener {
     private final AttendanceDailySummaryMapper attendanceDailySummaryMapper;
     private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper attendanceMonthlySummaryMapper;
     private final com.company.hrms.attendance.mapper.BalanceChangeLogMapper balanceChangeLogMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceMonthLockMapper attendanceMonthLockMapper;
 
     @EventListener
     @Transactional(rollbackFor = Exception.class)
@@ -104,10 +105,18 @@ public class ApprovalEventListener {
             java.time.LocalDate endDate = app.getEndTime().toLocalDate();
             java.math.BigDecimal leaveDays = app.getLeaveDays() != null ? app.getLeaveDays() : java.math.BigDecimal.ZERO;
             long totalDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate) + 1;
-            // 按天数均分 leaveDays 到每天
-            java.math.BigDecimal perDayLeave = totalDays > 0
-                    ? leaveDays.divide(java.math.BigDecimal.valueOf(totalDays), 10, java.math.RoundingMode.HALF_UP)
-                    : java.math.BigDecimal.ZERO;
+
+            // v2.1 薪资锁定保护：检查考勤月是否锁定
+            String period = startDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+            com.company.hrms.attendance.entity.AttendanceMonthLock monthLock = attendanceMonthLockMapper.selectByPeriod(period);
+            boolean salaryLocked = (monthLock != null && monthLock.getStatus() == 20);
+            if (salaryLocked) {
+                log.warn("考勤月已锁定，请假通过后无法自动回溯日报: empId={}, period={}", empId, period);
+            } else {
+                // 按天数均分 leaveDays 到每天
+                java.math.BigDecimal perDayLeave = totalDays > 0
+                        ? leaveDays.divide(java.math.BigDecimal.valueOf(totalDays), 10, java.math.RoundingMode.HALF_UP)
+                        : java.math.BigDecimal.ZERO;
 
             java.time.LocalDate current = startDate;
             while (!current.isAfter(endDate)) {
@@ -155,8 +164,7 @@ public class ApprovalEventListener {
                 current = current.plusDays(1);
             }
 
-            // 重新聚合月考勤汇总
-            String period = startDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+            // 重新聚合月考勤汇总（period 已在上层定义）
             java.time.LocalDate monthStart = startDate.withDayOfMonth(1);
             java.time.LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
             java.util.List<AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
@@ -174,6 +182,8 @@ public class ApprovalEventListener {
                 monthly.setLeaveDays(totalLeaveDays);
                 attendanceMonthlySummaryMapper.updateById(monthly);
             }
+
+            } // end else (salary not locked)
 
             log.info("请假已通过, 日汇总已更新: id={}, empId={}, days={}", applicationId, empId, leaveDays);
 
