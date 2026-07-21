@@ -13,6 +13,7 @@ import com.company.hrms.common.exception.ForbiddenException;
 import com.company.hrms.common.security.LoginUser;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.common.web.PageResult;
+import com.company.hrms.employee.service.EmployeeLifecycleService;
 import com.company.hrms.workflow.dto.ApprovalDtos;
 import com.company.hrms.workflow.entity.ApprovalInstance;
 import com.company.hrms.workflow.entity.ApprovalLog;
@@ -41,6 +42,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -71,6 +73,7 @@ public class DbApprovalService implements ApprovalEngineService {
     private final RegularizationService regularizationService;
     private final TransferService transferService;
     private final OrgLookupMapper orgLookupMapper;
+    private final EmployeeLifecycleService employeeLifecycleService;
 
     public DbApprovalService(ApprovalInstanceMapper instanceMapper,
                              ApprovalTaskMapper taskMapper,
@@ -85,7 +88,8 @@ public class DbApprovalService implements ApprovalEngineService {
                              @Lazy OnboardingService onboardingService,
                              @Lazy RegularizationService regularizationService,
                              @Lazy TransferService transferService,
-                             OrgLookupMapper orgLookupMapper) {
+                             OrgLookupMapper orgLookupMapper,
+                             EmployeeLifecycleService employeeLifecycleService) {
         this.instanceMapper = instanceMapper;
         this.taskMapper = taskMapper;
         this.logMapper = logMapper;
@@ -101,6 +105,7 @@ public class DbApprovalService implements ApprovalEngineService {
         this.regularizationService = regularizationService;
         this.transferService = transferService;
         this.orgLookupMapper = orgLookupMapper;
+        this.employeeLifecycleService = employeeLifecycleService;
     }
 
     @Override
@@ -111,6 +116,7 @@ public class DbApprovalService implements ApprovalEngineService {
         }
         String processType = request.getProcessType().trim().toUpperCase(Locale.ROOT);
         List<ProcessNodeDef> nodes = AssigneeResolver.resolveNodes(processType, request.getFormData());
+        enrichNodeAssignees(nodes, request);
         InstanceDisplay display = InstanceDisplay.of(
                 request.getTitle() != null ? request.getTitle() : processType + "#" + request.getBusinessId(),
                 request.getApplicantName() != null
@@ -334,6 +340,9 @@ public class DbApprovalService implements ApprovalEngineService {
 
         detail.setBusinessDetail(buildBusinessDetail(instance, display, task));
 
+        int current = instance.getCurrentNode() == null ? 1 : instance.getCurrentNode();
+        String instStatus = instance.getStatus() == null ? "" : instance.getStatus().toUpperCase(Locale.ROOT);
+        detail.setNodes(buildNodeProgress(instance, nodes, current, instStatus));
         detail.setTimeline(buildTimeline(instance.getId()));
         List<String> actions = new ArrayList<>();
         if ("PENDING".equalsIgnoreCase(task.getStatus()) && isEffectiveAssignee(task, userId)) {
@@ -392,8 +401,9 @@ public class DbApprovalService implements ApprovalEngineService {
             task.setActualAssigneeId(body.getTargetUserId());
             task.setComment(body.getComment());
             taskMapper.updateById(task);
+            String targetName = currentUserProvider.displayName(body.getTargetUserId());
             writeLog(instance.getId(), taskId, userId, "FORWARD", body.getComment(),
-                    "PENDING", "PENDING", "转交给用户" + body.getTargetUserId());
+                    "PENDING", "PENDING", "转交给" + targetName);
             notifyPublisher.scheduleRemind(taskId, body.getTargetUserId(), instance.getProcessType());
             return;
         }
@@ -531,25 +541,7 @@ public class DbApprovalService implements ApprovalEngineService {
         int current = instance.getCurrentNode() == null ? 1 : instance.getCurrentNode();
         String instStatus = instance.getStatus() == null ? "" : instance.getStatus().toUpperCase(Locale.ROOT);
 
-        List<ApprovalDtos.NodeProgressVO> nodes = new ArrayList<>();
-        for (ProcessNodeDef n : nodeDefs) {
-            ApprovalDtos.NodeProgressVO np = new ApprovalDtos.NodeProgressVO();
-            np.setOrder(n.getOrder());
-            np.setLabel(n.getLabel());
-            if ("CANCELLED".equals(instStatus) || "WITHDRAWN".equals(instStatus)) {
-                np.setState(n.getOrder() < current ? "done" : "cancelled");
-            } else if ("APPROVED".equals(instStatus) || "COMPLETED".equals(instStatus)) {
-                np.setState("done");
-            } else if ("REJECTED".equals(instStatus)) {
-                np.setState(n.getOrder() < current ? "done" : (n.getOrder() == current ? "current" : "pending"));
-            } else {
-                // PENDING
-                if (n.getOrder() < current) np.setState("done");
-                else if (n.getOrder() == current) np.setState("current");
-                else np.setState("pending");
-            }
-            nodes.add(np);
-        }
+        List<ApprovalDtos.NodeProgressVO> nodes = buildNodeProgress(instance, nodeDefs, current, instStatus);
 
         ApprovalDtos.InstanceDetailVO vo = new ApprovalDtos.InstanceDetailVO();
         vo.setInstanceId(instance.getId());
@@ -695,6 +687,65 @@ public class DbApprovalService implements ApprovalEngineService {
                 comment);
     }
 
+    /**
+     * 考勤类等通过 {@link ApprovalEngineService#createInstance} 发起的流程：
+     * 把 SUPERVISOR/DEPT_MANAGER/HR 等占位类型解析为真实 userId，避免落成 DevAssignees 桩账号。
+     * 入转调离业务侧已自行写入 assigneeUserId 的节点不会被覆盖。
+     */
+    private void enrichNodeAssignees(List<ProcessNodeDef> nodes, CreateApprovalRequest request) {
+        if (nodes == null || nodes.isEmpty() || request == null) {
+            return;
+        }
+        Long employeeId = extractLong(request.getFormData(), "employeeId");
+        Long applicantId = request.getApplicantId();
+        for (ProcessNodeDef node : nodes) {
+            if (node == null || node.getAssigneeUserId() != null) {
+                continue;
+            }
+            String type = node.getAssigneeType() == null ? "" : node.getAssigneeType().trim().toUpperCase(Locale.ROOT);
+            switch (type) {
+                case "SUPERVISOR", "DEPT_MANAGER" -> {
+                    if (employeeId != null) {
+                        node.setAssigneeUserId(employeeLifecycleService.resolveDeptManagerUserId(employeeId));
+                    }
+                }
+                case "NEW_DEPT_MANAGER" -> {
+                    Long newDeptId = extractLong(request.getFormData(), "newDepartmentId", "toDepartmentId");
+                    if (newDeptId != null) {
+                        node.setAssigneeUserId(employeeLifecycleService.resolveDeptHeadUserIdByDeptId(newDeptId));
+                    }
+                }
+                case "HR_STAFF", "ROLE" ->
+                        node.setAssigneeUserId(employeeLifecycleService.resolveHrApproverUserId(applicantId));
+                case "FINANCE", "FINANCE_MANAGER" ->
+                        node.setAssigneeUserId(employeeLifecycleService.resolveFinanceApproverUserId(applicantId));
+                default -> {
+                    // 保留 DevAssigneeResolver 兜底
+                }
+            }
+        }
+    }
+
+    private static Long extractLong(Map<String, Object> form, String... keys) {
+        if (form == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object v = form.get(key);
+            if (v instanceof Number n) {
+                return n.longValue();
+            }
+            if (v != null && !v.toString().isBlank()) {
+                try {
+                    return Long.parseLong(v.toString().trim());
+                } catch (NumberFormatException ignored) {
+                    // next key
+                }
+            }
+        }
+        return null;
+    }
+
     private void createTask(ApprovalInstance instance, ProcessNodeDef node,
                             Map<String, Object> variables, LocalDateTime now) {
         long configuredAssignee = assigneeResolver.resolve(node, variables == null ? Map.of() : variables);
@@ -773,9 +824,75 @@ public class DbApprovalService implements ApprovalEngineService {
                     t.setAction(l.getAction());
                     t.setComment(l.getComment());
                     t.setTime(fmt(l.getCreatedAt()));
-                    t.setDisplayText(enrichHandoverDisplayText(l.getDisplayText()));
+                    String display = enrichHandoverDisplayText(l.getDisplayText());
+                    if (display != null && display.startsWith("转交给用户")) {
+                        // 兼容历史日志：转交给用户{id} → 转交给{姓名}
+                        try {
+                            long uid = Long.parseLong(display.substring("转交给用户".length()).trim());
+                            display = "转交给" + currentUserProvider.displayName(uid);
+                        } catch (Exception ignored) {
+                            // keep original
+                        }
+                    }
+                    t.setDisplayText(display);
                     return t;
                 }).collect(Collectors.toList());
+    }
+
+    /** 流程节点 + 任务派单人/转交人/任务状态 */
+    private List<ApprovalDtos.NodeProgressVO> buildNodeProgress(ApprovalInstance instance,
+                                                               List<ProcessNodeDef> nodeDefs,
+                                                               int current,
+                                                               String instStatus) {
+        List<ApprovalTask> tasks = taskMapper.selectList(new LambdaQueryWrapper<ApprovalTask>()
+                .eq(ApprovalTask::getInstanceId, instance.getId())
+                .orderByAsc(ApprovalTask::getId));
+        Map<Integer, ApprovalTask> latestByOrder = new HashMap<>();
+        if (tasks != null) {
+            for (ApprovalTask t : tasks) {
+                if (t.getNodeOrder() != null) {
+                    latestByOrder.put(t.getNodeOrder(), t);
+                }
+            }
+        }
+
+        List<ApprovalDtos.NodeProgressVO> nodes = new ArrayList<>();
+        for (ProcessNodeDef n : nodeDefs) {
+            ApprovalDtos.NodeProgressVO np = new ApprovalDtos.NodeProgressVO();
+            np.setOrder(n.getOrder());
+            np.setLabel(n.getLabel());
+            if ("CANCELLED".equals(instStatus) || "WITHDRAWN".equals(instStatus)) {
+                np.setState(n.getOrder() < current ? "done" : "cancelled");
+            } else if ("APPROVED".equals(instStatus) || "COMPLETED".equals(instStatus)) {
+                np.setState("done");
+            } else if ("REJECTED".equals(instStatus)) {
+                np.setState(n.getOrder() < current ? "done" : (n.getOrder() == current ? "current" : "pending"));
+            } else if (n.getOrder() < current) {
+                np.setState("done");
+            } else if (n.getOrder() == current) {
+                np.setState("current");
+            } else {
+                np.setState("pending");
+            }
+
+            if (n.getAssigneeUserId() != null && n.getAssigneeUserId() > 0) {
+                np.setAssigneeName(currentUserProvider.displayName(n.getAssigneeUserId()));
+            }
+            ApprovalTask task = latestByOrder.get(n.getOrder());
+            if (task != null) {
+                np.setTaskStatus(apiStatus(task.getStatus()));
+                if (task.getAssigneeId() != null && task.getAssigneeId() > 0) {
+                    np.setAssigneeName(currentUserProvider.displayName(task.getAssigneeId()));
+                }
+                if (task.getActualAssigneeId() != null
+                        && task.getActualAssigneeId() > 0
+                        && !Objects.equals(task.getActualAssigneeId(), task.getAssigneeId())) {
+                    np.setActualAssigneeName(currentUserProvider.displayName(task.getActualAssigneeId()));
+                }
+            }
+            nodes.add(np);
+        }
+        return nodes;
     }
 
     private ApprovalDtos.TaskListItemVO toTaskItem(ApprovalTask task, long userId) {

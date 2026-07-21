@@ -43,7 +43,7 @@ export default defineConfig({
         {
           path: 'employee/mobile-change',
           component: './admin/employee/mobile-change',
-          access: 'canViewEmployee',
+          access: 'canManageMobileChange',
         },
         { path: 'employee/:id/edit', component: './admin/employee/edit', access: 'canViewEmployee' },
         { path: 'employee/:id', component: './admin/employee/detail', access: 'canViewEmployee' },

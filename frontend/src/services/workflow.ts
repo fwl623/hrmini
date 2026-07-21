@@ -72,8 +72,18 @@ export interface ApprovalTaskDetail {
     status?: string;
   };
   businessDetail: Record<string, unknown>;
+  nodes?: ApprovalNodeProgress[];
   timeline: ApprovalTimelineItem[];
   actions: string[];
+}
+
+export interface ApprovalNodeProgress {
+  order: number;
+  label: string;
+  state: string;
+  assigneeName?: string;
+  actualAssigneeName?: string;
+  taskStatus?: string;
 }
 
 export interface OnboardingForm {
@@ -262,7 +272,14 @@ export async function fetchInstanceDetail(instanceId: number) {
       status: string;
       currentNodeLabel?: string;
       createdAt?: string;
-      nodes?: { order: number; label: string; state: string }[];
+      nodes?: {
+        order: number;
+        label: string;
+        state: string;
+        assigneeName?: string;
+        actualAssigneeName?: string;
+        taskStatus?: string;
+      }[];
       timeline?: ApprovalTimelineItem[];
       businessDetail?: Record<string, unknown>;
     }>

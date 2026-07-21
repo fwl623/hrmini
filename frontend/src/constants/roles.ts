@@ -56,4 +56,39 @@ export function resolvePrimaryRole(roles: string[] = []): string {
   return roles[0] ?? '';
 }
 
+/**
+ * 持有任一管理端菜单/系统 API 权限码时，即使角色仅为 EMPLOYEE 也可进入 /admin。
+ * 与角色管理里可分配的 permission.code 对齐。
+ */
+export const ADMIN_ENTRY_PERMISSIONS: string[] = [
+  'menu:system',
+  'menu:org',
+  'menu:employee',
+  'menu:onboarding',
+  'menu:approval',
+  'menu:attendance',
+  'menu:payroll',
+  'menu:workflow',
+  'menu:workbench',
+  'system:user:view',
+  'system:user:edit',
+  'system:role:view',
+  'system:role:edit',
+  'org:dept:view',
+  'org:dept:edit',
+  'org:position:view',
+  'org:position:edit',
+  'ai:knowledge:manage',
+  'payroll:view',
+  'attendance:manage',
+  'workflow:manage',
+  'approval:handle',
+];
+
+export function hasAdminEntryPermission(permissions: string[] = []): boolean {
+  if (!permissions.length) return false;
+  const set = new Set(permissions);
+  return ADMIN_ENTRY_PERMISSIONS.some((code) => set.has(code));
+}
+
 export const API_BASE = '/api/v1';

@@ -30,7 +30,7 @@ const colorMap: Record<TimelineNodeStatus, string> = {
 };
 
 /**
- * 审批进度时间线（Mock 可用，后续接详情 timeline）
+ * 审批进度时间线
  */
 export default function ApprovalTimeline({ nodes }: ApprovalTimelineProps) {
   const items: TimelineItemProps[] = nodes.map((n) => ({
@@ -43,7 +43,11 @@ export default function ApprovalTimeline({ nodes }: ApprovalTimelineProps) {
         ) : null}
         <div>
           <Tag>{timelineStatusLabel(n.status)}</Tag>
-          {n.displayText ? <Typography.Text type="secondary">{n.displayText}</Typography.Text> : null}
+          {n.displayText ? (
+            <Typography.Text type="secondary" style={{ marginLeft: 4 }}>
+              {n.displayText}
+            </Typography.Text>
+          ) : null}
         </div>
         {n.comment ? <Typography.Paragraph style={{ marginBottom: 0 }}>{n.comment}</Typography.Paragraph> : null}
         {n.time ? (

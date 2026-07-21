@@ -1,11 +1,9 @@
 package com.company.hrms.module.auth.service.serviceImpl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.company.hrms.common.enums.RoleCode;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
-import com.company.hrms.common.exception.ForbiddenException;
-import com.company.hrms.common.security.SecurityUtils;
+import com.company.hrms.common.security.PermissionGuard;
 import com.company.hrms.module.auth.config.PermissionCacheManager;
 import com.company.hrms.module.auth.dto.RoleVO;
 import com.company.hrms.module.auth.entity.SysPermission;
@@ -46,7 +44,7 @@ public class SystemRoleServiceImpl implements SystemRoleService {
 
     @Override
     public List<RoleVO> listRoles() {
-        requireSysAdmin();
+        requireRoleView();
         List<SysRole> roles = sysRoleMapper.selectList(new LambdaQueryWrapper<SysRole>().orderByAsc(SysRole::getId));
         return roles.stream().map(r -> {
             RoleVO vo = new RoleVO();
@@ -62,7 +60,7 @@ public class SystemRoleServiceImpl implements SystemRoleService {
     @Override
     @Transactional
     public void updateRole(Long roleId, String name) {
-        requireSysAdmin();
+        requireRoleEdit();
         SysRole role = sysRoleMapper.selectById(roleId);
         if (role == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID.getCode(), "角色不存在");
@@ -78,7 +76,7 @@ public class SystemRoleServiceImpl implements SystemRoleService {
     @Override
     @Transactional
     public void updateRolePermissions(Long roleId, List<Long> permissionIds) {
-        requireSysAdmin();
+        requireRoleEdit();
         SysRole role = sysRoleMapper.selectById(roleId);
         if (role == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID.getCode(), "角色不存在");
@@ -94,13 +92,15 @@ public class SystemRoleServiceImpl implements SystemRoleService {
 
     @Override
     public List<SysPermission> listPermissions() {
-        requireSysAdmin();
+        requireRoleView();
         return sysPermissionMapper.selectList(new LambdaQueryWrapper<SysPermission>().orderByAsc(SysPermission::getId));
     }
 
-    private void requireSysAdmin() {
-        if (!SecurityUtils.requireLoginUser().hasRole(RoleCode.SYS_ADMIN.name())) {
-            throw new ForbiddenException();
-        }
+    private void requireRoleView() {
+        PermissionGuard.requireAny("system:role:view", "menu:system");
+    }
+
+    private void requireRoleEdit() {
+        PermissionGuard.requireAny("system:role:edit", "menu:system");
     }
 }

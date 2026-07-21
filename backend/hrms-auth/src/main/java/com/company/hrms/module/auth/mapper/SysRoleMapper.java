@@ -16,4 +16,7 @@ public interface SysRoleMapper extends BaseMapper<SysRole> {
             WHERE role_id = #{roleId}
             """)
     List<Long> selectPermissionIdsByRoleId(@Param("roleId") Long roleId);
+
+    @Select("SELECT id FROM sys_role WHERE code = #{code} LIMIT 1")
+    Long selectIdByCode(@Param("code") String code);
 }

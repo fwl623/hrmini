@@ -1,8 +1,7 @@
 package com.company.hrms.module.ai.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.company.hrms.common.enums.RoleCode;
-import com.company.hrms.common.exception.ForbiddenException;
+import com.company.hrms.common.security.PermissionGuard;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.module.ai.client.BailianClient;
 import com.company.hrms.module.ai.client.QdrantClient;
@@ -23,26 +22,27 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AiKnowledgeService {
 
+    public static final String PERM_KNOWLEDGE_MANAGE = "ai:knowledge:manage";
+
     private final AiKnowledgeDocMapper docMapper;
     private final DocumentTextExtractor extractor;
     private final BailianClient bailianClient;
     private final QdrantClient qdrantClient;
 
-    public void requireSysAdmin() {
-        if (!SecurityUtils.requireLoginUser().hasRole(RoleCode.SYS_ADMIN.name())) {
-            throw new ForbiddenException();
-        }
+    /** 知识库管理：认权限码（角色管理可分配）；SYS_ADMIN 兜底 */
+    public void requireKnowledgeManage() {
+        PermissionGuard.require(PERM_KNOWLEDGE_MANAGE);
     }
 
     public List<AiKnowledgeDoc> listDocs() {
-        requireSysAdmin();
+        requireKnowledgeManage();
         return docMapper.selectList(new LambdaQueryWrapper<AiKnowledgeDoc>()
                 .orderByDesc(AiKnowledgeDoc::getId));
     }
 
     @Transactional
     public AiKnowledgeDoc upload(MultipartFile file, String title) {
-        requireSysAdmin();
+        requireKnowledgeManage();
         if (file == null || file.isEmpty()) {
             throw new com.company.hrms.common.exception.BusinessException(10001, "请上传文件");
         }
@@ -108,7 +108,7 @@ public class AiKnowledgeService {
 
     @Transactional
     public void setEnabled(Long id, boolean enabled) {
-        requireSysAdmin();
+        requireKnowledgeManage();
         AiKnowledgeDoc doc = docMapper.selectById(id);
         if (doc == null) {
             throw new com.company.hrms.common.exception.BusinessException(10001, "文档不存在");
@@ -121,7 +121,7 @@ public class AiKnowledgeService {
 
     @Transactional
     public void delete(Long id) {
-        requireSysAdmin();
+        requireKnowledgeManage();
         AiKnowledgeDoc doc = docMapper.selectById(id);
         if (doc == null) {
             return;
