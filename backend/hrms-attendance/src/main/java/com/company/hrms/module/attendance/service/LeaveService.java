@@ -211,6 +211,11 @@ public class LeaveService {
         LocalDateTime endTime = OffsetDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME)
                 .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
 
+        // 校验：开始日期不能是过去日期（请假需提前申请）
+        if (startTime.toLocalDate().isBefore(LocalDate.now())) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "请假开始日期不能是过去日期，请选择今天或未来的日期");
+        }
+
         // 重新计算实际请假天数（排除周末和节假日），不信任前端传值
         BigDecimal days = recalcLeaveDays(startTime, endTime);
 

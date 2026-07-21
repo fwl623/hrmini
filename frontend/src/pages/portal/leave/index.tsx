@@ -351,10 +351,12 @@ const LeavePage: React.FC = () => {
           </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
             <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>
-              <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange} />
+              <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange}
+                disabledDate={(d) => d && d.isBefore(dayjs(), 'day')} />
             </Form.Item>
             <Form.Item name="endTime" label="结束时间" rules={[{ required: true }]}>
-              <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange} />
+              <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange}
+                disabledDate={(d) => d && d.isBefore(dayjs(), 'day')} />
             </Form.Item>
           </Space>
           {previewDays !== null && (
