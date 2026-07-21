@@ -122,18 +122,28 @@ public class ApprovalEventListener {
             while (!current.isAfter(endDate)) {
                 AttendanceDailySummary daily = attendanceDailySummaryMapper.selectByEmployeeAndDate(empId, current);
                 // v2.1: 判断当天哪些槽位被请假覆盖
+                // AM覆盖：请假时段 ∩ [00:00, 12:00) ≠ ∅
+                // PM覆盖：请假时段 ∩ [12:00, 23:59] ≠ ∅
                 boolean isFirstDay = current.equals(startDate);
                 boolean isLastDay = current.equals(endDate);
-                // 中间天 → 全天覆盖；首日/末日 → 按时间段判断
                 boolean coversAm, coversPm;
-                if (!isFirstDay && !isLastDay) {
+                if (isFirstDay && isLastDay) {
+                    // 同一天请假
+                    java.time.LocalTime s = app.getStartTime().toLocalTime();
+                    java.time.LocalTime e = app.getEndTime().toLocalTime();
+                    coversAm = s.isBefore(java.time.LocalTime.NOON) && e.isAfter(java.time.LocalTime.MIDNIGHT);
+                    coversPm = e.isAfter(java.time.LocalTime.NOON) && s.isBefore(java.time.LocalTime.MIDNIGHT);
+                } else if (isFirstDay) {
+                    java.time.LocalTime s = app.getStartTime().toLocalTime();
+                    coversAm = s.isBefore(java.time.LocalTime.NOON);
+                    coversPm = app.getEndTime().toLocalTime().isAfter(java.time.LocalTime.NOON) || s.isAfter(java.time.LocalTime.NOON);
+                } else if (isLastDay) {
+                    java.time.LocalTime e = app.getEndTime().toLocalTime();
+                    coversAm = true;  // 跨天请假，到末日时 =00:00 开始，覆盖整个上午
+                    coversPm = e.isAfter(java.time.LocalTime.NOON);
+                } else {
                     coversAm = true;
                     coversPm = true;
-                } else {
-                    java.time.LocalTime s = isFirstDay ? app.getStartTime().toLocalTime() : java.time.LocalTime.MIDNIGHT;
-                    java.time.LocalTime e = isLastDay ? app.getEndTime().toLocalTime() : java.time.LocalTime.MIDNIGHT.plusHours(23).plusMinutes(59);
-                    coversAm = !(e.isBefore(java.time.LocalTime.NOON) || s.isAfter(java.time.LocalTime.NOON));
-                    coversPm = !(e.isBefore(java.time.LocalTime.NOON) || s.isAfter(java.time.LocalTime.NOON));
                 }
 
                 if (daily == null) {

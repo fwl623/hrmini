@@ -223,9 +223,12 @@ public class LeaveService {
             String leaveType = dto.getLeaveType().toUpperCase();
             int year = LocalDate.now().getYear();
             LeaveBalance lb = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(employeeId, leaveType, year);
+            if (lb == null) {
+                throw new BusinessException(ErrorCode.LEAVE_BALANCE_INSUFFICIENT, "请假余额不足");
+            }
             // 使用 remaining_quota 判断（后备用 balance）
             BigDecimal remaining = lb.getRemainingQuota() != null ? lb.getRemainingQuota() : lb.getBalance();
-            if (lb == null || remaining.compareTo(days) < 0) {
+            if (remaining.compareTo(days) < 0) {
                 throw new BusinessException(ErrorCode.LEAVE_BALANCE_INSUFFICIENT, "请假余额不足");
             }
             // 乐观锁预扣
