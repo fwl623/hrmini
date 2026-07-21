@@ -50,6 +50,8 @@ public class SummaryService {
     private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
     private final com.company.hrms.attendance.mapper.LeaveBalanceMapper leaveBalanceMapper;
     private final com.company.hrms.attendance.mapper.LeaveApplicationMapper leaveApplicationMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceGroupMapper attendanceGroupMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper attendanceGroupMemberMapper;
     private final com.company.hrms.attendance.mapper.WorkdayConfigMapper workdayConfigMapper;
     private final com.company.hrms.attendance.mapper.HolidayCalendarMapper holidayCalendarMapper;
 
@@ -230,9 +232,21 @@ public class SummaryService {
                     .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
                     .orElse(null);
 
+            // 读取员工考勤组时间（v2.1: 不再硬编码09:00/18:00）
             java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
             java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
             int lateThreshold = 15;
+            try {
+                com.company.hrms.attendance.entity.AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(empId);
+                if (agm != null) {
+                    com.company.hrms.attendance.entity.AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
+                    if (grp != null) {
+                        if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
+                        if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
+                        if (grp.getLateThresholdMinutes() != null) lateThreshold = grp.getLateThresholdMinutes();
+                    }
+                }
+            } catch (Exception e) { log.warn("读取考勤组时间失败", e); }
 
             // 3. AM 槽位判定
             int amCode;

@@ -46,6 +46,8 @@ public class ApprovalEventListener {
     private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper attendanceMonthlySummaryMapper;
     private final com.company.hrms.attendance.mapper.BalanceChangeLogMapper balanceChangeLogMapper;
     private final com.company.hrms.attendance.mapper.AttendanceMonthLockMapper attendanceMonthLockMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceGroupMapper attendanceGroupMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper attendanceGroupMemberMapper;
 
     @EventListener
     @Transactional(rollbackFor = Exception.class)
@@ -281,10 +283,21 @@ public class ApprovalEventListener {
                 } catch (Exception e) { /* 解析失败用默认值 */ }
             }
 
-            // 仅重算被补卡的槽位
+            // 仅重算被补卡的槽位（读取考勤组时间，不再硬编码09:00/18:00）
             java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
             java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
             int lateThreshold = 15;
+            try {
+                com.company.hrms.attendance.entity.AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(empId);
+                if (agm != null) {
+                    com.company.hrms.attendance.entity.AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
+                    if (grp != null) {
+                        if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
+                        if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
+                        if (grp.getLateThresholdMinutes() != null) lateThreshold = grp.getLateThresholdMinutes();
+                    }
+                }
+            } catch (Exception e) { log.warn("读取考勤组时间失败", e); }
 
             if ("IN".equals(punchType)) {
                 // 补上班卡 → 仅重算 AM 槽位

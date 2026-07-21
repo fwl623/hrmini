@@ -566,9 +566,21 @@ public class PunchService {
             }
         } catch (Exception e) { log.warn("查询请假覆盖失败", e); }
 
+        // 读取员工考勤组时间（v2.1: 不再硬编码09:00/18:00）
         java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
         java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
         int threshold = 15;
+        try {
+            AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(employeeId);
+            if (agm != null) {
+                AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
+                if (grp != null) {
+                    if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
+                    if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
+                    if (grp.getLateThresholdMinutes() != null) threshold = grp.getLateThresholdMinutes();
+                }
+            }
+        } catch (Exception e) { log.warn("读取考勤组时间失败", e); }
         int amCode = 5, pmCode = 5;
         if (amLeave) amCode = 4;
         else {
