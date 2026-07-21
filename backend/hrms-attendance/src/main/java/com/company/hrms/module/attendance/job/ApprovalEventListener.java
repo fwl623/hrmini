@@ -415,6 +415,11 @@ public class ApprovalEventListener {
                         if (lb.getRemainingQuota() != null) lb.setRemainingQuota(after);
                         lb.setBalance(after);
                         if (lb.getTotalQuota() != null) lb.setTotalQuota(lb.getTotalQuota().add(compDays));
+                        // 更新过期日期为最新（取原过期和新过期中的较晚值）
+                        java.time.LocalDate newExpire = overtimeDate.withDayOfMonth(overtimeDate.lengthOfMonth()).plusMonths(1);
+                        if (lb.getExpireDate() == null || newExpire.isAfter(lb.getExpireDate())) {
+                            lb.setExpireDate(newExpire);
+                        }
                         lb.setVersion(lb.getVersion() != null ? lb.getVersion() + 1 : 1);
                         leaveBalanceMapper.updateById(lb);
                     }
