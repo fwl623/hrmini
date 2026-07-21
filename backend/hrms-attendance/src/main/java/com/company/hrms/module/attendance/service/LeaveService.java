@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -57,6 +58,8 @@ public class LeaveService {
     private final WorkdayConfigMapper workdayConfigMapper;
     private final HolidayCalendarMapper holidayCalendarMapper;
     private final ApprovalEngineService approvalEngineService;
+    private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
+    private final com.company.hrms.attendance.mapper.BalanceChangeLogMapper balanceChangeLogMapper;
 
     // ========== 假期余额 ==========
 
@@ -65,6 +68,12 @@ public class LeaveService {
      */
     public List<LeaveBalanceVO> getBalances(Long employeeId) {
         List<LeaveBalance> balances = leaveBalanceMapper.selectByEmployeeId(employeeId);
+        // 如果没有任何假期余额记录，返回默认值（显示0而不是空）
+        if (balances == null || balances.isEmpty()) {
+            return java.util.List.of(
+                    new LeaveBalanceVO("ANNUAL", java.math.BigDecimal.ZERO),
+                    new LeaveBalanceVO("COMP_OFF", java.math.BigDecimal.ZERO));
+        }
         List<LeaveBalanceVO> vos = new ArrayList<>();
         for (LeaveBalance lb : balances) {
             vos.add(new LeaveBalanceVO(lb.getLeaveType(), lb.getBalance()));
@@ -142,11 +151,33 @@ public class LeaveService {
         IPage<LeaveApplication> page = leaveApplicationMapper.selectPage(
                 new Page<>(pageParam.getPage(), pageParam.getPageSize()), wrapper);
 
+        // 收集员工ID，批量查询姓名和部门
+        java.util.Set<Long> empIds = page.getRecords().stream()
+                .map(LeaveApplication::getEmployeeId)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Map<Long, String> nameMap = new java.util.HashMap<>();
+        java.util.Map<Long, String> deptMap = new java.util.HashMap<>();
+        if (!empIds.isEmpty()) {
+            String idList = empIds.stream().map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(","));
+            List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
+                    null, null, null, null, null, null, null,
+                    " AND e.id IN (" + idList + ")");
+            for (com.company.hrms.employee.entity.Employee emp : empList) {
+                if (emp != null && emp.getId() != null) {
+                    nameMap.put(emp.getId(), emp.getName());
+                    deptMap.put(emp.getId(), emp.getDepartmentName());
+                }
+            }
+        }
+
         List<LeaveApplicationVO> voList = new ArrayList<>();
         for (LeaveApplication la : page.getRecords()) {
             LeaveApplicationVO vo = new LeaveApplicationVO();
             vo.setId(la.getId());
-            vo.setEmployeeName(String.valueOf(la.getEmployeeId())); // TODO: 通过 Feign 获取员工姓名
+            vo.setEmployeeId(la.getEmployeeId());
+            vo.setEmployeeName(nameMap.getOrDefault(la.getEmployeeId(), String.valueOf(la.getEmployeeId())));
+            vo.setDepartment(deptMap.get(la.getEmployeeId()));
             vo.setLeaveType(la.getLeaveType());
             vo.setStartTime(la.getStartTime() != null ? la.getStartTime().toString() : null);
             vo.setEndTime(la.getEndTime() != null ? la.getEndTime().toString() : null);
@@ -170,8 +201,10 @@ public class LeaveService {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "请假天数不能为空");
         }
 
-        LocalDateTime startTime = LocalDateTime.parse(dto.getStartTime(), DateTimeFormatter.ISO_DATE_TIME);
-        LocalDateTime endTime = LocalDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME);
+        LocalDateTime startTime = OffsetDateTime.parse(dto.getStartTime(), DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
+        LocalDateTime endTime = OffsetDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
 
         // 重新计算实际请假天数（排除周末和节假日），不信任前端传值
         BigDecimal days = recalcLeaveDays(startTime, endTime);
@@ -183,18 +216,46 @@ public class LeaveService {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "病假超过1天需上传医院证明");
         }
 
-        // 年假/调休需校验余额
+        // 年假/调休需校验余额（预扣模式）
+        String snapshotJson = null;
         if ("ANNUAL".equalsIgnoreCase(dto.getLeaveType())
                 || "COMP_OFF".equalsIgnoreCase(dto.getLeaveType())) {
             String leaveType = dto.getLeaveType().toUpperCase();
             int year = LocalDate.now().getYear();
-            LeaveBalance balance = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(employeeId, leaveType, year);
-            if (balance == null || balance.getBalance().compareTo(days) < 0) {
+            LeaveBalance lb = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(employeeId, leaveType, year);
+            if (lb == null) {
                 throw new BusinessException(ErrorCode.LEAVE_BALANCE_INSUFFICIENT, "请假余额不足");
             }
-            // 预扣余额
-            balance.setBalance(balance.getBalance().subtract(days));
-            leaveBalanceMapper.updateById(balance);
+            // 使用 remaining_quota 判断（后备用 balance）
+            BigDecimal remaining = lb.getRemainingQuota() != null ? lb.getRemainingQuota() : lb.getBalance();
+            if (remaining.compareTo(days) < 0) {
+                throw new BusinessException(ErrorCode.LEAVE_BALANCE_INSUFFICIENT, "请假余额不足");
+            }
+            // 乐观锁预扣
+            BigDecimal before = remaining;
+            BigDecimal after = before.subtract(days);
+            if (lb.getRemainingQuota() != null) {
+                lb.setRemainingQuota(after);
+            }
+            lb.setBalance(after); // 同步旧字段
+            lb.setUsedQuota(lb.getUsedQuota() != null ? lb.getUsedQuota().add(days) : days);
+            lb.setVersion(lb.getVersion() != null ? lb.getVersion() + 1 : 1);
+            int rows = leaveBalanceMapper.updateById(lb);
+            if (rows <= 0) {
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "余额扣减失败，请重试");
+            }
+            // 记录余额快照（用于审计）
+            snapshotJson = "{\"before\":" + before + ",\"after\":" + after + ",\"leaveType\":\"" + leaveType + "\",\"year\":" + year + "}";
+            // 写入余额变动日志（PENDING 状态）
+            com.company.hrms.attendance.entity.BalanceChangeLog log = new com.company.hrms.attendance.entity.BalanceChangeLog();
+            log.setEmployeeId(employeeId);
+            log.setLeaveType(leaveType);
+            log.setChangeAmount(days);
+            log.setSourceType("SUBMIT");
+            log.setBalanceBefore(before);
+            log.setBalanceAfter(after);
+            log.setStatus("PENDING");
+            balanceChangeLogMapper.insert(log);
         }
 
         LeaveApplication app = new LeaveApplication();
@@ -207,6 +268,9 @@ public class LeaveService {
         app.setHandoverEmployeeId(dto.getHandoverEmployeeId());
         app.setAttachmentUrl(dto.getAttachment());
         app.setStatus("PENDING");
+        if (snapshotJson != null) {
+            app.setDeductedBalanceSnapshot(snapshotJson);
+        }
         leaveApplicationMapper.insert(app);
 
         CreateApprovalRequest req = new CreateApprovalRequest();
@@ -220,6 +284,9 @@ public class LeaveService {
         form.put("leaveType", app.getLeaveType());
         form.put("days", days);
         form.put("employeeId", employeeId);
+        if (app.getAttachmentUrl() != null && !app.getAttachmentUrl().isBlank()) {
+            form.put("attachment", app.getAttachmentUrl());
+        }
         req.setFormData(form);
         CreateApprovalResult result = approvalEngineService.createInstance(req);
         app.setInstanceId(result.getInstanceId());
@@ -258,8 +325,27 @@ public class LeaveService {
             LeaveBalance balance = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(
                     app.getEmployeeId(), app.getLeaveType(), LocalDate.now().getYear());
             if (balance != null) {
-                balance.setBalance(balance.getBalance().add(app.getLeaveDays()));
+                BigDecimal before = balance.getRemainingQuota() != null ? balance.getRemainingQuota() : balance.getBalance();
+                BigDecimal after = before.add(app.getLeaveDays());
+                if (balance.getRemainingQuota() != null) balance.setRemainingQuota(after);
+                balance.setBalance(after);
+                balance.setUsedQuota(balance.getUsedQuota() != null
+                        ? balance.getUsedQuota().subtract(app.getLeaveDays()) : BigDecimal.ZERO);
+                balance.setVersion(balance.getVersion() != null ? balance.getVersion() + 1 : 1);
                 leaveBalanceMapper.updateById(balance);
+
+                // 记录归还日志
+                com.company.hrms.attendance.entity.BalanceChangeLog log = new com.company.hrms.attendance.entity.BalanceChangeLog();
+                log.setEmployeeId(app.getEmployeeId());
+                log.setLeaveType(app.getLeaveType());
+                log.setChangeAmount(app.getLeaveDays().negate());
+                log.setSourceType("REFUND");
+                log.setSourceId(app.getId());
+                log.setBalanceBefore(before);
+                log.setBalanceAfter(after);
+                log.setStatus("REFUNDED");
+                log.setRemark("撤回归还");
+                balanceChangeLogMapper.insert(log);
             }
         }
 
@@ -270,6 +356,7 @@ public class LeaveService {
                     operatorId != null ? operatorId : app.getEmployeeId());
         }
         app.setStatus("CANCELLED");
+        app.setCancelReason("WITHDRAW");
         leaveApplicationMapper.updateById(app);
         log.info("撤销请假: id={}, empId={}", id, app.getEmployeeId());
     }
@@ -337,8 +424,10 @@ public class LeaveService {
      * 排除周末和法定节假日，支持 0.5 天
      */
     public CalcDaysVO calcDays(String startTimeStr, String endTimeStr) {
-        LocalDateTime start = LocalDateTime.parse(startTimeStr, DateTimeFormatter.ISO_DATE_TIME);
-        LocalDateTime end = LocalDateTime.parse(endTimeStr, DateTimeFormatter.ISO_DATE_TIME);
+        LocalDateTime start = OffsetDateTime.parse(startTimeStr, DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
+        LocalDateTime end = OffsetDateTime.parse(endTimeStr, DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
         BigDecimal days = recalcLeaveDays(start, end);
         return new CalcDaysVO(days);
     }

@@ -63,6 +63,11 @@ public class PunchService {
     private final AttendanceGroupMemberMapper attendanceGroupMemberMapper;
     private final AttendanceSupplementMapper attendanceSupplementMapper;
     private final AttendanceMonthLockMapper attendanceMonthLockMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper attendanceDailySummaryMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper monthlySummaryMapper;
+    private final com.company.hrms.attendance.mapper.WorkdayConfigMapper workdayConfigMapper;
+    private final com.company.hrms.attendance.mapper.HolidayCalendarMapper holidayCalendarMapper;
+    private final com.company.hrms.attendance.mapper.LeaveApplicationMapper leaveApplicationMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final ApprovalEngineService approvalEngineService;
@@ -101,12 +106,22 @@ public class PunchService {
             throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
         }
 
-        // 存储时间优先用前端传的值（保留给用户看的原始时间），否则用服务端时间
+        // DB 层防重：即使 Redis key 被误删也不会重复打卡
+        boolean alreadyPunched = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, serverDate)
+                .stream().anyMatch(r -> type.equals(r.getPunchType()));
+        if (alreadyPunched) {
+            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
+        }
+
+        // 存储时间优先用前端传的值，否则用服务端时间
+        // 前端传的是 ISO 8601 UTC 时间（如 "2026-07-20T11:47:00.000Z"），需转成 CST
         LocalDateTime storeTime = LocalDateTime.now(CST);
         LocalDate storeDate = serverDate;
         if (dto.getPunchTime() != null) {
             try {
-                storeTime = LocalDateTime.parse(dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME);
+                java.time.OffsetDateTime odt = java.time.OffsetDateTime.parse(
+                        dto.getPunchTime(), DateTimeFormatter.ISO_DATE_TIME);
+                storeTime = odt.atZoneSameInstant(CST).toLocalDateTime();
                 storeDate = storeTime.toLocalDate();
             } catch (DateTimeParseException e) {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, "打卡时间格式错误");
@@ -152,6 +167,14 @@ public class PunchService {
             }
 
             attendanceRecordMapper.insert(record);
+
+            // v2.1: 实时更新日汇总（双槽位判定）
+            try {
+                updateDailySummaryInMemory(employeeId, storeDate);
+            } catch (Exception e) {
+                log.warn("实时更新日汇总失败（不影响打卡）: empId={}, date={}", employeeId, storeDate, e);
+            }
+
             log.info("员工打卡: empId={}, type={}, status={}, serverTime={}, storeTime={}",
                     employeeId, type, punchStatus, serverTime, storeTime);
             return punchStatus;
@@ -166,7 +189,7 @@ public class PunchService {
     // ========== 今日状态 ==========
 
     /**
-     * 获取今日打卡状态
+     * 获取今日打卡状态（含记录明细）
      */
     public TodayPunchVO getTodayStatus(Long employeeId) {
         LocalDate today = LocalDate.now(CST);
@@ -180,7 +203,130 @@ public class PunchService {
         long earlyLeaveCount = records.stream().filter(r -> "EARLY_LEAVE".equals(r.getPunchStatus())).count();
         long absentCount = records.stream().filter(r -> "ABSENT_HALF".equals(r.getPunchStatus())).count();
 
-        return new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
+        TodayPunchVO vo = new TodayPunchVO(clockedCount, totalCount, lateCount, earlyLeaveCount, absentCount);
+
+        // 填充今日打卡记录明细（去重：每种类型取最新一条）
+        java.util.Map<String, AttendanceRecord> latest = new java.util.HashMap<>();
+        for (AttendanceRecord r : records) {
+            latest.put(r.getPunchType(), r);
+        }
+        java.util.List<TodayPunchVO.PunchRecordItem> items = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, AttendanceRecord> entry : latest.entrySet()) {
+            AttendanceRecord r = entry.getValue();
+            TodayPunchVO.PunchRecordItem item = new TodayPunchVO.PunchRecordItem();
+            item.setType(r.getPunchType());
+            item.setTime(r.getPunchTime() != null
+                    ? r.getPunchTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
+            item.setStatus(r.getPunchStatus());
+            items.add(item);
+        }
+        // 按类型排序：IN 在前
+        items.sort(java.util.Comparator.comparing(i -> "IN".equals(i.getType()) ? 0 : 1));
+        vo.setRecords(items);
+
+        return vo;
+    }
+
+    // ========== 本月打卡统计 ==========
+
+    /**
+     * 获取本月打卡统计
+     * 动态计算当月工作日天数，逐日检查打卡记录，不依赖日汇总表
+     */
+    public TodayPunchVO getMonthlyStatus(Long employeeId) {
+        LocalDate today = LocalDate.now(CST);
+        LocalDate monthStart = today.withDayOfMonth(1);
+
+        // 1. 工作日配置
+        List<com.company.hrms.attendance.entity.WorkdayConfig> wkConfigs = workdayConfigMapper.selectList(null);
+        java.util.Set<Integer> workdaySet = wkConfigs.stream()
+                .filter(w -> w.getIsWorkday() == 1)
+                .map(com.company.hrms.attendance.entity.WorkdayConfig::getDayOfWeek)
+                .collect(java.util.stream.Collectors.toSet());
+        List<com.company.hrms.attendance.entity.HolidayCalendar> holidays = holidayCalendarMapper.selectList(null);
+        java.util.Set<java.time.LocalDate> holidayDates = holidays.stream()
+                .map(com.company.hrms.attendance.entity.HolidayCalendar::getHolidayDate)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // 2. 本月打卡记录（去重：同天同类型只算一次）
+        List<AttendanceRecord> allRecords = attendanceRecordMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
+                        .eq(AttendanceRecord::getEmployeeId, employeeId)
+                        .ge(AttendanceRecord::getPunchDate, monthStart)
+                        .le(AttendanceRecord::getPunchDate, today));
+        java.util.Map<java.time.LocalDate, java.util.Set<String>> dateTypeMap = new java.util.HashMap<>();
+        java.util.Set<String> dedupKeys = new java.util.HashSet<>();
+        long lateCount = 0, earlyLeaveCount = 0;
+        for (AttendanceRecord r : allRecords) {
+            String key = r.getEmployeeId() + "_" + r.getPunchDate() + "_" + r.getPunchType();
+            if (dedupKeys.add(key)) {
+                dateTypeMap.computeIfAbsent(r.getPunchDate(), k -> new java.util.HashSet<>()).add(r.getPunchType());
+                if ("LATE".equals(r.getPunchStatus())) lateCount++;
+                if ("EARLY_LEAVE".equals(r.getPunchStatus())) earlyLeaveCount++;
+            }
+        }
+
+        // 3. 已审批请假日期集合（仅工作日、已过去）
+        java.util.Set<java.time.LocalDate> approvedLeaveDates = new java.util.HashSet<>();
+        List<com.company.hrms.attendance.entity.LeaveApplication> approvedLeaves =
+                leaveApplicationMapper.selectList(
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
+                                .eq(com.company.hrms.attendance.entity.LeaveApplication::getEmployeeId, employeeId)
+                                .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
+                                .ge(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, monthStart.atStartOfDay())
+                                .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, today.plusDays(1).atStartOfDay()));
+        for (com.company.hrms.attendance.entity.LeaveApplication la : approvedLeaves) {
+            java.time.LocalDate laStart = la.getStartTime().toLocalDate();
+            java.time.LocalDate laEnd = la.getEndTime().toLocalDate();
+            if (la.getEndTime().toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+                laEnd = laEnd.minusDays(1);
+            }
+            java.time.LocalDate d = laStart;
+            while (!d.isAfter(laEnd) && !d.isAfter(today)) {
+                if (workdaySet.contains(d.getDayOfWeek().getValue()) && !holidayDates.contains(d)) {
+                    approvedLeaveDates.add(d);
+                }
+                d = d.plusDays(1);
+            }
+        }
+
+        // 4. 遍历月初到今天每个工作日，统计打卡
+        int shouldDays = 0, clockedCount = 0;
+        int missingInCount = 0, missingOutCount = 0;
+
+        LocalDate current = monthStart;
+        while (!current.isAfter(today)) {
+            // 非工作日跳过
+            if (!workdaySet.contains(current.getDayOfWeek().getValue()) || holidayDates.contains(current)) {
+                current = current.plusDays(1);
+                continue;
+            }
+            shouldDays++;
+            // 已审批请假：仅当天无打卡记录时才不计打卡、不计缺卡
+            // （如果员工请假但实际来打了卡，应正常统计）
+            if (approvedLeaveDates.contains(current) && dateTypeMap.get(current) == null) {
+                current = current.plusDays(1);
+                continue;
+            }
+            // 检查当天打卡
+            java.util.Set<String> types = dateTypeMap.get(current);
+            if (types == null) {
+                missingInCount++;
+                missingOutCount++;
+            } else {
+                boolean hasIn = types.contains("IN");
+                boolean hasOut = types.contains("OUT");
+                if (hasIn && hasOut) { clockedCount += 2; }
+                else if (hasIn) { clockedCount++; missingOutCount++; }
+                else if (hasOut) { clockedCount++; missingInCount++; }
+            }
+            current = current.plusDays(1);
+        }
+
+        return new TodayPunchVO(
+                clockedCount, shouldDays * 2L,
+                lateCount, earlyLeaveCount,
+                missingInCount + missingOutCount);
     }
 
     // ========== 打卡记录分页 ==========
@@ -398,6 +544,72 @@ public class PunchService {
             log.warn("补卡配额 Redis 不可用，回落 DB: empId={}, ym={}, err={}", employeeId, ym, e.getMessage());
             return attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
         }
+    }
+
+    // ========== 日汇总实时更新（v2.1） ==========
+
+    private void updateDailySummaryInMemory(Long employeeId, LocalDate date) {
+        List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, date);
+        boolean amLeave = false, pmLeave = false;
+        try {
+            List<com.company.hrms.attendance.entity.LeaveApplication> leaves = leaveApplicationMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
+                            .eq(com.company.hrms.attendance.entity.LeaveApplication::getEmployeeId, employeeId)
+                            .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
+                            .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, date.plusDays(1).atStartOfDay())
+                            .ge(com.company.hrms.attendance.entity.LeaveApplication::getEndTime, date.atStartOfDay()));
+            for (com.company.hrms.attendance.entity.LeaveApplication la : leaves) {
+                java.time.LocalTime s = la.getStartTime().toLocalTime();
+                java.time.LocalTime e = la.getEndTime().toLocalTime();
+                if (s.isBefore(java.time.LocalTime.NOON) && e.isAfter(java.time.LocalTime.MIDNIGHT)) amLeave = true;
+                if (e.isAfter(java.time.LocalTime.NOON) && s.isBefore(java.time.LocalTime.NOON)) pmLeave = true;
+            }
+        } catch (Exception e) { log.warn("查询请假覆盖失败", e); }
+
+        java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
+        java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
+        int threshold = 15;
+        int amCode = 5, pmCode = 5;
+        if (amLeave) amCode = 4;
+        else {
+            AttendanceRecord inRec = dayRecords.stream().filter(r -> "IN".equals(r.getPunchType()))
+                    .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime)).orElse(null);
+            if (inRec != null) {
+                java.time.LocalTime t = inRec.getPunchTime().toLocalTime();
+                if (!t.isAfter(workStart)) amCode = 0;
+                else if (!t.isAfter(workStart.plusMinutes(threshold))) amCode = 1;
+                else amCode = 3;
+            }
+        }
+        if (pmLeave) pmCode = 4;
+        else {
+            AttendanceRecord outRec = dayRecords.stream().filter(r -> "OUT".equals(r.getPunchType()))
+                    .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime)).orElse(null);
+            if (outRec != null) {
+                java.time.LocalTime t = outRec.getPunchTime().toLocalTime();
+                if (!t.isBefore(workEnd)) pmCode = 0;
+                else if (!t.isBefore(workEnd.minusMinutes(threshold))) pmCode = 2;
+                else pmCode = 3;
+            }
+        }
+        com.company.hrms.attendance.entity.AttendanceDailySummary existing = attendanceDailySummaryMapper.selectByEmployeeAndDate(employeeId, date);
+        com.company.hrms.attendance.entity.AttendanceDailySummary ds;
+        if (existing == null) {
+            ds = new com.company.hrms.attendance.entity.AttendanceDailySummary();
+            ds.setEmployeeId(employeeId);
+            ds.setSummaryDate(date);
+        } else {
+            ds = existing;
+        }
+        ds.setDayStatus("am:" + amCode + ",pm:" + pmCode);
+        dayRecords.stream().filter(r -> "IN".equals(r.getPunchType()))
+                .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
+                .ifPresent(r -> ds.setClockInTime(r.getPunchTime()));
+        dayRecords.stream().filter(r -> "OUT".equals(r.getPunchType()))
+                .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
+                .ifPresent(r -> ds.setClockOutTime(r.getPunchTime()));
+        if (ds.getId() == null) attendanceDailySummaryMapper.insert(ds);
+        else attendanceDailySummaryMapper.updateById(ds);
     }
 
     // ========== 私有方法 ==========

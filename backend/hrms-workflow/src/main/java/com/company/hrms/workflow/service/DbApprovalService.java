@@ -340,9 +340,7 @@ public class DbApprovalService implements ApprovalEngineService {
         detail.setNodes(buildNodeProgress(instance, nodes, current, instStatus));
         detail.setTimeline(buildTimeline(instance.getId()));
         List<String> actions = new ArrayList<>();
-        if ("PENDING".equalsIgnoreCase(task.getStatus())
-                && (userId == task.getAssigneeId()
-                || (task.getActualAssigneeId() != null && userId == task.getActualAssigneeId()))) {
+        if ("PENDING".equalsIgnoreCase(task.getStatus()) && isEffectiveAssignee(task, userId)) {
             actions.add("APPROVE");
             actions.add("REJECT");
             actions.add("FORWARD");
@@ -360,7 +358,7 @@ public class DbApprovalService implements ApprovalEngineService {
         if (!"PENDING".equalsIgnoreCase(task.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_ALREADY_HANDLED, "仅待办可催办");
         }
-        long assignee = task.getActualAssigneeId() != null ? task.getActualAssigneeId() : task.getAssigneeId();
+        long assignee = effectiveAssigneeId(task);
         notifyPublisher.publishImmediateRemind(taskId, assignee);
         writeLog(task.getInstanceId(), taskId, operatorId, "REMIND", "催办通知已记录",
                 "PENDING", "PENDING", "催办");
@@ -379,7 +377,7 @@ public class DbApprovalService implements ApprovalEngineService {
         if (!"PENDING".equalsIgnoreCase(task.getStatus())) {
             throw new BusinessException(ErrorCode.APPROVAL_ALREADY_HANDLED);
         }
-        long effective = task.getActualAssigneeId() != null ? task.getActualAssigneeId() : task.getAssigneeId();
+        long effective = effectiveAssigneeId(task);
         if (userId != effective) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "非当前审批人");
         }
@@ -617,12 +615,24 @@ public class DbApprovalService implements ApprovalEngineService {
                 || "PAYROLL".equalsIgnoreCase(instance.getProcessType())) {
             if ("LEAVE".equalsIgnoreCase(instance.getProcessType())) {
                 biz.put("type", "leave");
-                String summary = display.businessSummary;
-                if (summary != null) {
-                    String[] parts = summary.split(" ");
-                    if (parts.length >= 2) {
-                        biz.put("leaveType", parts[0]);
-                        biz.put("days", parts[1].replace("天", ""));
+                try {
+                    Long appId = parseBusinessId(instance.getBusinessKey());
+                    Map<String, Object> leave = orgLookupMapper.selectLeaveBrief(appId);
+                    if (leave != null) {
+                        biz.putAll(leave);
+                    }
+                } catch (Exception ignored) {
+                    // ignore
+                }
+                // 库表无数据时回退解析摘要
+                if (!biz.containsKey("leaveType")) {
+                    String summary = display.businessSummary;
+                    if (summary != null) {
+                        String[] parts = summary.split(" ");
+                        if (parts.length >= 2) {
+                            biz.put("leaveType", parts[0]);
+                            biz.put("days", parts[1].replace("天", ""));
+                        }
                     }
                 }
             } else {
@@ -690,20 +700,37 @@ public class DbApprovalService implements ApprovalEngineService {
         notifyPublisher.scheduleRemind(task.getId(), actualAssignee, instance.getProcessType());
     }
 
-    /** 可见：原审批人或实际审批人（委托） */
-    private static LambdaQueryWrapper<ApprovalTask> tasksVisibleToUser(long userId) {
+    /** 可见：本人作为原审批人/实际审批人，或委托人已把待办委托给本人 */
+    private LambdaQueryWrapper<ApprovalTask> tasksVisibleToUser(long userId) {
+        List<Long> delegatorIds = delegationService.findActiveDelegatorIdsFor(userId);
         return new LambdaQueryWrapper<ApprovalTask>()
-                .and(w -> w.eq(ApprovalTask::getAssigneeId, userId)
-                        .or()
-                        .eq(ApprovalTask::getActualAssigneeId, userId));
+                .and(w -> {
+                    w.eq(ApprovalTask::getAssigneeId, userId)
+                            .or()
+                            .eq(ApprovalTask::getActualAssigneeId, userId);
+                    if (!delegatorIds.isEmpty()) {
+                        w.or(sub -> sub.in(ApprovalTask::getAssigneeId, delegatorIds)
+                                .eq(ApprovalTask::getStatus, "PENDING")
+                                .and(a -> a.isNull(ApprovalTask::getActualAssigneeId)
+                                        .or()
+                                        .eq(ApprovalTask::getActualAssigneeId, userId)));
+                    }
+                });
     }
 
-    /** 待办可操作人：有 actual 时仅 actual，否则 assignee */
-    private static boolean isEffectiveAssignee(ApprovalTask task, long userId) {
+    /** 待办可操作人：有 actual 时仅 actual；否则按委托规则动态解析 */
+    private boolean isEffectiveAssignee(ApprovalTask task, long userId) {
+        return effectiveAssigneeId(task) == userId;
+    }
+
+    private long effectiveAssigneeId(ApprovalTask task) {
         if (task.getActualAssigneeId() != null) {
-            return userId == task.getActualAssigneeId();
+            return task.getActualAssigneeId();
         }
-        return task.getAssigneeId() != null && userId == task.getAssigneeId();
+        if (task.getAssigneeId() == null) {
+            return -1L;
+        }
+        return delegationService.resolveAssignee(task.getAssigneeId());
     }
 
     private void writeLog(Long instanceId, Long taskId, Long operatorId, String action, String comment,

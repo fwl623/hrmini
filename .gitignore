@@ -98,3 +98,7 @@ docs/HRMS-测试用例全集.md
 
 # 本地备注
 backend/hrms-org/*改动.md
+
+# Local uploaded attachments
+backend/data/uploads/
+data/uploads/

@@ -5,8 +5,8 @@ import {
   DatePicker,
   Form,
   Input,
-  InputNumber,
   Modal,
+  Select,
   Space,
   Table,
   Tag,
@@ -15,11 +15,12 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   cancelDelegation,
   createDelegation,
   fetchDelegations,
+  searchDelegateCandidates,
   type DelegationItem,
 } from '@/services/workflow';
 import { getRequestErrorMessage } from '@/utils/requestError';
@@ -30,9 +31,12 @@ function getBizCode(error: unknown): number | undefined {
   return err.info?.code ?? err.response?.data?.code;
 }
 
+type CandidateOption = { label: string; value: number };
+
 /**
  * 委托管理：列表 + 新增 + 取消
- * 业务约束：同一委托人同时仅 1 条 ACTIVE（冲突码 60003）
+ * 业务约束：同一委托人同时仅 1 条 ACTIVE（冲突码 60003）；
+ * 被委托人须具备审批权限，通过可搜索下拉选择。
  */
 export default function DelegationPage() {
   const [list, setList] = useState<DelegationItem[]>([]);
@@ -40,6 +44,9 @@ export default function DelegationPage() {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const [candidateOptions, setCandidateOptions] = useState<CandidateOption[]>([]);
+  const [candidateLoading, setCandidateLoading] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasActive = useMemo(() => list.some((d) => d.status === 'ACTIVE'), [list]);
 
@@ -60,6 +67,43 @@ export default function DelegationPage() {
     load();
   }, [load]);
 
+  useEffect(
+    () => () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const loadCandidates = useCallback(async (keyword: string) => {
+    setCandidateLoading(true);
+    try {
+      const list = await searchDelegateCandidates(keyword.trim());
+      setCandidateOptions(
+        (list ?? []).map((u) => ({
+          value: u.userId,
+          label: [u.name, u.department || undefined, u.empNo || u.username || undefined]
+            .filter(Boolean)
+            .join(' · '),
+        })),
+      );
+    } catch {
+      setCandidateOptions([]);
+    } finally {
+      setCandidateLoading(false);
+    }
+  }, []);
+
+  const onSearchCandidates = (keyword: string) => {
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    searchTimerRef.current = setTimeout(() => {
+      loadCandidates(keyword);
+    }, 300);
+  };
+
   const columns: ColumnsType<DelegationItem> = [
     { title: 'ID', dataIndex: 'id', width: 80 },
     { title: '被委托人', dataIndex: 'delegateUserName', width: 140 },
@@ -72,7 +116,9 @@ export default function DelegationPage() {
       dataIndex: 'status',
       width: 110,
       render: (s: string) => (
-        <Tag color={s === 'ACTIVE' ? 'processing' : 'default'}>{s}</Tag>
+        <Tag color={s === 'ACTIVE' ? 'processing' : 'default'}>
+          {s === 'ACTIVE' ? '生效中' : s === 'CANCELLED' ? '已取消' : s}
+        </Tag>
       ),
     },
     {
@@ -137,7 +183,8 @@ export default function DelegationPage() {
             审批委托
           </Typography.Title>
           <Typography.Text type="secondary">
-            同一委托人同时仅允许 1 条生效中的委托
+            同一委托人同时仅允许 1 条生效中的委托；只能委托给有审批权限的人。
+            委托后：您当前的待办会立即转给被委托人，委托期内新产生的、本应由您审批的待办也会转给对方（不会凭空产生新待办）。
           </Typography.Text>
         </div>
         <Button
@@ -155,7 +202,9 @@ export default function DelegationPage() {
             form.setFieldsValue({
               range: [dayjs(), dayjs().add(7, 'day')],
             });
+            setCandidateOptions([]);
             setOpen(true);
+            loadCandidates('');
           }}
         >
           新增委托
@@ -185,11 +234,25 @@ export default function DelegationPage() {
         <Form form={form} layout="vertical">
           <Form.Item
             name="delegateUserId"
-            label="被委托人用户 ID"
-            rules={[{ required: true, message: '必填' }]}
-            extra="填写被委托人的系统用户 ID（可在用户管理中查看）"
+            label="被委托人"
+            rules={[{ required: true, message: '请选择被委托人' }]}
+            extra="仅可选择具备审批权限的启用账号（HR / 部门主管 / 财务经理等）"
           >
-            <InputNumber style={{ width: '100%' }} min={1} placeholder="例如：2" />
+            <Select
+              showSearch
+              allowClear
+              placeholder="搜索姓名 / 工号 / 用户名"
+              filterOption={false}
+              loading={candidateLoading}
+              options={candidateOptions}
+              onSearch={onSearchCandidates}
+              onDropdownVisibleChange={(visible) => {
+                if (visible && candidateOptions.length === 0) {
+                  loadCandidates('');
+                }
+              }}
+              notFoundContent={candidateLoading ? '搜索中…' : '暂无匹配的审批人'}
+            />
           </Form.Item>
           <Form.Item name="range" label="委托起止" rules={[{ required: true }]}>
             <DatePicker.RangePicker style={{ width: '100%' }} />

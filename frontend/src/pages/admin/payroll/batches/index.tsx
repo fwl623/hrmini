@@ -15,6 +15,7 @@ import {
   createBatch,
   startCalculate,
   submitBatchApprove,
+  approveBatch,
   distributeBatch,
   getBatchDetails,
 } from '@/services/payroll';
@@ -128,6 +129,15 @@ const BatchPage: React.FC = () => {
               提交
             </Button>
           )}
+          {r.status === 'APPROVING' && (
+            <Button
+              size="small"
+              icon={<CheckCircleOutlined />}
+              onClick={() => handleApprove(r.id)}
+            >
+              审批通过
+            </Button>
+          )}
           {r.status === 'APPROVED' && (
             <Button
               size="small"
@@ -170,6 +180,15 @@ const BatchPage: React.FC = () => {
     try {
       await submitBatchApprove(id);
       message.success('已提交审批');
+      actionRef.current?.reload();
+    } catch (err: any) {
+      message.error(err?.message);
+    }
+  };
+  const handleApprove = async (id: number) => {
+    try {
+      await approveBatch(id);
+      message.success('已审批通过');
       actionRef.current?.reload();
     } catch (err: any) {
       message.error(err?.message);

@@ -14,6 +14,21 @@ export const ROLES = {
 
 export type RoleCode = (typeof ROLES)[keyof typeof ROLES];
 
+/** 角色中文名（列表/标签展示用） */
+export const ROLE_LABELS: Record<string, string> = {
+  SYS_ADMIN: '系统管理员',
+  HR_STAFF: 'HR专员',
+  DEPT_MANAGER: '部门负责人',
+  FINANCE: '财务专员',
+  FINANCE_MANAGER: '财务经理',
+  EMPLOYEE: '普通员工',
+};
+
+export function roleLabel(code?: string | null): string {
+  if (!code) return '—';
+  return ROLE_LABELS[code] || code;
+}
+
 export const ADMIN_ROLES: RoleCode[] = [
   ROLES.SYS_ADMIN,
   ROLES.HR_STAFF,

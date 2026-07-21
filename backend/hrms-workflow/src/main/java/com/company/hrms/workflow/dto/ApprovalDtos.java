@@ -151,4 +151,14 @@ public final class ApprovalDtos {
         private String empNo;
         private String department;
     }
+
+    /** 审批委托候选人（仅有审批权限的启用用户） */
+    @Data
+    public static class DelegateCandidateVO {
+        private Long userId;
+        private String name;
+        private String username;
+        private String empNo;
+        private String department;
+    }
 }

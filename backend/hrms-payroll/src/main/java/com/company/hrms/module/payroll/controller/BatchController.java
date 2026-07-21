@@ -81,6 +81,12 @@ public class BatchController {
         return Result.success(Map.of("status", "APPROVING"));
     }
 
+    @PostMapping("/{id}/approve")
+    public Result<Map<String, String>> approve(@PathVariable Long id) {
+        calculateService.approve(id);
+        return Result.success(Map.of("status", "APPROVED"));
+    }
+
     @PostMapping("/{id}/distribute")
     public Result<Map<String, String>> distribute(@PathVariable Long id) {
         calculateService.distribute(id);

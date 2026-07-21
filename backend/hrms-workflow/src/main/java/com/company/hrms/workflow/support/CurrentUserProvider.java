@@ -65,12 +65,16 @@ public class CurrentUserProvider {
             }
         }
         return switch ((int) userId) {
-            case 1, 1005 -> "系统管理员";
+            case 1, 1005 -> "系统管理员DJY";
+            case 1009 -> "HR经理张三";
             case 1001 -> "HR专员李四";
-            case 1002 -> "部门经理王五";
-            case 1003 -> "HR专员赵六";
-            case 1004 -> "代审人孙七";
-            case 1008 -> "财务钱八";
+            case 1003 -> "HR专员王五";
+            case 1002 -> "技术部经理徐阳";
+            case 1004 -> "员工孙阳";
+            case 1008 -> "财务经理钱一";
+            case 1010 -> "财务专员钱二";
+            case 1011 -> "员工李明";
+            case 1012 -> "员工李丽";
             default -> {
                 try {
                     String username = orgLookupMapper.selectUsernameByUserId(userId);

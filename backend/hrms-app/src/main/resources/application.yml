@@ -6,6 +6,10 @@ spring:
     name: hrms-app
   profiles:
     active: dev
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
   # RabbitMQ 已启用（连接服务器 39.101.67.167:5672）
   # 如需回退：取消本 exclude 注释，再注释 application-dev.yml 中 rabbitmq 配置
   # autoconfigure:
@@ -69,3 +73,7 @@ hrms:
     aes-key: aHJtcy1kZXYtYWVzLTI1Ni1rZXktMzJieXRlcyEhISE=
   cors:
     allowed-origins: http://localhost:8000,http://127.0.0.1:8000
+  # 本地上传目录（请假证明材料等）
+  upload:
+    dir: ./data/uploads
+    max-size-bytes: 10485760

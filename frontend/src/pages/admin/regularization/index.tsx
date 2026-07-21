@@ -16,6 +16,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { history, useSearchParams } from '@umijs/max';
 import { useCallback, useEffect, useState } from 'react';
+import ProcessStatusTag from '@/components/ProcessStatusTag';
 import {
   createRegularization,
   fetchPendingRegularization,
@@ -113,7 +114,12 @@ export default function RegularizationPage() {
       render: (v: string) =>
         ({ PASS: '通过', EXTEND: '延长', FAIL: '不通过' } as Record<string, string>)[v] || v,
     },
-    { title: '状态', dataIndex: 'status', width: 120 },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 120,
+      render: (s: string) => <ProcessStatusTag status={s} />,
+    },
     { title: '创建时间', dataIndex: 'createdAt', width: 180 },
     {
       title: '操作',

@@ -148,7 +148,7 @@ const LoginPage: React.FC = () => {
           type="info"
           showIcon
           style={{ marginBottom: 20 }}
-          message="联调账号：13800000000 / Admin@12345（管理员登录后进入管理后台）"
+          message="联调账号：13800001000 / Admin@12345（管理员登录后进入管理后台）"
         />
 
         <Form<LoginForm>

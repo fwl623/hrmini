@@ -31,6 +31,7 @@ import {
   resignationTypeLabel,
   taskStatusLabel,
 } from '@/constants/workflow';
+import { getAccessToken } from '@/utils/token';
 import {
   fetchMyInstances,
   fetchTaskDetail,
@@ -139,6 +140,25 @@ export default function ApprovalCenterPage() {
   ).toUpperCase();
   const bizText = (v: unknown, fallback = '-') =>
     v == null || v === '' ? fallback : String(v);
+
+  const openAttachment = async (url: string) => {
+    try {
+      const token = getAccessToken();
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) {
+        throw new Error('打开附件失败');
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (e) {
+      message.error((e as Error).message || '打开附件失败');
+    }
+  };
+
   const needHandoverConfirm = biz.needHandoverConfirm === true;
   const resigningEmployeeId =
     typeof biz.employeeId === 'number' ? biz.employeeId : Number(biz.employeeId) || undefined;
@@ -499,6 +519,15 @@ export default function ApprovalCenterPage() {
                 </Descriptions.Item>
                 <Descriptions.Item label="天数">
                   {biz.days != null ? `${biz.days} 天` : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="证明材料">
+                  {biz.attachment ? (
+                    <Typography.Link onClick={() => void openAttachment(String(biz.attachment))}>
+                      查看附件
+                    </Typography.Link>
+                  ) : (
+                    '-'
+                  )}
                 </Descriptions.Item>
                 <Descriptions.Item label="摘要">{bizText(biz.businessSummary)}</Descriptions.Item>
               </Descriptions>

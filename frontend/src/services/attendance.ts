@@ -220,6 +220,17 @@ export async function getTodayPunchStatus() {
 }
 
 /**
+ * 本月打卡统计（门户）
+ *
+ * 获取当前员工本月打卡统计，含应打卡次数、实际打卡、迟到/早退/缺卡。
+ *
+ * @returns 返回本月打卡统计数据
+ */
+export async function getMonthlyPunchStatus() {
+  return request<API.Result<API.TodayPunchVO>>(`/api/v1/profile/attendance/punch/monthly`);
+}
+
+/**
  * 打卡记录（分页）
  *
  * 按筛选条件分页查询员工的打卡历史记录。

@@ -140,6 +140,16 @@ public class ApprovalController {
         return Result.success(delegationService.list(userId, page, pageSize));
     }
 
+    /**
+     * 审批委托候选人：仅返回有审批权限的启用用户（可按姓名/工号/用户名搜索）。
+     */
+    @GetMapping("/delegate-candidates")
+    public Result<List<ApprovalDtos.DelegateCandidateVO>> delegateCandidates(
+            @RequestParam(required = false) String keyword) {
+        long userId = currentUserProvider.requireUserId();
+        return Result.success(delegationService.searchDelegateCandidates(userId, keyword));
+    }
+
     @PostMapping("/delegations")
     public Result<ApprovalDtos.DelegationVO> createDelegation(
             @RequestBody ApprovalDtos.DelegationFormRequest body) {

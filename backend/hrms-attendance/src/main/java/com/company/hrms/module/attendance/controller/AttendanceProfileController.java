@@ -47,6 +47,12 @@ public class AttendanceProfileController {
         return Result.success(punchService.getTodayStatus(requireEmployeeId()));
     }
 
+    /** 本月打卡统计（门户代理） */
+    @GetMapping("/profile/attendance/punch/monthly")
+    public Result<TodayPunchVO> monthlyStatus() {
+        return Result.success(punchService.getMonthlyStatus(requireEmployeeId()));
+    }
+
     /** 补卡配额（门户代理） */
     @GetMapping("/profile/attendance/punch-fix/quota")
     public Result<QuotaVO> fixQuota() {
