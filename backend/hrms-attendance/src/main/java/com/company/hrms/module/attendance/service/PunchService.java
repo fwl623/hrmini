@@ -334,36 +334,50 @@ public class PunchService {
      */
     public TodayPunchVO getYesterdayOverview() {
         LocalDate yesterday = LocalDate.now(CST).minusDays(1);
-        // 查昨天所有日汇总
-        List<com.company.hrms.attendance.entity.AttendanceDailySummary> all = attendanceDailySummaryMapper.selectList(
+
+        // 所有在职员工（试用期+正式）
+        List<com.company.hrms.employee.entity.Employee> employees = employeeMapper.search(
+                null, null, null, java.util.List.of(10, 20), null, null, null, "");
+        long total = employees.size();
+
+        // 查昨天日汇总
+        java.util.Map<Long, com.company.hrms.attendance.entity.AttendanceDailySummary> summaryMap = new java.util.HashMap<>();
+        attendanceDailySummaryMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.AttendanceDailySummary>()
-                        .eq(com.company.hrms.attendance.entity.AttendanceDailySummary::getSummaryDate, yesterday));
-        long total = all.size();
+                        .eq(com.company.hrms.attendance.entity.AttendanceDailySummary::getSummaryDate, yesterday))
+                .forEach(ds -> summaryMap.put(ds.getEmployeeId(), ds));
+
         long clocked = 0, late = 0, early = 0, absent = 0;
-        for (com.company.hrms.attendance.entity.AttendanceDailySummary ds : all) {
+        for (com.company.hrms.employee.entity.Employee emp : employees) {
+            com.company.hrms.attendance.entity.AttendanceDailySummary ds = summaryMap.get(emp.getId());
+            if (ds == null) {
+                absent++;
+                continue;
+            }
             String raw = ds.getDayStatus();
             if (raw != null && raw.startsWith("am:")) {
                 try {
                     String[] parts = raw.split(",");
                     int am = Integer.parseInt(parts[0].split(":")[1]);
                     int pm = Integer.parseInt(parts[1].split(":")[1]);
-                    if (am == 4 || pm == 4) continue; // 请假不计入
-                    boolean hasIn = (am != 5 && am != 3);
-                    boolean hasOut = (pm != 5 && pm != 3);
+                    if (am == 4 || pm == 4) continue; // 请假不计入统计
+                    boolean hasIn = (am != 5);
+                    boolean hasOut = (pm != 5);
+                    if (am == 3 || pm == 3) { /* 旷工也算有打卡记录 */ }
                     if (hasIn || hasOut) clocked++;
                     if (am == 1) late++;
                     if (pm == 2) early++;
-                    if (am == 5 && pm == 5) absent++;
-                    else if (am == 3 && pm == 5) absent++;
-                    else if (am == 5 && pm == 3) absent++;
-                    else if (am == 3 && pm == 3) absent++;
+                    if (am == 3 || pm == 3) absent++;
+                    else if (am == 5 && pm == 5) absent++;
                 } catch (Exception e) {}
             } else {
-                // 旧格式兼容
-                if ("NORMAL".equals(raw) || "LATE".equals(raw) || "EARLY_LEAVE".equals(raw)) clocked++;
+                // 旧格式：有打卡记录的都算已打卡
+                boolean hasRecord = ("NORMAL".equals(raw) || "LATE".equals(raw) || "EARLY_LEAVE".equals(raw)
+                        || "ABSENT_HALF".equals(raw) || "MISSING_IN".equals(raw) || "MISSING_OUT".equals(raw));
+                if (hasRecord) clocked++;
                 if ("LATE".equals(raw)) late++;
                 if ("EARLY_LEAVE".equals(raw)) early++;
-                if ("ABSENT".equals(raw) || "ABSENT_HALF".equals(raw)) absent++;
+                if ("ABSENT".equals(raw)) absent++;
             }
         }
         return new TodayPunchVO(clocked, total, late, early, absent);
