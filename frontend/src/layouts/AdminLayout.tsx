@@ -1,9 +1,11 @@
 import { IdcardOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { Outlet, history, useAccess, useLocation, useModel } from '@umijs/max';
-import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
+import { Dropdown, Layout, Menu, Space } from 'antd';
 import type { MenuProps } from 'antd';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import AiFloatBall from '@/components/AiAssistant/AiFloatBall';
+import { roleLabel } from '@/constants/roles';
+import { getMyProfile } from '@/services/employee';
 import { forceLogout } from '@/utils/authSession';
 import './layout.css';
 
@@ -41,6 +43,34 @@ const AdminLayout: React.FC = () => {
   const access = useAccess();
   const { initialState } = useModel('@@initialState');
   const username = initialState?.currentUser?.username ?? '用户';
+  const roleCode = initialState?.currentUser?.roleCode;
+  const identity = roleLabel(roleCode) || '用户';
+  const [employeeName, setEmployeeName] = useState<string>('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const employeeId = initialState?.currentUser?.employeeId;
+    if (!employeeId) {
+      setEmployeeName('');
+      return undefined;
+    }
+    getMyProfile()
+      .then((res) => {
+        if (!cancelled && res.code === 0 && res.data?.name) {
+          setEmployeeName(res.data.name);
+        }
+      })
+      .catch(() => {
+        /* 无档案时保留空姓名，问候语回退到账号 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialState?.currentUser?.employeeId]);
+
+  const headerGreeting = employeeName
+    ? `你好！${identity} ${employeeName}`
+    : `你好！${identity}`;
 
   // 对齐 PRD：财务专员仅工作台+薪资；财务经理另可见审批中心
   // 系统管理员是功能账号，管理端不展示「个人中心」菜单（权限逻辑不变）
@@ -250,7 +280,7 @@ const AdminLayout: React.FC = () => {
       </Sider>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Header className="hrms-header">
-          <span className="hrms-header-title">人力资源管理系统</span>
+          <span className="hrms-header-title">{headerGreeting}</span>
           <Dropdown menu={{ items: userMenu }} placement="bottomRight">
             <Space className="hrms-header-right">
               <span className="hrms-header-avatar">
