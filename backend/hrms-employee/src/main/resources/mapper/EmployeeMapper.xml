@@ -138,6 +138,7 @@
     <update id="updateById">
         UPDATE employee
         <set>
+            <if test="employeeNo != null">employee_no = #{employeeNo},</if>
             <if test="userId != null">user_id = #{userId},</if>
             <if test="name != null">name = #{name},</if>
             <if test="gender != null">gender = #{gender},</if>
@@ -148,8 +149,11 @@
             <if test="grade != null">grade = #{grade},</if>
             <if test="managerId != null">manager_id = #{managerId},</if>
             <if test="workLocation != null">work_location = #{workLocation},</if>
+            <if test="hireDate != null">hire_date = #{hireDate},</if>
+            <if test="employmentType != null">employment_type = #{employmentType},</if>
             <if test="employmentStatus != null">employment_status = #{employmentStatus},</if>
             <if test="lastWorkDay != null">last_work_day = #{lastWorkDay},</if>
+            <if test="probationPayRatio != null">probation_pay_ratio = #{probationPayRatio},</if>
             <if test="probationEndDate != null">probation_end_date = #{probationEndDate},</if>
         </set>
         WHERE id = #{id}
