@@ -17,5 +17,7 @@ public class OvertimeApplicationVO {
     private String startTime;
     private String endTime;
     private BigDecimal hours;
+    private String reason;
     private String status;
+    private Long instanceId;
 }

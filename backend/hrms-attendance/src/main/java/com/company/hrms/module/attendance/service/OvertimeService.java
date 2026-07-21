@@ -97,6 +97,8 @@ public class OvertimeService {
             vo.setOvertimeDate(oa.getOvertimeDate());
             vo.setHours(oa.getHours());
             vo.setStatus(oa.getStatus());
+            vo.setReason(oa.getReason());
+            vo.setInstanceId(oa.getInstanceId());
             vo.setStartTime(oa.getStartTime() != null
                     ? oa.getStartTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
             vo.setEndTime(oa.getEndTime() != null

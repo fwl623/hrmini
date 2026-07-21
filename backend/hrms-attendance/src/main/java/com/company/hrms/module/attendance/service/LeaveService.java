@@ -184,8 +184,8 @@ public class LeaveService {
             vo.setEmployeeName(nameMap.getOrDefault(la.getEmployeeId(), String.valueOf(la.getEmployeeId())));
             vo.setDepartment(deptMap.get(la.getEmployeeId()));
             vo.setLeaveType(la.getLeaveType());
-            vo.setStartTime(la.getStartTime() != null ? la.getStartTime().toString() : null);
-            vo.setEndTime(la.getEndTime() != null ? la.getEndTime().toString() : null);
+            vo.setStartTime(la.getStartTime() != null ? la.getStartTime().toString().replace("T", " ") : null);
+            vo.setEndTime(la.getEndTime() != null ? la.getEndTime().toString().replace("T", " ") : null);
             vo.setLeaveDays(la.getLeaveDays() != null ? la.getLeaveDays().doubleValue() : 0);
             vo.setReason(la.getReason());
             vo.setStatus(la.getStatus());

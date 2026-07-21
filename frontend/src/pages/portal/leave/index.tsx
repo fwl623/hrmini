@@ -346,15 +346,15 @@ const LeavePage: React.FC = () => {
         cancelText="取消"
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="leaveType" label="请假类型" rules={[{ required: true }]}>
+          <Form.Item name="leaveType" label="请假类型" rules={[{ required: true, message: '请选择请假类型' }]}>
             <Select options={LEAVE_TYPE_OPTIONS} onChange={handleTypeChange} />
           </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>
+            <Form.Item name="startTime" label="开始时间" rules={[{ required: true, message: '请选择开始时间' }]}>
               <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange}
                 disabledDate={(d) => d && d.isBefore(dayjs(), 'day')} />
             </Form.Item>
-            <Form.Item name="endTime" label="结束时间" rules={[{ required: true }]}>
+            <Form.Item name="endTime" label="结束时间" rules={[{ required: true, message: '请选择结束时间' }]}>
               <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange}
                 disabledDate={(d) => d && d.isBefore(dayjs(), 'day')} />
             </Form.Item>
@@ -362,7 +362,7 @@ const LeavePage: React.FC = () => {
           {previewDays !== null && (
             <Typography.Text type="success">预览天数：{previewDays} 天</Typography.Text>
           )}
-          <Form.Item name="reason" label="请假原因" rules={[{ required: true, max: 512 }]}>
+          <Form.Item name="reason" label="请假原因" rules={[{ required: true, message: '请填写请假事由' }, { max: 512, message: '事由不超过512字符' }]}>
             <Input.TextArea rows={3} maxLength={512} showCount />
           </Form.Item>
           {needAttachment && (
