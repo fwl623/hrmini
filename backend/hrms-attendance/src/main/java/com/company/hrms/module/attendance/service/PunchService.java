@@ -375,7 +375,6 @@ public class PunchService {
             vo.setEmployeeId(first.getEmployeeId());
             vo.setPunchDate(first.getPunchDate() != null ? first.getPunchDate().toString() : null);
             vo.setSource(first.getSource());
-            vo.setGpsJson(first.getGpsJson());
 
             // 从 employee 表查询员工姓名和部门（用 search 获取 JOIN 的部门名称）
             try {
