@@ -47,8 +47,11 @@ public interface EmployeeMapper {
     /** 按工号查询 */
     Employee selectByEmployeeNo(@Param("employeeNo") String employeeNo);
 
-    /** 按手机号查询（唯一索引） */
+    /** 按手机号查询（唯一索引，仅未删除） */
     Employee selectByMobile(@Param("mobile") String mobile);
+
+    /** 按手机号查询（含逻辑删除行，用于 uk_mobile 冲突排查/腾出） */
+    Employee selectAnyByMobile(@Param("mobile") String mobile);
 
     /** 新增员工 */
     int insert(Employee employee);

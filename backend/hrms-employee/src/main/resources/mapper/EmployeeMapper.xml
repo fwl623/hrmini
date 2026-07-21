@@ -124,6 +124,10 @@
         SELECT <include refid="BaseColumns"/> FROM employee WHERE mobile = #{mobile} AND deleted = 0
     </select>
 
+    <select id="selectAnyByMobile" resultMap="BaseMap">
+        SELECT <include refid="BaseColumns"/> FROM employee WHERE mobile = #{mobile} LIMIT 1
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO employee (employee_no, user_id, name, gender, mobile, email,
             department_id, position_id, grade, manager_id, work_location,
