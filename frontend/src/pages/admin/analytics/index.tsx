@@ -216,12 +216,18 @@ const AnalyticsPage: React.FC = () => {
                 data={headcountLineData}
                 xField="date"
                 yField="value"
-                seriesField="type"
+                colorField="type"
                 height={280}
                 smooth
-                point={{ size: 2 }}
+                point={{ size: 3 }}
                 legend={{ position: 'top' }}
                 meta={{ value: { alias: '人数' } }}
+                scale={{
+                  color: {
+                    domain: ['入职', '离职'],
+                    range: ['#1677ff', '#ff4d4f'],
+                  },
+                }}
               />
             ) : (
               <Empty description="所选期间暂无入职/离职数据" />
@@ -260,10 +266,16 @@ const AnalyticsPage: React.FC = () => {
                 data={workflowColumnData}
                 xField="label"
                 yField="value"
-                seriesField="type"
+                colorField="type"
                 isGroup
                 height={280}
                 legend={{ position: 'top' }}
+                scale={{
+                  color: {
+                    domain: ['发起', '通过'],
+                    range: ['#1677ff', '#52c41a'],
+                  },
+                }}
               />
             ) : (
               <Empty description="所选期间暂无审批数据" />
