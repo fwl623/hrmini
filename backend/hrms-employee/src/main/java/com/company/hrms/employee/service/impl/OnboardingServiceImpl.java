@@ -46,6 +46,7 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final InternalUserService internalUserService;
     private final EmployeeIdGenerator employeeIdGenerator;
     private final DepartmentMapper departmentMapper;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -138,7 +139,9 @@ public class OnboardingServiceImpl implements OnboardingService {
         userPatch.setUserId(userId);
         employeeMapper.updateById(userPatch);
 
-        // TODO: MQ hrms.employee.event 通知考勤/薪资
+        // 发布入职事件（考勤模块监听后初始化年假余额）
+        eventPublisher.publishEvent(new com.company.hrms.common.event.EmployeeStatusChangeEvent(
+                this, employeeId, null, "ACTIVE", hireDate, "ONBOARDING", null));
         log.info("入职建档完成 applicationId={} employeeId={} empNo={} userId={}",
                 cmd.getApplicationId(), employeeId, empNo, userId);
         return employeeId;

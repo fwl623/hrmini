@@ -89,12 +89,17 @@ public class LeaveService {
         int currentYear = LocalDate.now().getYear();
         BigDecimal annualDays = calculateAnnualLeaveDays(hireDate);
 
-        LeaveBalance balance = new LeaveBalance();
-        balance.setEmployeeId(employeeId);
-        balance.setLeaveType("ANNUAL");
-        balance.setBalance(annualDays);
-        balance.setYear(currentYear);
-        leaveBalanceMapper.insert(balance);
+        LeaveBalance lb = new LeaveBalance();
+        lb.setEmployeeId(employeeId);
+        lb.setLeaveType("ANNUAL");
+        lb.setYear(currentYear);
+        lb.setTotalQuota(annualDays);
+        lb.setUsedQuota(java.math.BigDecimal.ZERO);
+        lb.setRemainingQuota(annualDays);
+        lb.setBalance(annualDays);
+        lb.setEffectiveDate(hireDate);
+        lb.setVersion(0);
+        leaveBalanceMapper.insert(lb);
         log.info("初始化年假余额: empId={}, year={}, days={}", employeeId, currentYear, annualDays);
     }
 
