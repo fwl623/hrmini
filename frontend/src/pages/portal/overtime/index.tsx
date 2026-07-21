@@ -64,18 +64,18 @@ const OvertimePage: React.FC = () => {
       <Modal title="申请加班" open={modalOpen} onOk={handleSubmit} onCancel={() => { setModalOpen(false); form.resetFields(); }}
         confirmLoading={submitting} width={500}>
         <Form form={form} layout="vertical">
-          <Form.Item name="overtimeDate" label="加班日期" rules={[{ required: true }]}>
+          <Form.Item name="overtimeDate" label="加班日期" rules={[{ required: true, message: '请选择加班日期' }]}>
             <DatePicker style={{ width: '100%' }} disabledDate={(d) => d && d.isBefore(dayjs(), 'day')} />
           </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>
+            <Form.Item name="startTime" label="开始时间" rules={[{ required: true, message: '请选择开始时间' }]}>
               <TimePicker format="HH:mm" />
             </Form.Item>
-            <Form.Item name="endTime" label="结束时间" rules={[{ required: true }]}>
+            <Form.Item name="endTime" label="结束时间" rules={[{ required: true, message: '请选择结束时间' }]}>
               <TimePicker format="HH:mm" />
             </Form.Item>
           </Space>
-          <Form.Item name="reason" label="加班原因" rules={[{ required: true, max: 256 }]}>
+          <Form.Item name="reason" label="加班原因" rules={[{ required: true, message: '请填写加班事由' }, { max: 256, message: '事由不超过256字符' }]}>
             <Input.TextArea rows={3} maxLength={256} showCount />
           </Form.Item>
         </Form>
