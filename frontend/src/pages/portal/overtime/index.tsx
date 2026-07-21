@@ -90,11 +90,11 @@ const OvertimePage: React.FC = () => {
   );
 
   const columns = [
-    { title: '加班日期', dataIndex: 'overtimeDate', width: 120 },
-    { title: '开始时间', dataIndex: 'startTime', width: 100, render: (v: string) => v || '-' },
-    { title: '结束时间', dataIndex: 'endTime', width: 100, render: (v: string) => v || '-' },
+    { title: '加班日期', dataIndex: 'overtimeDate', width: 130 },
+    { title: '开始', dataIndex: 'startTime', width: 80, render: (v: string) => v || '-' },
+    { title: '结束', dataIndex: 'endTime', width: 80, render: (v: string) => v || '-' },
     { title: '时长(h)', dataIndex: 'hours', width: 80 },
-    { title: '原因', dataIndex: 'reason', ellipsis: true },
+    { title: '加班原因', dataIndex: 'reason', ellipsis: true },
     {
       title: '状态', dataIndex: 'status', width: 100,
       render: (v: string) => <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>,
@@ -123,7 +123,7 @@ const OvertimePage: React.FC = () => {
         <Card title="加班记录" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>申请加班</Button>}>
           <Table
             rowKey="id" columns={columns} dataSource={records}
-            pagination={{ pageSize: 10 }} size="small"
+            pagination={{ pageSize: 10 }} size="middle" style={{ marginTop: 8 }}
           />
         </Card>
       </Col>
