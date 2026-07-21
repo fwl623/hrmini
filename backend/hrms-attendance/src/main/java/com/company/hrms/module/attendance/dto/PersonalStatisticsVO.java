@@ -1,6 +1,5 @@
 package com.company.hrms.module.attendance.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -9,9 +8,10 @@ import java.math.BigDecimal;
  * 个人统计 VO（8 项指标）
  */
 @Data
-@AllArgsConstructor
 public class PersonalStatisticsVO {
     private Long employeeId;
+    private String employeeName;
+    private String departmentName;
     private String period;
     private int shouldAttendDays;
     private BigDecimal actualAttendDays;

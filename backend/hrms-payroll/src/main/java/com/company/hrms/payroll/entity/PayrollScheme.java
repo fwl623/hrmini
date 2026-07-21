@@ -68,6 +68,10 @@ public class PayrollScheme {
     @TableField("deleted")
     private Integer deleted;
 
+    /** 工资项目列表（非数据库字段，列表查询时填充） */
+    @TableField(exist = false)
+    private java.util.List<PayrollSchemeItem> items;
+
     /**
      * 创建时间
      * 格式：yyyy-MM-dd HH:mm:ss

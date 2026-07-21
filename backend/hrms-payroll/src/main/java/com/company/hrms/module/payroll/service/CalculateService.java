@@ -985,6 +985,20 @@ public class CalculateService {
         log.info("提交审批: batchId={}", id);
     }
 
+    // ==================== 审批通过 ====================
+
+    @Transactional(rollbackFor = Exception.class)
+    public void approve(Long id) {
+        PayrollBatch batch = batchMapper.selectById(id);
+        if (batch == null) throw new BusinessException(ErrorCode.PARAM_INVALID, "批次不存在");
+        if (!"APPROVING".equals(batch.getStatus())) {
+            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "仅审批中状态可通过");
+        }
+        batch.setStatus("APPROVED");
+        batchMapper.updateById(batch);
+        log.info("审批通过: batchId={}", id);
+    }
+
     // ==================== 发放确认 ====================
 
     @Transactional(rollbackFor = Exception.class)

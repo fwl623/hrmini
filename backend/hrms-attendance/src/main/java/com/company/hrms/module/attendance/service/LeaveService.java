@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -57,6 +58,7 @@ public class LeaveService {
     private final WorkdayConfigMapper workdayConfigMapper;
     private final HolidayCalendarMapper holidayCalendarMapper;
     private final ApprovalEngineService approvalEngineService;
+    private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
 
     // ========== 假期余额 ==========
 
@@ -142,11 +144,33 @@ public class LeaveService {
         IPage<LeaveApplication> page = leaveApplicationMapper.selectPage(
                 new Page<>(pageParam.getPage(), pageParam.getPageSize()), wrapper);
 
+        // 收集员工ID，批量查询姓名和部门
+        java.util.Set<Long> empIds = page.getRecords().stream()
+                .map(LeaveApplication::getEmployeeId)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Map<Long, String> nameMap = new java.util.HashMap<>();
+        java.util.Map<Long, String> deptMap = new java.util.HashMap<>();
+        if (!empIds.isEmpty()) {
+            String idList = empIds.stream().map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(","));
+            List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
+                    null, null, null, null, null, null, null,
+                    " AND e.id IN (" + idList + ")");
+            for (com.company.hrms.employee.entity.Employee emp : empList) {
+                if (emp != null && emp.getId() != null) {
+                    nameMap.put(emp.getId(), emp.getName());
+                    deptMap.put(emp.getId(), emp.getDepartmentName());
+                }
+            }
+        }
+
         List<LeaveApplicationVO> voList = new ArrayList<>();
         for (LeaveApplication la : page.getRecords()) {
             LeaveApplicationVO vo = new LeaveApplicationVO();
             vo.setId(la.getId());
-            vo.setEmployeeName(String.valueOf(la.getEmployeeId())); // TODO: 通过 Feign 获取员工姓名
+            vo.setEmployeeId(la.getEmployeeId());
+            vo.setEmployeeName(nameMap.getOrDefault(la.getEmployeeId(), String.valueOf(la.getEmployeeId())));
+            vo.setDepartment(deptMap.get(la.getEmployeeId()));
             vo.setLeaveType(la.getLeaveType());
             vo.setStartTime(la.getStartTime() != null ? la.getStartTime().toString() : null);
             vo.setEndTime(la.getEndTime() != null ? la.getEndTime().toString() : null);
@@ -170,8 +194,10 @@ public class LeaveService {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "请假天数不能为空");
         }
 
-        LocalDateTime startTime = LocalDateTime.parse(dto.getStartTime(), DateTimeFormatter.ISO_DATE_TIME);
-        LocalDateTime endTime = LocalDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME);
+        LocalDateTime startTime = OffsetDateTime.parse(dto.getStartTime(), DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
+        LocalDateTime endTime = OffsetDateTime.parse(dto.getEndTime(), DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
 
         // 重新计算实际请假天数（排除周末和节假日），不信任前端传值
         BigDecimal days = recalcLeaveDays(startTime, endTime);
@@ -337,8 +363,10 @@ public class LeaveService {
      * 排除周末和法定节假日，支持 0.5 天
      */
     public CalcDaysVO calcDays(String startTimeStr, String endTimeStr) {
-        LocalDateTime start = LocalDateTime.parse(startTimeStr, DateTimeFormatter.ISO_DATE_TIME);
-        LocalDateTime end = LocalDateTime.parse(endTimeStr, DateTimeFormatter.ISO_DATE_TIME);
+        LocalDateTime start = OffsetDateTime.parse(startTimeStr, DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
+        LocalDateTime end = OffsetDateTime.parse(endTimeStr, DateTimeFormatter.ISO_DATE_TIME)
+                .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai")).toLocalDateTime();
         BigDecimal days = recalcLeaveDays(start, end);
         return new CalcDaysVO(days);
     }

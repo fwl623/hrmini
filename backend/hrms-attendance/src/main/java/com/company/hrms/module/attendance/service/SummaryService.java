@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.company.hrms.attendance.entity.AttendanceDailySummary;
 import com.company.hrms.attendance.entity.AttendanceMonthLock;
+import com.company.hrms.attendance.entity.HolidayCalendar;
+import com.company.hrms.attendance.entity.WorkdayConfig;
 import com.company.hrms.attendance.entity.AttendanceMonthlySummary;
 import com.company.hrms.attendance.entity.AttendanceRecord;
 import com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper;
@@ -46,6 +48,10 @@ public class SummaryService {
     private final AttendanceMonthLockMapper monthLockMapper;
     private final AttendanceRecordMapper attendanceRecordMapper;
     private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
+    private final com.company.hrms.attendance.mapper.LeaveBalanceMapper leaveBalanceMapper;
+    private final com.company.hrms.attendance.mapper.LeaveApplicationMapper leaveApplicationMapper;
+    private final com.company.hrms.attendance.mapper.WorkdayConfigMapper workdayConfigMapper;
+    private final com.company.hrms.attendance.mapper.HolidayCalendarMapper holidayCalendarMapper;
 
     // ========== 月汇总查看/锁定 ==========
 
@@ -235,27 +241,83 @@ public class SummaryService {
      * 个人统计（8 项指标）
      */
     public PersonalStatisticsVO getPersonalStatistics(Long employeeId, String period) {
+        PersonalStatisticsVO vo = new PersonalStatisticsVO();
+        vo.setEmployeeId(employeeId);
+        vo.setPeriod(period);
+
+        // 查询员工姓名和部门
+        try {
+            com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(employeeId);
+            if (emp != null) {
+                vo.setEmployeeName(emp.getName());
+                // departmentName 是 JOIN 字段，selectById 不返回，用 search 查
+                List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
+                        null, null, null, null, null, null, null,
+                        " AND e.id = " + employeeId);
+                if (!empList.isEmpty() && empList.get(0).getDepartmentName() != null) {
+                    vo.setDepartmentName(empList.get(0).getDepartmentName());
+                }
+            } else {
+                vo.setEmployeeName(String.valueOf(employeeId));
+            }
+        } catch (Exception e) {
+            vo.setEmployeeName(String.valueOf(employeeId));
+        }
+
         AttendanceMonthlySummary ms = monthlySummaryMapper.selectByEmployeeAndPeriod(employeeId, period);
         if (ms == null) {
-            return new PersonalStatisticsVO(employeeId, period, 0, BigDecimal.ZERO, 0, 0,
-                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+            vo.setShouldAttendDays(0);
+            vo.setActualAttendDays(BigDecimal.ZERO);
+            vo.setLateCount(0);
+            vo.setEarlyLeaveCount(0);
+            vo.setAbsentDays(BigDecimal.ZERO);
+            vo.setLeaveDays(BigDecimal.ZERO);
+            vo.setOvertimeHours(BigDecimal.ZERO);
+            vo.setAnnualBalance(BigDecimal.ZERO);
+            return vo;
         }
-        // 查年假余额
-        com.company.hrms.attendance.entity.LeaveBalance lb = null;
-        // TODO: 通过 LeaveBalanceMapper 查询年假余额
-        BigDecimal annualBalance = BigDecimal.ZERO;
 
-        return new PersonalStatisticsVO(
-                employeeId, period,
-                ms.getShouldAttendDays() != null ? ms.getShouldAttendDays() : 0,
-                ms.getActualAttendDays() != null ? ms.getActualAttendDays() : BigDecimal.ZERO,
-                ms.getLateCount() != null ? ms.getLateCount() : 0,
-                ms.getEarlyLeaveCount() != null ? ms.getEarlyLeaveCount() : 0,
-                ms.getAbsentDays() != null ? ms.getAbsentDays() : BigDecimal.ZERO,
-                ms.getLeaveDays() != null ? ms.getLeaveDays() : BigDecimal.ZERO,
-                ms.getOvertimeHours() != null ? ms.getOvertimeHours() : BigDecimal.ZERO,
-                annualBalance
-        );
+        vo.setShouldAttendDays(ms.getShouldAttendDays() != null ? ms.getShouldAttendDays() : 0);
+        vo.setActualAttendDays(ms.getActualAttendDays() != null ? ms.getActualAttendDays() : BigDecimal.ZERO);
+        vo.setLateCount(ms.getLateCount() != null ? ms.getLateCount() : 0);
+        vo.setEarlyLeaveCount(ms.getEarlyLeaveCount() != null ? ms.getEarlyLeaveCount() : 0);
+        vo.setAbsentDays(ms.getAbsentDays() != null ? ms.getAbsentDays() : BigDecimal.ZERO);
+        // 如果月汇总没有请假天数，但实际有已审批的请假，则从申请表累加（仅统计已审批记录）
+        BigDecimal leaveDays = ms.getLeaveDays() != null ? ms.getLeaveDays() : BigDecimal.ZERO;
+        if (leaveDays.compareTo(BigDecimal.ZERO) == 0) {
+            try {
+                java.time.LocalDate periodStart = java.time.LocalDate.parse(period + "-01");
+                java.time.LocalDate periodEnd = periodStart.withDayOfMonth(periodStart.lengthOfMonth());
+                List<com.company.hrms.attendance.entity.LeaveApplication> approvedLeaves =
+                        leaveApplicationMapper.selectList(
+                                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
+                                        .eq(com.company.hrms.attendance.entity.LeaveApplication::getEmployeeId, employeeId)
+                                        .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
+                                        .ge(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, periodStart.atStartOfDay())
+                                        .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, periodEnd.plusDays(1).atStartOfDay()));
+                for (com.company.hrms.attendance.entity.LeaveApplication la : approvedLeaves) {
+                    if (la.getLeaveDays() != null) {
+                        leaveDays = leaveDays.add(la.getLeaveDays());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("查询已审批请假记录失败", e);
+            }
+        }
+        vo.setLeaveDays(leaveDays);
+        vo.setOvertimeHours(ms.getOvertimeHours() != null ? ms.getOvertimeHours() : BigDecimal.ZERO);
+
+        // 年假余额
+        try {
+            com.company.hrms.attendance.entity.LeaveBalance lb = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(
+                    employeeId, "ANNUAL", LocalDate.now().getYear());
+            vo.setAnnualBalance(lb != null && lb.getBalance() != null ? lb.getBalance() : BigDecimal.ZERO);
+        } catch (Exception e) {
+            log.warn("查询年假余额失败: employeeId={}", employeeId, e);
+            vo.setAnnualBalance(BigDecimal.ZERO);
+        }
+
+        return vo;
     }
 
     /**
@@ -330,10 +392,7 @@ public class SummaryService {
 
     /**
      * 获取员工指定月份的考勤日历
-     *
-     * @param employeeId 员工 ID
-     * @param period     月份 yyyy-MM
-     * @return 考勤日历，包含当月每日状态
+     * 当日汇总不存在时，自动检查已审批通过的请假记录
      */
     public AttendanceCalendarVO getCalendar(Long employeeId, String period) {
         LocalDate start = LocalDate.parse(period + "-01");
@@ -346,6 +405,49 @@ public class SummaryService {
         java.util.Map<LocalDate, AttendanceDailySummary> summaryMap = new java.util.HashMap<>();
         for (AttendanceDailySummary ds : dailyList) {
             summaryMap.put(ds.getSummaryDate(), ds);
+        }
+
+        // 加载工作日配置和节假日，用于判断日期是否为工作日
+        List<WorkdayConfig> wkConfigs = workdayConfigMapper.selectList(null);
+        java.util.Set<Integer> workdaySet = wkConfigs.stream()
+                .filter(w -> w.getIsWorkday() == 1)
+                .map(WorkdayConfig::getDayOfWeek)
+                .collect(java.util.stream.Collectors.toSet());
+        List<HolidayCalendar> holidays = holidayCalendarMapper.selectList(null);
+        java.util.Set<java.time.LocalDate> holidayDates = holidays.stream()
+                .map(HolidayCalendar::getHolidayDate)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // 加载该员工当月已审批通过的请假记录（已驳回/已撤销/待审批的不计入）
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        List<com.company.hrms.attendance.entity.LeaveApplication> approvedLeaves =
+                leaveApplicationMapper.selectList(
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
+                                .eq(com.company.hrms.attendance.entity.LeaveApplication::getEmployeeId, employeeId)
+                                .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
+                                .ge(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, start.atStartOfDay())
+                                .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, end.plusDays(1).atStartOfDay()));
+        // 构建请假日期集合
+        // 规则：仅已审批 + 仅工作日 + 非未来日期
+        java.util.Set<java.time.LocalDate> leaveDateSet = new java.util.HashSet<>();
+        for (com.company.hrms.attendance.entity.LeaveApplication la : approvedLeaves) {
+            java.time.LocalDate laStart = la.getStartTime().toLocalDate();
+            java.time.LocalDate laEnd = la.getEndTime().toLocalDate();
+            // 结束时间为午夜00:00时不包含结束日
+            if (la.getEndTime().toLocalTime().equals(java.time.LocalTime.MIDNIGHT)) {
+                laEnd = laEnd.minusDays(1);
+            }
+            java.time.LocalDate d = laStart;
+            while (!d.isAfter(laEnd)) {
+                // 条件1：仅已过去的日期
+                // 条件2：仅工作日（非周末、非节假日）
+                if (!d.isAfter(today)
+                        && workdaySet.contains(d.getDayOfWeek().getValue())
+                        && !holidayDates.contains(d)) {
+                    leaveDateSet.add(d);
+                }
+                d = d.plusDays(1);
+            }
         }
 
         List<AttendanceCalendarDay> days = new ArrayList<>();
@@ -361,8 +463,16 @@ public class SummaryService {
                         ? ds.getClockInTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
                 day.setClockOutTime(ds.getClockOutTime() != null
                         ? ds.getClockOutTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) : null);
+            } else if (leaveDateSet.contains(current)) {
+                // 无汇总但有已审批请假 → 标记为 LEAVE
+                day.setDayStatus("LEAVE");
+            } else if (!current.isAfter(today)
+                    && workdaySet.contains(current.getDayOfWeek().getValue())
+                    && !holidayDates.contains(current)) {
+                // Fix3: 已过去的工作日，无汇总、无请假 → 缺勤
+                day.setDayStatus("ABSENT");
             } else {
-                // 无汇总记录 → 非工作日或尚未生成汇总
+                // 非工作日或未来日期
                 day.setDayStatus("--");
             }
 

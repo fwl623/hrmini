@@ -2,6 +2,7 @@ package com.company.hrms.module.attendance.job;
 
 import com.company.hrms.attendance.entity.LeaveApplication;
 import com.company.hrms.attendance.entity.LeaveBalance;
+import com.company.hrms.attendance.entity.AttendanceMonthlySummary;
 import com.company.hrms.attendance.entity.OvertimeApplication;
 import com.company.hrms.attendance.entity.OvertimeLedger;
 import com.company.hrms.attendance.entity.AttendanceSupplement;
@@ -42,6 +43,7 @@ public class ApprovalEventListener {
     private final AttendanceSupplementMapper attendanceSupplementMapper;
     private final AttendanceRecordMapper attendanceRecordMapper;
     private final AttendanceDailySummaryMapper attendanceDailySummaryMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper attendanceMonthlySummaryMapper;
 
     @EventListener
     @Transactional(rollbackFor = Exception.class)
@@ -79,7 +81,59 @@ public class ApprovalEventListener {
         if ("APPROVED".equals(result)) {
             app.setStatus("APPROVED");
             leaveApplicationMapper.updateById(app);
-            log.info("请假已通过: id={}", applicationId);
+
+            // 更新考勤日汇总：请假期间每天记为 LEAVE
+            Long empId = app.getEmployeeId();
+            java.time.LocalDate startDate = app.getStartTime().toLocalDate();
+            java.time.LocalDate endDate = app.getEndTime().toLocalDate();
+            java.math.BigDecimal leaveDays = app.getLeaveDays() != null ? app.getLeaveDays() : java.math.BigDecimal.ZERO;
+            long totalDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate) + 1;
+            // 按天数均分 leaveDays 到每天
+            java.math.BigDecimal perDayLeave = totalDays > 0
+                    ? leaveDays.divide(java.math.BigDecimal.valueOf(totalDays), 10, java.math.RoundingMode.HALF_UP)
+                    : java.math.BigDecimal.ZERO;
+
+            java.time.LocalDate current = startDate;
+            while (!current.isAfter(endDate)) {
+                AttendanceDailySummary daily = attendanceDailySummaryMapper.selectByEmployeeAndDate(empId, current);
+                if (daily == null) {
+                    daily = new AttendanceDailySummary();
+                    daily.setEmployeeId(empId);
+                    daily.setSummaryDate(current);
+                    daily.setDayStatus("LEAVE");
+                    daily.setLeaveDays(perDayLeave);
+                    daily.setOvertimeHours(java.math.BigDecimal.ZERO);
+                    attendanceDailySummaryMapper.insert(daily);
+                } else {
+                    daily.setDayStatus("LEAVE");
+                    daily.setLeaveDays(perDayLeave);
+                    attendanceDailySummaryMapper.updateById(daily);
+                }
+                current = current.plusDays(1);
+            }
+
+            // 重新聚合月考勤汇总
+            String period = startDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+            java.time.LocalDate monthStart = startDate.withDayOfMonth(1);
+            java.time.LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+            java.util.List<AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
+                    empId, monthStart, monthEnd);
+            int shouldAttendDays = 0;
+            java.math.BigDecimal totalLeaveDays = java.math.BigDecimal.ZERO;
+            for (AttendanceDailySummary ds : dailyList) {
+                shouldAttendDays++;
+                if ("LEAVE".equals(ds.getDayStatus())) {
+                    totalLeaveDays = totalLeaveDays.add(ds.getLeaveDays() != null ? ds.getLeaveDays() : java.math.BigDecimal.ZERO);
+                }
+            }
+            AttendanceMonthlySummary monthly = attendanceMonthlySummaryMapper.selectByEmployeeAndPeriod(empId, period);
+            if (monthly != null) {
+                monthly.setLeaveDays(totalLeaveDays);
+                attendanceMonthlySummaryMapper.updateById(monthly);
+            }
+
+            log.info("请假已通过, 日汇总已更新: id={}, empId={}, days={}", applicationId, empId, leaveDays);
+
         } else if ("REJECTED".equals(result)) {
             app.setStatus("REJECTED");
             leaveApplicationMapper.updateById(app);
@@ -116,13 +170,22 @@ public class ApprovalEventListener {
             sup.setStatus("APPROVED");
             attendanceSupplementMapper.updateById(sup);
 
-            // 写入打卡记录（补卡通过后生成一条新的打卡流水）
             LocalDate punchDate = LocalDate.parse(sup.getMakeupDate());
+            String punchType = sup.getPunchType();
+
+            // 先删除该员工当天同类型的旧打卡记录（补卡替换旧的，避免重复）
+            attendanceRecordMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
+                            .eq(AttendanceRecord::getEmployeeId, sup.getEmployeeId())
+                            .eq(AttendanceRecord::getPunchDate, punchDate)
+                            .eq(AttendanceRecord::getPunchType, punchType));
+
+            // 写入新的打卡记录（补卡通过后生成）
             AttendanceRecord record = new AttendanceRecord();
             record.setEmployeeId(sup.getEmployeeId());
             record.setPunchDate(punchDate);
             record.setPunchTime(sup.getMakeupTime());
-            record.setPunchType(sup.getPunchType());
+            record.setPunchType(punchType);
             record.setPunchStatus("NORMAL"); // 补卡审批通过，视为正常
             record.setSource("MAKEUP");
             attendanceRecordMapper.insert(record);
@@ -133,7 +196,7 @@ public class ApprovalEventListener {
                             .eq(AttendanceDailySummary::getEmployeeId, sup.getEmployeeId())
                             .eq(AttendanceDailySummary::getSummaryDate, punchDate));
 
-            // 重新查询该员工当天的所有打卡记录，聚合日汇总
+            // 重新查询该员工当天的所有打卡记录（已经清理了重复的），聚合日汇总
             java.util.List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectList(
                     new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
                             .eq(AttendanceRecord::getEmployeeId, sup.getEmployeeId())
@@ -197,14 +260,40 @@ public class ApprovalEventListener {
 
             // 写入加班台账
             LocalDate overtimeDate = LocalDate.parse(app.getOvertimeDate());
+            String period = overtimeDate.format(DateTimeFormatter.ofPattern("yyyy-MM"));
             OvertimeLedger ledger = new OvertimeLedger();
             ledger.setEmployeeId(app.getEmployeeId());
             ledger.setApplicationId(app.getId());
-            ledger.setPeriod(overtimeDate.format(DateTimeFormatter.ofPattern("yyyy-MM")));
+            ledger.setPeriod(period);
             ledger.setTotalHours(app.getHours());
             ledger.setRateType(calculateRateType(overtimeDate));
             ledger.setLedgerDate(overtimeDate);
             overtimeLedgerMapper.insert(ledger);
+
+            // 更新日汇总：该日加班时长累加
+            Long empId = app.getEmployeeId();
+            AttendanceDailySummary daily = attendanceDailySummaryMapper.selectByEmployeeAndDate(empId, overtimeDate);
+            if (daily != null) {
+                java.math.BigDecimal currentOt = daily.getOvertimeHours() != null
+                        ? daily.getOvertimeHours() : java.math.BigDecimal.ZERO;
+                daily.setOvertimeHours(currentOt.add(app.getHours()));
+                attendanceDailySummaryMapper.updateById(daily);
+            }
+
+            // 重新聚合月考勤汇总的加班时长
+            java.time.LocalDate monthStart = overtimeDate.withDayOfMonth(1);
+            java.time.LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+            java.util.List<AttendanceDailySummary> dailyList = attendanceDailySummaryMapper.selectByEmployeeAndPeriod(
+                    empId, monthStart, monthEnd);
+            java.math.BigDecimal totalOt = java.math.BigDecimal.ZERO;
+            for (AttendanceDailySummary ds : dailyList) {
+                if (ds.getOvertimeHours() != null) totalOt = totalOt.add(ds.getOvertimeHours());
+            }
+            AttendanceMonthlySummary monthly = attendanceMonthlySummaryMapper.selectByEmployeeAndPeriod(empId, period);
+            if (monthly != null) {
+                monthly.setOvertimeHours(totalOt);
+                attendanceMonthlySummaryMapper.updateById(monthly);
+            }
 
             log.info("加班已通过, 台账已写入: id={}, hours={}", applicationId, app.getHours());
         } else if ("REJECTED".equals(result)) {

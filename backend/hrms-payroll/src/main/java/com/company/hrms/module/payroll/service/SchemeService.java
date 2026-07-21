@@ -34,9 +34,14 @@ public class SchemeService {
     private final PayrollSchemeScopeMapper schemeScopeMapper;
 
     public List<PayrollScheme> list() {
-        return schemeMapper.selectList(new LambdaQueryWrapper<PayrollScheme>()
+        List<PayrollScheme> schemes = schemeMapper.selectList(new LambdaQueryWrapper<PayrollScheme>()
                 .eq(PayrollScheme::getDeleted, 0)
                 .orderByDesc(PayrollScheme::getCreatedAt));
+        // 填充每个账套的工资项目
+        for (PayrollScheme scheme : schemes) {
+            scheme.setItems(schemeItemMapper.selectBySchemeId(scheme.getId()));
+        }
+        return schemes;
     }
 
     public PayrollScheme getById(Long id) {
