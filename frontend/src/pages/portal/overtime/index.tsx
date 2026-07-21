@@ -1,17 +1,39 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Button, Table, Tag, Typography, message, Modal, Form, DatePicker, TimePicker, Input, Space, Row, Col } from 'antd';
+import {
+  Card, Button, Table, Tag, Typography, message, Modal, Form,
+  DatePicker, TimePicker, Input, Space, Row, Col, Drawer, Steps, Timeline,
+} from 'antd';
+import { PlusOutlined, EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 import { getOvertimeApplications, submitOvertime } from '@/services/attendance';
+import { fetchInstanceDetail, type ApprovalTimelineItem } from '@/services/workflow';
 
-const statusLabelMap: Record<string, string> = { PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回' };
-const statusColorMap: Record<string, string> = { PENDING: 'orange', APPROVED: 'green', REJECTED: 'red' };
+const statusLabelMap: Record<string, string> = {
+  PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回',
+};
+const statusColorMap: Record<string, string> = {
+  PENDING: 'orange', APPROVED: 'green', REJECTED: 'red',
+};
+
+const nodeStateToStep: Record<string, 'wait' | 'process' | 'finish' | 'error'> = {
+  pending: 'wait', current: 'process', done: 'finish', cancelled: 'error',
+};
 
 const OvertimePage: React.FC = () => {
   const [records, setRecords] = useState<any[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+
+  // 审批进度
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [progressTitle, setProgressTitle] = useState('');
+  const [progressNodes, setProgressNodes] = useState<{ order: number; label: string; state: string }[]>([]);
+  const [progressTimeline, setProgressTimeline] = useState<ApprovalTimelineItem[]>([]);
+  const [progressStatus, setProgressStatus] = useState('');
+  const [progressCurrent, setProgressCurrent] = useState('');
 
   const loadData = useCallback(async () => {
     try {
@@ -39,10 +61,52 @@ const OvertimePage: React.FC = () => {
     finally { setSubmitting(false); }
   };
 
+  const handleViewProgress = async (record: any) => {
+    if (!record.instanceId) {
+      message.warning('该申请暂无审批实例（可能提交时审批创建失败）');
+      return;
+    }
+    setProgressOpen(true);
+    setProgressLoading(true);
+    setProgressTitle(`${record.overtimeDate} · ${record.hours} 小时`);
+    setProgressStatus(record.status);
+    try {
+      const detail = await fetchInstanceDetail(record.instanceId);
+      setProgressNodes(detail?.nodes ?? []);
+      setProgressTimeline(detail?.timeline ?? []);
+      setProgressCurrent(detail?.currentNodeLabel || '');
+      if (detail?.status) setProgressStatus(detail.status);
+    } catch (err: any) {
+      message.error(err?.message || '加载审批进度失败');
+      setProgressNodes([]);
+      setProgressTimeline([]);
+    } finally {
+      setProgressLoading(false);
+    }
+  };
+
+  const currentStepIndex = Math.max(
+    0, progressNodes.findIndex((n) => n.state === 'current'),
+  );
+
   const columns = [
-    { title: '加班日期', dataIndex: 'overtimeDate' },
-    { title: '时长(h)', dataIndex: 'hours' },
-    { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag> },
+    { title: '加班日期', dataIndex: 'overtimeDate', width: 120 },
+    { title: '开始时间', dataIndex: 'startTime', width: 100, render: (v: string) => v || '-' },
+    { title: '结束时间', dataIndex: 'endTime', width: 100, render: (v: string) => v || '-' },
+    { title: '时长(h)', dataIndex: 'hours', width: 80 },
+    { title: '原因', dataIndex: 'reason', ellipsis: true },
+    {
+      title: '状态', dataIndex: 'status', width: 100,
+      render: (v: string) => <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>,
+    },
+    {
+      title: '操作', width: 120,
+      render: (_: any, record: any) => (
+        <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewProgress(record)}>
+          审批进度
+        </Button>
+      ),
+    },
   ];
 
   return (
@@ -56,12 +120,16 @@ const OvertimePage: React.FC = () => {
         </Card>
       </Col>
       <Col xs={24} lg={18}>
-        <Card title="加班记录" extra={<Button type="primary" onClick={() => setModalOpen(true)}>申请加班</Button>}>
-          <Table rowKey="id" columns={columns} dataSource={records} pagination={{ pageSize: 10 }} size="small" />
+        <Card title="加班记录" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>申请加班</Button>}>
+          <Table
+            rowKey="id" columns={columns} dataSource={records}
+            pagination={{ pageSize: 10 }} size="small"
+          />
         </Card>
       </Col>
 
-      <Modal title="申请加班" open={modalOpen} onOk={handleSubmit} onCancel={() => { setModalOpen(false); form.resetFields(); }}
+      <Modal title="申请加班" open={modalOpen} onOk={handleSubmit}
+        onCancel={() => { setModalOpen(false); form.resetFields(); }}
         confirmLoading={submitting} width={500}>
         <Form form={form} layout="vertical">
           <Form.Item name="overtimeDate" label="加班日期" rules={[{ required: true, message: '请选择加班日期' }]}>
@@ -80,6 +148,55 @@ const OvertimePage: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Drawer title="审批进度" open={progressOpen} onClose={() => setProgressOpen(false)}
+        width={420} destroyOnClose>
+        {progressLoading ? (
+          <Typography.Text type="secondary">加载中…</Typography.Text>
+        ) : (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <div>
+              <Typography.Text strong>{progressTitle}</Typography.Text>
+              <div style={{ marginTop: 8 }}>
+                <Tag color={statusColorMap[progressStatus] || 'default'}>
+                  {statusLabelMap[progressStatus] || progressStatus}
+                </Tag>
+                {progressCurrent ? (
+                  <Typography.Text type="secondary">当前：{progressCurrent}</Typography.Text>
+                ) : null}
+              </div>
+            </div>
+            {progressNodes.length > 0 ? (
+              <Steps direction="vertical" size="small"
+                current={currentStepIndex >= 0 ? currentStepIndex : progressNodes.length}
+                items={progressNodes.map((n) => ({
+                  title: n.label,
+                  status: nodeStateToStep[n.state] || 'wait',
+                }))}
+              />
+            ) : (
+              <Typography.Text type="secondary">暂无审批节点信息</Typography.Text>
+            )}
+            <Card size="small" title="审批动态" type="inner">
+              {progressTimeline.length > 0 ? (
+                <Timeline
+                  items={progressTimeline.map((t, i) => ({
+                    key: i, children: (
+                      <>
+                        <Typography.Text>{t.displayText || `${t.assignee || '-'} · ${t.action || t.node || '-'}`}</Typography.Text>
+                        {t.comment ? <div><Typography.Text type="secondary">{t.comment}</Typography.Text></div> : null}
+                        {t.time ? <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{t.time}</Typography.Text></div> : null}
+                      </>
+                    ),
+                  }))}
+                />
+              ) : (
+                <Typography.Text type="secondary">暂无审批记录</Typography.Text>
+              )}
+            </Card>
+          </Space>
+        )}
+      </Drawer>
     </Row>
   );
 };
