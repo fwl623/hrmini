@@ -135,7 +135,7 @@ const PunchAdminPage: React.FC = () => {
       message.success(`代打卡成功：${empLabel} ${values.type === 'in' ? '上班' : '下班'}`);
       setPunchModalOpen(false);
       punchForm.resetFields();
-      setEmpSearchText('');
+
       setEmpOptions([]);
       await loadOverview();
       actionRef.current?.reload();
@@ -163,7 +163,7 @@ const PunchAdminPage: React.FC = () => {
       message.success(`补卡申请已提交：${empLabel}`);
       setFixModalOpen(false);
       fixForm.resetFields();
-      setEmpSearchText('');
+
       setEmpOptions([]);
       await loadOverview();
       actionRef.current?.reload();
