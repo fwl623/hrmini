@@ -50,6 +50,8 @@ public class SummaryService {
     private final com.company.hrms.employee.mapper.EmployeeMapper employeeMapper;
     private final com.company.hrms.attendance.mapper.LeaveBalanceMapper leaveBalanceMapper;
     private final com.company.hrms.attendance.mapper.LeaveApplicationMapper leaveApplicationMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceGroupMapper attendanceGroupMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper attendanceGroupMemberMapper;
     private final com.company.hrms.attendance.mapper.WorkdayConfigMapper workdayConfigMapper;
     private final com.company.hrms.attendance.mapper.HolidayCalendarMapper holidayCalendarMapper;
 
@@ -230,24 +232,50 @@ public class SummaryService {
                     .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
                     .orElse(null);
 
+            // 读取员工考勤组配置
             java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
             java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
             int lateThreshold = 15;
+            boolean isFlexible = false;
+            java.time.LocalTime flexEarliest = null;
+            java.time.LocalTime flexLatest = null;
+            try {
+                com.company.hrms.attendance.entity.AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(empId);
+                if (agm != null) {
+                    com.company.hrms.attendance.entity.AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
+                    if (grp != null) {
+                        if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
+                        if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
+                        if (grp.getLateThresholdMinutes() != null) lateThreshold = grp.getLateThresholdMinutes();
+                        if ("FLEXIBLE".equals(grp.getShiftType())) {
+                            isFlexible = true;
+                            flexEarliest = grp.getFlexStartEarliest();
+                            flexLatest = grp.getFlexStartLatest();
+                        }
+                    }
+                }
+            } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
 
-            // 3. AM 槽位判定
+            // 3. AM 槽位判定（支持弹性班）
             int amCode;
             if (amLeave) {
-                amCode = 4; // 请假
+                amCode = 4;
             } else if (inRecord == null) {
-                amCode = 5; // 缺卡
+                amCode = 5;
             } else {
                 java.time.LocalTime t = inRecord.getPunchTime().toLocalTime();
-                if (!t.isAfter(workStart)) {
-                    amCode = 0; // 正常
-                } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
-                    amCode = 1; // 迟到
+                if (isFlexible && flexEarliest != null && flexLatest != null) {
+                    // 弹性班：在弹性范围内→正常，否则→迟到
+                    amCode = (!t.isBefore(flexEarliest) && !t.isAfter(flexLatest)) ? 0 : 1;
                 } else {
-                    amCode = 3; // 旷工
+                    // 固定班（或未配置弹性范围）：按基准时间+阈值判定
+                    if (!t.isAfter(workStart)) {
+                        amCode = 0;
+                    } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
+                        amCode = 1;
+                    } else {
+                        amCode = 3;
+                    }
                 }
             }
 
@@ -411,7 +439,27 @@ public class SummaryService {
             monthly.setPeriod(period);
         }
 
+        // 动态计算当月工作日数（从配置读取，不依赖日汇总数量）
         int shouldAttendDays = 0;
+        try {
+            java.util.Set<Integer> wkSet = workdayConfigMapper.selectList(null).stream()
+                    .filter(w -> w.getIsWorkday() == 1)
+                    .map(WorkdayConfig::getDayOfWeek)
+                    .collect(java.util.stream.Collectors.toSet());
+            java.util.Set<java.time.LocalDate> holSet = holidayCalendarMapper.selectList(null).stream()
+                    .map(HolidayCalendar::getHolidayDate)
+                    .collect(java.util.stream.Collectors.toSet());
+            java.time.LocalDate d = startDate;
+            while (!d.isAfter(endDate)) {
+                if (wkSet.contains(d.getDayOfWeek().getValue()) && !holSet.contains(d)) {
+                    shouldAttendDays++;
+                }
+                d = d.plusDays(1);
+            }
+        } catch (Exception e) {
+            log.warn("计算工作日数失败，回退到日汇总数量", e);
+            shouldAttendDays = dailyList.size();
+        }
         BigDecimal actualAttendDays = BigDecimal.ZERO;
         int lateCount = 0;
         int earlyLeaveCount = 0;
@@ -420,22 +468,46 @@ public class SummaryService {
         BigDecimal overtimeHours = BigDecimal.ZERO;
 
         for (AttendanceDailySummary daily : dailyList) {
-            shouldAttendDays++;
-            if ("NORMAL".equals(daily.getDayStatus()) || "LATE".equals(daily.getDayStatus())
-                    || "EARLY_LEAVE".equals(daily.getDayStatus())) {
-                actualAttendDays = actualAttendDays.add(BigDecimal.ONE);
-            } else if ("ABSENT_HALF".equals(daily.getDayStatus())) {
-                actualAttendDays = actualAttendDays.add(BigDecimal.valueOf(0.5));
-                absentDays = absentDays.add(BigDecimal.valueOf(0.5));
-            } else if ("ABSENT".equals(daily.getDayStatus())) {
-                absentDays = absentDays.add(BigDecimal.ONE);
-            } else if ("LEAVE".equals(daily.getDayStatus())) {
-                leaveDays = leaveDays.add(daily.getLeaveDays());
+            String raw = daily.getDayStatus();
+            int amCode = -1, pmCode = -1;
+            boolean isNewFormat = (raw != null && raw.startsWith("am:"));
+            if (isNewFormat) {
+                try {
+                    String[] parts = raw.split(",");
+                    amCode = Integer.parseInt(parts[0].split(":")[1]);
+                    pmCode = Integer.parseInt(parts[1].split(":")[1]);
+                } catch (Exception e) {}
             }
 
-            if ("LATE".equals(daily.getDayStatus())) lateCount++;
-            if ("EARLY_LEAVE".equals(daily.getDayStatus())) earlyLeaveCount++;
-            overtimeHours = overtimeHours.add(daily.getOvertimeHours());
+            if (isNewFormat && (amCode == 4 || pmCode == 4)) {
+                // v2.1: 请假 - 按 leave_days 计
+                leaveDays = leaveDays.add(daily.getLeaveDays() != null ? daily.getLeaveDays() : BigDecimal.ZERO);
+            } else if (isNewFormat) {
+                // v2.1: 解析 am/pm 码
+                boolean amOk = (amCode == 0 || amCode == 1);
+                boolean pmOk = (pmCode == 0 || pmCode == 2);
+                if (amOk && pmOk) actualAttendDays = actualAttendDays.add(BigDecimal.ONE);
+                else if (amOk || pmOk) actualAttendDays = actualAttendDays.add(BigDecimal.valueOf(0.5));
+                if (amCode == 1) lateCount++;
+                if (pmCode == 2) earlyLeaveCount++;
+                if (amCode == 3) absentDays = absentDays.add(BigDecimal.valueOf(0.5));
+                if (pmCode == 3) absentDays = absentDays.add(BigDecimal.valueOf(0.5));
+            } else {
+                // 旧格式兼容
+                if ("NORMAL".equals(raw) || "LATE".equals(raw) || "EARLY_LEAVE".equals(raw)) {
+                    actualAttendDays = actualAttendDays.add(BigDecimal.ONE);
+                } else if ("ABSENT_HALF".equals(raw)) {
+                    actualAttendDays = actualAttendDays.add(BigDecimal.valueOf(0.5));
+                    absentDays = absentDays.add(BigDecimal.valueOf(0.5));
+                } else if ("ABSENT".equals(raw)) {
+                    absentDays = absentDays.add(BigDecimal.ONE);
+                } else if ("LEAVE".equals(raw)) {
+                    leaveDays = leaveDays.add(daily.getLeaveDays());
+                }
+                if ("LATE".equals(raw)) lateCount++;
+                if ("EARLY_LEAVE".equals(raw)) earlyLeaveCount++;
+            }
+            overtimeHours = overtimeHours.add(daily.getOvertimeHours() != null ? daily.getOvertimeHours() : BigDecimal.ZERO);
         }
 
         monthly.setShouldAttendDays(shouldAttendDays);
@@ -533,7 +605,7 @@ public class SummaryService {
             } else if (leaveDateSet.contains(current)) {
                 // 无汇总但有已审批请假 → 标记为 LEAVE
                 day.setDayStatus("LEAVE");
-            } else if (!current.isAfter(today)
+            } else if (current.isBefore(today)
                     && workdaySet.contains(current.getDayOfWeek().getValue())
                     && !holidayDates.contains(current)) {
                 // Fix3: 已过去的工作日，无汇总、无请假 → 缺勤

@@ -46,6 +46,8 @@ public class ApprovalEventListener {
     private final com.company.hrms.attendance.mapper.AttendanceMonthlySummaryMapper attendanceMonthlySummaryMapper;
     private final com.company.hrms.attendance.mapper.BalanceChangeLogMapper balanceChangeLogMapper;
     private final com.company.hrms.attendance.mapper.AttendanceMonthLockMapper attendanceMonthLockMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceGroupMapper attendanceGroupMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper attendanceGroupMemberMapper;
 
     @EventListener
     @Transactional(rollbackFor = Exception.class)
@@ -183,7 +185,20 @@ public class ApprovalEventListener {
             java.math.BigDecimal totalLeaveDays = java.math.BigDecimal.ZERO;
             for (AttendanceDailySummary ds : dailyList) {
                 shouldAttendDays++;
-                if ("LEAVE".equals(ds.getDayStatus())) {
+                // v2.1: 解析 am:x,pm:y 格式判断是否请假
+                boolean isLeave = false;
+                String raw2 = ds.getDayStatus();
+                if (raw2 != null && raw2.startsWith("am:")) {
+                    try {
+                        String[] p = raw2.split(",");
+                        int ac = Integer.parseInt(p[0].split(":")[1]);
+                        int pc = Integer.parseInt(p[1].split(":")[1]);
+                        isLeave = (ac == 4 || pc == 4);
+                    } catch (Exception e) {}
+                } else {
+                    isLeave = "LEAVE".equals(raw2);
+                }
+                if (isLeave) {
                     totalLeaveDays = totalLeaveDays.add(ds.getLeaveDays() != null ? ds.getLeaveDays() : java.math.BigDecimal.ZERO);
                 }
             }
@@ -281,20 +296,43 @@ public class ApprovalEventListener {
                 } catch (Exception e) { /* 解析失败用默认值 */ }
             }
 
-            // 仅重算被补卡的槽位
+            // 仅重算被补卡的槽位（读取考勤组配置，支持弹性班）
             java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
             java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
             int lateThreshold = 15;
+            boolean isFlexible = false;
+            java.time.LocalTime flexEarliest = null;
+            java.time.LocalTime flexLatest = null;
+            try {
+                com.company.hrms.attendance.entity.AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(empId);
+                if (agm != null) {
+                    com.company.hrms.attendance.entity.AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
+                    if (grp != null) {
+                        if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
+                        if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
+                        if (grp.getLateThresholdMinutes() != null) lateThreshold = grp.getLateThresholdMinutes();
+                        if ("FLEXIBLE".equals(grp.getShiftType())) {
+                            isFlexible = true;
+                            flexEarliest = grp.getFlexStartEarliest();
+                            flexLatest = grp.getFlexStartLatest();
+                        }
+                    }
+                }
+            } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
 
             if ("IN".equals(punchType)) {
-                // 补上班卡 → 仅重算 AM 槽位
+                // 补上班卡 → 仅重算 AM 槽位（支持弹性班）
                 java.time.LocalTime t = sup.getMakeupTime().toLocalTime();
-                if (!t.isAfter(workStart)) {
-                    amCode = 0;
-                } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
-                    amCode = 1;
+                if (isFlexible && flexEarliest != null && flexLatest != null) {
+                    amCode = (!t.isBefore(flexEarliest) && !t.isAfter(flexLatest)) ? 0 : 1;
                 } else {
-                    amCode = 3;
+                    if (!t.isAfter(workStart)) {
+                        amCode = 0;
+                    } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
+                        amCode = 1;
+                    } else {
+                        amCode = 3;
+                    }
                 }
                 // PM 保持不变
             } else {
@@ -415,6 +453,11 @@ public class ApprovalEventListener {
                         if (lb.getRemainingQuota() != null) lb.setRemainingQuota(after);
                         lb.setBalance(after);
                         if (lb.getTotalQuota() != null) lb.setTotalQuota(lb.getTotalQuota().add(compDays));
+                        // 更新过期日期为最新（取原过期和新过期中的较晚值）
+                        java.time.LocalDate newExpire = overtimeDate.withDayOfMonth(overtimeDate.lengthOfMonth()).plusMonths(1);
+                        if (lb.getExpireDate() == null || newExpire.isAfter(lb.getExpireDate())) {
+                            lb.setExpireDate(newExpire);
+                        }
                         lb.setVersion(lb.getVersion() != null ? lb.getVersion() + 1 : 1);
                         leaveBalanceMapper.updateById(lb);
                     }

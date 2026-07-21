@@ -85,7 +85,7 @@ const LoginPage: React.FC = () => {
     startTokenRefresher();
     startIdleDetector();
 
-    // 管理员优先进管理后台，普通员工进门户
+    // 管理端角色或管理端权限码进后台；仅普通员工进门户
     const home = getHomePath(currentUser.roles, currentUser.permissions);
     if (mustChangePassword || currentUser.mustChangePassword) {
       setChangePwdOpen(true);

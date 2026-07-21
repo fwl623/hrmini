@@ -82,6 +82,16 @@ public class PunchController {
     }
 
     /**
+     * 昨日打卡概览（管理端）
+     * GET /api/v1/attendance/punch/yesterday-overview
+     */
+    @GetMapping("/punch/yesterday-overview")
+    public Result<TodayPunchVO> yesterdayOverview() {
+        AttendanceAccessGuard.requireHrOrDeptMgr();
+        return Result.success(punchService.getYesterdayOverview());
+    }
+
+    /**
      * 补卡申请
      * POST /api/v1/attendance/punch-fix
      *

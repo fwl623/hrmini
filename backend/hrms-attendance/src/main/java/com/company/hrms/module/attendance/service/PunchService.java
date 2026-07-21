@@ -329,6 +329,60 @@ public class PunchService {
                 missingInCount + missingOutCount);
     }
 
+    /**
+     * 昨日打卡概览（全员工聚合，管理端使用）
+     */
+    public TodayPunchVO getYesterdayOverview() {
+        LocalDate yesterday = LocalDate.now(CST).minusDays(1);
+
+        // 所有在职员工（试用期+正式）
+        List<com.company.hrms.employee.entity.Employee> employees = employeeMapper.search(
+                null, null, null, java.util.List.of(10, 20), null, null, null, "");
+        long total = employees.size();
+
+        // 查昨天日汇总
+        java.util.Map<Long, com.company.hrms.attendance.entity.AttendanceDailySummary> summaryMap = new java.util.HashMap<>();
+        attendanceDailySummaryMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.AttendanceDailySummary>()
+                        .eq(com.company.hrms.attendance.entity.AttendanceDailySummary::getSummaryDate, yesterday))
+                .forEach(ds -> summaryMap.put(ds.getEmployeeId(), ds));
+
+        long clocked = 0, late = 0, early = 0, absent = 0;
+        for (com.company.hrms.employee.entity.Employee emp : employees) {
+            com.company.hrms.attendance.entity.AttendanceDailySummary ds = summaryMap.get(emp.getId());
+            if (ds == null) {
+                absent++;
+                continue;
+            }
+            String raw = ds.getDayStatus();
+            if (raw != null && raw.startsWith("am:")) {
+                try {
+                    String[] parts = raw.split(",");
+                    int am = Integer.parseInt(parts[0].split(":")[1]);
+                    int pm = Integer.parseInt(parts[1].split(":")[1]);
+                    if (am == 4 || pm == 4) continue; // 请假不计入统计
+                    boolean hasIn = (am != 5);
+                    boolean hasOut = (pm != 5);
+                    if (am == 3 || pm == 3) { /* 旷工也算有打卡记录 */ }
+                    if (hasIn || hasOut) clocked++;
+                    if (am == 1) late++;
+                    if (pm == 2) early++;
+                    if (am == 3 || pm == 3) absent++;
+                    else if (am == 5 && pm == 5) absent++;
+                } catch (Exception e) {}
+            } else {
+                // 旧格式：有打卡记录的都算已打卡
+                boolean hasRecord = ("NORMAL".equals(raw) || "LATE".equals(raw) || "EARLY_LEAVE".equals(raw)
+                        || "ABSENT_HALF".equals(raw) || "MISSING_IN".equals(raw) || "MISSING_OUT".equals(raw));
+                if (hasRecord) clocked++;
+                if ("LATE".equals(raw)) late++;
+                if ("EARLY_LEAVE".equals(raw)) early++;
+                if ("ABSENT".equals(raw)) absent++;
+            }
+        }
+        return new TodayPunchVO(clocked, total, late, early, absent);
+    }
+
     // ========== 打卡记录分页 ==========
 
     /**
@@ -375,13 +429,14 @@ public class PunchService {
             vo.setEmployeeId(first.getEmployeeId());
             vo.setPunchDate(first.getPunchDate() != null ? first.getPunchDate().toString() : null);
             vo.setSource(first.getSource());
-            vo.setClientIp(first.getClientIp());
-            vo.setGpsJson(first.getGpsJson());
 
-            // 从 employee 表查询员工姓名和部门
+            // 从 employee 表查询员工姓名和部门（用 search 获取 JOIN 的部门名称）
             try {
-                com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(first.getEmployeeId());
-                if (emp != null) {
+                List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
+                        null, null, null, null, null, null, null,
+                        " AND e.id = " + first.getEmployeeId());
+                if (!empList.isEmpty()) {
+                    com.company.hrms.employee.entity.Employee emp = empList.get(0);
                     vo.setEmployeeName(emp.getName());
                     vo.setDepartmentName(emp.getDepartmentName());
                 } else {
@@ -566,9 +621,29 @@ public class PunchService {
             }
         } catch (Exception e) { log.warn("查询请假覆盖失败", e); }
 
+        // 读取员工考勤组配置（支持弹性班）
         java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
         java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
         int threshold = 15;
+        boolean isFlexible = false;
+        java.time.LocalTime flexEarliest = null;
+        java.time.LocalTime flexLatest = null;
+        try {
+            AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(employeeId);
+            if (agm != null) {
+                AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
+                if (grp != null) {
+                    if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
+                    if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
+                    if (grp.getLateThresholdMinutes() != null) threshold = grp.getLateThresholdMinutes();
+                    if ("FLEXIBLE".equals(grp.getShiftType())) {
+                        isFlexible = true;
+                        flexEarliest = grp.getFlexStartEarliest();
+                        flexLatest = grp.getFlexStartLatest();
+                    }
+                }
+            }
+        } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
         int amCode = 5, pmCode = 5;
         if (amLeave) amCode = 4;
         else {
@@ -576,9 +651,13 @@ public class PunchService {
                     .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime)).orElse(null);
             if (inRec != null) {
                 java.time.LocalTime t = inRec.getPunchTime().toLocalTime();
-                if (!t.isAfter(workStart)) amCode = 0;
-                else if (!t.isAfter(workStart.plusMinutes(threshold))) amCode = 1;
-                else amCode = 3;
+                if (isFlexible && flexEarliest != null && flexLatest != null) {
+                    amCode = (!t.isBefore(flexEarliest) && !t.isAfter(flexLatest)) ? 0 : 1;
+                } else {
+                    if (!t.isAfter(workStart)) amCode = 0;
+                    else if (!t.isAfter(workStart.plusMinutes(threshold))) amCode = 1;
+                    else amCode = 3;
+                }
             }
         }
         if (pmLeave) pmCode = 4;

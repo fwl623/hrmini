@@ -13,21 +13,24 @@ import { stopIdleDetector } from '@/utils/idleDetector';
 import { getAccessToken, clearTokens } from '@/utils/token';
 import { stopTokenRefresher } from '@/utils/tokenRefresher';
 
-/** 规范化角色列表（兼容异常返回） */
+/** 规范化角色列表（兼容异常返回；统一大写便于比对） */
 export function normalizeRoles(roles: unknown): string[] {
   if (!Array.isArray(roles)) {
     return [];
   }
-  return roles.map((r) => String(r)).filter(Boolean);
+  return roles
+    .map((r) => String(r).trim().toUpperCase())
+    .filter(Boolean);
 }
 
 /**
  * 登录后首页：
- * - 有管理端角色，或被分配了管理端权限码 → 管理后台工作台
+ * - 有管理端角色（含部门经理），或被分配了管理端权限码 → 管理后台工作台
  * - 仅普通员工（无管理端权限）→ 员工门户
  */
 export function getHomePath(roles: string[] = [], permissions: string[] = []): string {
   const list = normalizeRoles(roles);
+  // 部门经理等管理端角色一律进后台（勿进门户）；ADMIN_ROLES 已含 DEPT_MANAGER
   const hasAdminRole = list.some((role) => ADMIN_ROLES.includes(role as RoleCode));
   if (hasAdminRole || hasAdminEntryPermission(permissions)) {
     return '/admin/workbench';

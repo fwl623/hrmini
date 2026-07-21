@@ -215,7 +215,7 @@ const AdminLayout: React.FC = () => {
             key: 'profile',
             icon: <IdcardOutlined />,
             label: '个人中心',
-            onClick: () => history.push('/portal/profile'),
+            onClick: () => history.push('/admin/personal/profile'),
           } as NonNullable<MenuProps['items']>[number],
           { type: 'divider' as const },
         ]),

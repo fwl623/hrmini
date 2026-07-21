@@ -2,7 +2,6 @@ import React, { useRef, useState } from 'react';
 import {
   Card,
   Input,
-  Select,
   DatePicker,
   Space,
   Tag,
@@ -100,7 +99,6 @@ const PunchRecordPage: React.FC = () => {
       ),
     },
     { title: '打卡方式', dataIndex: 'source', width: 100 },
-    { title: 'IP 地址', dataIndex: 'clientIp', width: 130 },
   ];
 
   // ---------- 渲染 ----------
@@ -120,17 +118,6 @@ const PunchRecordPage: React.FC = () => {
           <DatePicker.RangePicker
             placeholder={['开始日期', '结束日期']}
             style={{ width: 240 }}
-          />
-        </Form.Item>
-        <Form.Item name="punchType" label="打卡类型">
-          <Select
-            allowClear
-            placeholder="全部"
-            style={{ width: 120 }}
-            options={[
-              { label: '上班打卡', value: 'IN' },
-              { label: '下班打卡', value: 'OUT' },
-            ]}
           />
         </Form.Item>
         <Form.Item>
