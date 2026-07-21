@@ -283,10 +283,13 @@ public class ApprovalEventListener {
                 } catch (Exception e) { /* 解析失败用默认值 */ }
             }
 
-            // 仅重算被补卡的槽位（读取考勤组时间，不再硬编码09:00/18:00）
+            // 仅重算被补卡的槽位（读取考勤组配置，支持弹性班）
             java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
             java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
             int lateThreshold = 15;
+            boolean isFlexible = false;
+            java.time.LocalTime flexEarliest = null;
+            java.time.LocalTime flexLatest = null;
             try {
                 com.company.hrms.attendance.entity.AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(empId);
                 if (agm != null) {
@@ -295,19 +298,28 @@ public class ApprovalEventListener {
                         if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
                         if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
                         if (grp.getLateThresholdMinutes() != null) lateThreshold = grp.getLateThresholdMinutes();
+                        if ("FLEXIBLE".equals(grp.getShiftType())) {
+                            isFlexible = true;
+                            flexEarliest = grp.getFlexStartEarliest();
+                            flexLatest = grp.getFlexStartLatest();
+                        }
                     }
                 }
-            } catch (Exception e) { log.warn("读取考勤组时间失败", e); }
+            } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
 
             if ("IN".equals(punchType)) {
-                // 补上班卡 → 仅重算 AM 槽位
+                // 补上班卡 → 仅重算 AM 槽位（支持弹性班）
                 java.time.LocalTime t = sup.getMakeupTime().toLocalTime();
-                if (!t.isAfter(workStart)) {
-                    amCode = 0;
-                } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
-                    amCode = 1;
+                if (isFlexible && flexEarliest != null && flexLatest != null) {
+                    amCode = (!t.isBefore(flexEarliest) && !t.isAfter(flexLatest)) ? 0 : 1;
                 } else {
-                    amCode = 3;
+                    if (!t.isAfter(workStart)) {
+                        amCode = 0;
+                    } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
+                        amCode = 1;
+                    } else {
+                        amCode = 3;
+                    }
                 }
                 // PM 保持不变
             } else {

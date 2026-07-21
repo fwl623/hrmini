@@ -232,10 +232,13 @@ public class SummaryService {
                     .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
                     .orElse(null);
 
-            // 读取员工考勤组时间（v2.1: 不再硬编码09:00/18:00）
+            // 读取员工考勤组配置
             java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
             java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
             int lateThreshold = 15;
+            boolean isFlexible = false;
+            java.time.LocalTime flexEarliest = null;
+            java.time.LocalTime flexLatest = null;
             try {
                 com.company.hrms.attendance.entity.AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(empId);
                 if (agm != null) {
@@ -244,24 +247,35 @@ public class SummaryService {
                         if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
                         if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
                         if (grp.getLateThresholdMinutes() != null) lateThreshold = grp.getLateThresholdMinutes();
+                        if ("FLEXIBLE".equals(grp.getShiftType())) {
+                            isFlexible = true;
+                            flexEarliest = grp.getFlexStartEarliest();
+                            flexLatest = grp.getFlexStartLatest();
+                        }
                     }
                 }
-            } catch (Exception e) { log.warn("读取考勤组时间失败", e); }
+            } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
 
-            // 3. AM 槽位判定
+            // 3. AM 槽位判定（支持弹性班）
             int amCode;
             if (amLeave) {
-                amCode = 4; // 请假
+                amCode = 4;
             } else if (inRecord == null) {
-                amCode = 5; // 缺卡
+                amCode = 5;
             } else {
                 java.time.LocalTime t = inRecord.getPunchTime().toLocalTime();
-                if (!t.isAfter(workStart)) {
-                    amCode = 0; // 正常
-                } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
-                    amCode = 1; // 迟到
+                if (isFlexible && flexEarliest != null && flexLatest != null) {
+                    // 弹性班：在弹性范围内→正常，否则→迟到
+                    amCode = (!t.isBefore(flexEarliest) && !t.isAfter(flexLatest)) ? 0 : 1;
                 } else {
-                    amCode = 3; // 旷工
+                    // 固定班（或未配置弹性范围）：按基准时间+阈值判定
+                    if (!t.isAfter(workStart)) {
+                        amCode = 0;
+                    } else if (!t.isAfter(workStart.plusMinutes(lateThreshold))) {
+                        amCode = 1;
+                    } else {
+                        amCode = 3;
+                    }
                 }
             }
 

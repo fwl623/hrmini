@@ -16,6 +16,5 @@ public class PunchRecordVO {
     private String clockOutTime;
     private String clockOutStatus;
     private String source;
-    private String clientIp;
     private String gpsJson;
 }

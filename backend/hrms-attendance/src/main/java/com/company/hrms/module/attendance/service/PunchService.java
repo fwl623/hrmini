@@ -375,13 +375,15 @@ public class PunchService {
             vo.setEmployeeId(first.getEmployeeId());
             vo.setPunchDate(first.getPunchDate() != null ? first.getPunchDate().toString() : null);
             vo.setSource(first.getSource());
-            vo.setClientIp(first.getClientIp());
             vo.setGpsJson(first.getGpsJson());
 
-            // 从 employee 表查询员工姓名和部门
+            // 从 employee 表查询员工姓名和部门（用 search 获取 JOIN 的部门名称）
             try {
-                com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(first.getEmployeeId());
-                if (emp != null) {
+                List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
+                        null, null, null, null, null, null, null,
+                        " AND e.id = " + first.getEmployeeId());
+                if (!empList.isEmpty()) {
+                    com.company.hrms.employee.entity.Employee emp = empList.get(0);
                     vo.setEmployeeName(emp.getName());
                     vo.setDepartmentName(emp.getDepartmentName());
                 } else {
@@ -566,10 +568,13 @@ public class PunchService {
             }
         } catch (Exception e) { log.warn("查询请假覆盖失败", e); }
 
-        // 读取员工考勤组时间（v2.1: 不再硬编码09:00/18:00）
+        // 读取员工考勤组配置（支持弹性班）
         java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
         java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
         int threshold = 15;
+        boolean isFlexible = false;
+        java.time.LocalTime flexEarliest = null;
+        java.time.LocalTime flexLatest = null;
         try {
             AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(employeeId);
             if (agm != null) {
@@ -578,9 +583,14 @@ public class PunchService {
                     if (grp.getWorkStartTime() != null) workStart = grp.getWorkStartTime();
                     if (grp.getWorkEndTime() != null) workEnd = grp.getWorkEndTime();
                     if (grp.getLateThresholdMinutes() != null) threshold = grp.getLateThresholdMinutes();
+                    if ("FLEXIBLE".equals(grp.getShiftType())) {
+                        isFlexible = true;
+                        flexEarliest = grp.getFlexStartEarliest();
+                        flexLatest = grp.getFlexStartLatest();
+                    }
                 }
             }
-        } catch (Exception e) { log.warn("读取考勤组时间失败", e); }
+        } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
         int amCode = 5, pmCode = 5;
         if (amLeave) amCode = 4;
         else {
@@ -588,9 +598,13 @@ public class PunchService {
                     .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime)).orElse(null);
             if (inRec != null) {
                 java.time.LocalTime t = inRec.getPunchTime().toLocalTime();
-                if (!t.isAfter(workStart)) amCode = 0;
-                else if (!t.isAfter(workStart.plusMinutes(threshold))) amCode = 1;
-                else amCode = 3;
+                if (isFlexible && flexEarliest != null && flexLatest != null) {
+                    amCode = (!t.isBefore(flexEarliest) && !t.isAfter(flexLatest)) ? 0 : 1;
+                } else {
+                    if (!t.isAfter(workStart)) amCode = 0;
+                    else if (!t.isAfter(workStart.plusMinutes(threshold))) amCode = 1;
+                    else amCode = 3;
+                }
             }
         }
         if (pmLeave) pmCode = 4;

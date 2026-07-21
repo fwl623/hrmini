@@ -82,14 +82,6 @@ public class AttendanceRecord {
     private String source;
 
     /**
-     * 客户端 IP 地址
-     * <p>记录打卡时员工所使用的网络 IP 地址，用于地理定位和异常检测</p>
-     * <p>格式：IPv4 点分十进制（如 "192.168.1.100"）或 IPv6 字符串</p>
-     */
-    @TableField("client_ip")
-    private String clientIp;
-
-    /**
      * GPS 地理位置坐标（JSON 格式）
      * <p>记录打卡时设备 GPS 定位信息，用于考勤范围校验</p>
      * <p>预期 JSON 结构：</p>
