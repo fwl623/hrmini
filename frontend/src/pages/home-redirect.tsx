@@ -20,8 +20,9 @@ const HomeRedirect: React.FC = () => {
         return;
       }
       const cachedRoles = initialState?.currentUser?.roles;
+      const cachedPermissions = initialState?.currentUser?.permissions;
       if (cachedRoles?.length) {
-        history.replace(getHomePath(cachedRoles));
+        history.replace(getHomePath(cachedRoles, cachedPermissions));
         return;
       }
       try {
@@ -30,7 +31,7 @@ const HomeRedirect: React.FC = () => {
         if (res.code === 0 && res.data) {
           const currentUser = toCurrentUser(res.data);
           await setInitialState((s: API.InitialState | undefined) => ({ ...s, currentUser }));
-          history.replace(getHomePath(currentUser.roles));
+          history.replace(getHomePath(currentUser.roles, currentUser.permissions));
           return;
         }
       } catch {

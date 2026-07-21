@@ -39,7 +39,7 @@ const LoginPage: React.FC = () => {
       try {
         const profileRes = await getProfile();
         if (profileRes.code === 0 && profileRes.data) {
-          history.replace(getHomePath(profileRes.data.roles));
+          history.replace(getHomePath(profileRes.data.roles, profileRes.data.permissions));
         }
       } catch {
         // token 无效则留在登录页
@@ -86,7 +86,7 @@ const LoginPage: React.FC = () => {
     startIdleDetector();
 
     // 管理员优先进管理后台，普通员工进门户
-    const home = getHomePath(currentUser.roles);
+    const home = getHomePath(currentUser.roles, currentUser.permissions);
     if (mustChangePassword || currentUser.mustChangePassword) {
       setChangePwdOpen(true);
       return;

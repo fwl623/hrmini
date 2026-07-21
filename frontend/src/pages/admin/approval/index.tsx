@@ -8,6 +8,7 @@ import {
   Select,
   Space,
   Statistic,
+  Steps,
   Table,
   Tabs,
   Typography,
@@ -24,9 +25,11 @@ import {
   approvalActionLabel,
   employmentTypeLabel,
   localizeTimelineText,
+  nodeStateLabel,
   processTypeLabel,
   resignationReasonLabel,
   resignationTypeLabel,
+  taskStatusLabel,
 } from '@/constants/workflow';
 import {
   fetchMyInstances,
@@ -117,6 +120,7 @@ export default function ApprovalCenterPage() {
             status: inst?.status || record.status,
           },
           businessDetail: inst?.businessDetail ?? {},
+          nodes: inst?.nodes ?? [],
           timeline: inst?.timeline ?? [],
           actions: [],
         };
@@ -528,6 +532,48 @@ export default function ApprovalCenterPage() {
               </Descriptions>
             ) : null}
 
+            {(detail?.nodes?.length ?? 0) > 0 ? (
+              <div>
+                <Typography.Title level={5}>审批流程</Typography.Title>
+                <Steps
+                  direction="vertical"
+                  size="small"
+                  current={Math.max(
+                    0,
+                    (detail?.nodes ?? []).findIndex((n) => n.state === 'current'),
+                  )}
+                  items={(detail?.nodes ?? []).map((n) => {
+                    const who = n.actualAssigneeName
+                      ? `原审批人 ${n.assigneeName || '-'}，已转交 ${n.actualAssigneeName}`
+                      : n.assigneeName
+                        ? `审批人：${n.assigneeName}`
+                        : '审批人：待解析';
+                    const st = n.taskStatus
+                      ? `${nodeStateLabel(n.state)} · ${taskStatusLabel(n.taskStatus)}`
+                      : nodeStateLabel(n.state);
+                    return {
+                      title: n.label,
+                      description: (
+                        <Space direction="vertical" size={0}>
+                          <Typography.Text type="secondary">{who}</Typography.Text>
+                          <Typography.Text type="secondary">{st}</Typography.Text>
+                        </Space>
+                      ),
+                      status:
+                        n.state === 'done'
+                          ? 'finish'
+                          : n.state === 'current'
+                            ? 'process'
+                            : n.state === 'cancelled'
+                              ? 'error'
+                              : 'wait',
+                    };
+                  })}
+                />
+              </div>
+            ) : null}
+
+            <Typography.Title level={5}>审批动态</Typography.Title>
             <ApprovalTimeline
               nodes={
                 timelineNodes.length > 0

@@ -19,4 +19,10 @@ public interface SysUserRoleMapper {
 
     @Select("SELECT user_id FROM sys_user_role WHERE role_id = #{roleId}")
     List<Long> selectUserIdsByRoleId(@Param("roleId") Long roleId);
+
+    @Select("SELECT COUNT(1) FROM sys_user_role WHERE user_id = #{userId} AND role_id = #{roleId}")
+    int countByUserIdAndRoleId(@Param("userId") Long userId, @Param("roleId") Long roleId);
+
+    @Delete("DELETE FROM sys_user_role WHERE user_id = #{userId} AND role_id = #{roleId}")
+    int deleteByUserIdAndRoleId(@Param("userId") Long userId, @Param("roleId") Long roleId);
 }

@@ -45,8 +45,8 @@ import {
   type DeptTreeNode,
   type PositionVO,
 } from '@/services/org';
-import { getEmployeeList, type EmployeeItem } from '@/services/employee';
-import { approvalActionLabel, localizeTimelineText } from '@/constants/workflow';
+import { getEmployeeDetail, getEmployeeList, type EmployeeItem } from '@/services/employee';
+import { approvalActionLabel, localizeTimelineText, nodeStateLabel, taskStatusLabel } from '@/constants/workflow';
 
 interface TreeOption {
   title: string;
@@ -54,12 +54,50 @@ interface TreeOption {
   children?: TreeOption[];
 }
 
+type ManagerOption = { label: string; value: number };
+
 function toDeptTreeOptions(nodes: DeptTreeNode[]): TreeOption[] {
   return nodes.map((n) => ({
     title: n.name,
     value: n.id,
     children: n.children?.length ? toDeptTreeOptions(n.children) : undefined,
   }));
+}
+
+function flattenDeptNodes(nodes: DeptTreeNode[]): Map<number, DeptTreeNode> {
+  const map = new Map<number, DeptTreeNode>();
+  const walk = (list: DeptTreeNode[]) => {
+    for (const n of list) {
+      map.set(n.id, n);
+      if (n.children?.length) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return map;
+}
+
+/** 与后端 resolveDeptHeadEmployeeId 一致：本部门无负责人则沿父部门向上找 */
+function resolveDeptHead(
+  departmentId: number,
+  deptById: Map<number, DeptTreeNode>,
+): { employeeId: number; name?: string } | null {
+  const visited = new Set<number>();
+  let cur: number | null | undefined = departmentId;
+  while (cur != null && !visited.has(cur)) {
+    visited.add(cur);
+    const node = deptById.get(cur);
+    if (!node) break;
+    if (node.headEmployeeId) {
+      return { employeeId: node.headEmployeeId, name: node.manager ?? undefined };
+    }
+    cur = node.parentId;
+  }
+  return null;
+}
+
+function managerLabel(name: string, empNo?: string | null, isHead?: boolean) {
+  const base = `${name}${empNo ? `（${empNo}）` : ''}`;
+  return isHead ? `${base} · 部门负责人` : base;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -119,14 +157,25 @@ export default function OnboardingPage() {
   const [progressRow, setProgressRow] = useState<OnboardingItem | null>(null);
   const [progressStatus, setProgressStatus] = useState('');
   const [progressCurrent, setProgressCurrent] = useState('');
-  const [progressNodes, setProgressNodes] = useState<{ order: number; label: string; state: string }[]>([]);
+  const [progressNodes, setProgressNodes] = useState<
+    {
+      order: number;
+      label: string;
+      state: string;
+      assigneeName?: string;
+      actualAssigneeName?: string;
+      taskStatus?: string;
+    }[]
+  >([]);
   const [progressTimeline, setProgressTimeline] = useState<ApprovalTimelineItem[]>([]);
   const [form] = Form.useForm();
   const [dateForm] = Form.useForm();
   const [deptTreeOptions, setDeptTreeOptions] = useState<TreeOption[]>([]);
+  const [deptById, setDeptById] = useState<Map<number, DeptTreeNode>>(() => new Map());
   const [positions, setPositions] = useState<PositionVO[]>([]);
-  const [managerOptions, setManagerOptions] = useState<{ label: string; value: number }[]>([]);
+  const [managerOptions, setManagerOptions] = useState<ManagerOption[]>([]);
   const departmentId = Form.useWatch('departmentId', form);
+  const managerId = Form.useWatch('managerId', form);
 
   const positionOptions = useMemo(() => {
     const filtered = departmentId
@@ -138,29 +187,77 @@ export default function OnboardingPage() {
     }));
   }, [positions, departmentId]);
 
-  const loadManagers = useCallback(async (deptId?: number) => {
-    if (!deptId) {
-      setManagerOptions([]);
-      return;
-    }
-    try {
-      const res = await getEmployeeList({
-        departmentIds: String(deptId),
-        employmentStatus: 'probation,regular',
-        page: 1,
-        pageSize: 100,
-      });
-      const list = (res.data?.list ?? []) as EmployeeItem[];
-      setManagerOptions(
-        list.map((e) => ({
-          label: `${e.name}${e.empNo ? `（${e.empNo}）` : ''}`,
-          value: e.employeeId,
-        })),
+  const loadManagers = useCallback(
+    async (deptId?: number, preferredManagerId?: number) => {
+      if (!deptId) {
+        setManagerOptions([]);
+        return;
+      }
+      const head = resolveDeptHead(deptId, deptById);
+      const optionMap = new Map<number, ManagerOption>();
+
+      // 部门负责人可能不在「本部门花名册」里（挂在上级部门），必须单独并入，否则只能选到平级同事
+      if (head) {
+        optionMap.set(head.employeeId, {
+          value: head.employeeId,
+          label: head.name
+            ? managerLabel(head.name, null, true)
+            : `员工#${head.employeeId} · 部门负责人`,
+        });
+      }
+
+      try {
+        const res = await getEmployeeList({
+          departmentIds: String(deptId),
+          employmentStatus: 'probation,regular',
+          page: 1,
+          pageSize: 100,
+        });
+        const list = (res.data?.list ?? []) as EmployeeItem[];
+        for (const e of list) {
+          const isHead = head?.employeeId === e.employeeId;
+          optionMap.set(e.employeeId, {
+            value: e.employeeId,
+            label: managerLabel(e.name, e.empNo, isHead),
+          });
+        }
+      } catch {
+        message.warning('直属上级候选人加载不完整，已保留部门负责人选项');
+      }
+
+      const enrichIds = new Set<number>();
+      if (preferredManagerId) enrichIds.add(preferredManagerId);
+      if (head?.employeeId) enrichIds.add(head.employeeId);
+      await Promise.all(
+        [...enrichIds].map(async (id) => {
+          const current = optionMap.get(id);
+          // 已有工号展示则不必再拉详情；仅有「部门负责人」姓名或裸 id 时尽量补工号
+          if (current && /（.+）/.test(current.label) && !current.label.startsWith('员工#')) {
+            return;
+          }
+          try {
+            const detailRes = await getEmployeeDetail(id);
+            const d = detailRes.data;
+            if (!d) return;
+            optionMap.set(id, {
+              value: id,
+              label: managerLabel(d.name, d.empNo, head?.employeeId === id),
+            });
+          } catch {
+            // 详情接口无权限时保留部门树姓名兜底
+          }
+        }),
       );
-    } catch {
-      setManagerOptions([]);
-    }
-  }, []);
+
+      const opts = [...optionMap.values()].sort((a, b) => {
+        if (head && a.value === head.employeeId) return -1;
+        if (head && b.value === head.employeeId) return 1;
+        return a.label.localeCompare(b.label, 'zh');
+      });
+      setManagerOptions(opts);
+    },
+    [deptById],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,7 +283,9 @@ export default function OnboardingPage() {
           getDeptTree(),
           listPositions({ page: 1, pageSize: 200 }),
         ]);
-        setDeptTreeOptions(toDeptTreeOptions(deptRes.data ?? []));
+        const nodes = deptRes.data ?? [];
+        setDeptTreeOptions(toDeptTreeOptions(nodes));
+        setDeptById(flattenDeptNodes(nodes));
         setPositions(posRes.data?.list ?? []);
       } catch {
         message.warning('部门/职位选项加载失败，可稍后刷新重试');
@@ -195,8 +294,9 @@ export default function OnboardingPage() {
   }, []);
 
   useEffect(() => {
-    loadManagers(departmentId);
-  }, [departmentId, loadManagers]);
+    if (!open) return;
+    loadManagers(departmentId, managerId);
+  }, [open, departmentId, managerId, loadManagers]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -573,9 +673,10 @@ export default function OnboardingPage() {
               allowClear
               treeDefaultExpandAll
               style={{ width: '100%' }}
-              onChange={() => {
+              onChange={(deptId) => {
                 form.setFieldValue('positionId', undefined);
-                form.setFieldValue('managerId', undefined);
+                const head = typeof deptId === 'number' ? resolveDeptHead(deptId, deptById) : null;
+                form.setFieldValue('managerId', head?.employeeId);
               }}
             />
           </Form.Item>
@@ -606,7 +707,7 @@ export default function OnboardingPage() {
           <Form.Item
             name="managerId"
             label="直属上级"
-            extra="不选则默认取部门负责人"
+            extra="默认选中部门负责人；可改为其他在职员工。清空后提交仍由后端回填部门负责人"
           >
             <Select
               allowClear
@@ -720,10 +821,26 @@ export default function OnboardingPage() {
                   direction="vertical"
                   size="small"
                   current={currentStepIndex >= 0 ? currentStepIndex : progressNodes.length}
-                  items={progressNodes.map((n) => ({
-                    title: n.label,
-                    status: NODE_STATE_TO_STEP[n.state] || 'wait',
-                  }))}
+                  items={progressNodes.map((n) => {
+                    const who = n.actualAssigneeName
+                      ? `原审批人 ${n.assigneeName || '-'}，已转交 ${n.actualAssigneeName}`
+                      : n.assigneeName
+                        ? `审批人：${n.assigneeName}`
+                        : '审批人：待解析';
+                    const st = n.taskStatus
+                      ? `${nodeStateLabel(n.state)} · ${taskStatusLabel(n.taskStatus)}`
+                      : nodeStateLabel(n.state);
+                    return {
+                      title: n.label,
+                      description: (
+                        <Space direction="vertical" size={0}>
+                          <Typography.Text type="secondary">{who}</Typography.Text>
+                          <Typography.Text type="secondary">{st}</Typography.Text>
+                        </Space>
+                      ),
+                      status: NODE_STATE_TO_STEP[n.state] || 'wait',
+                    };
+                  })}
                 />
               ) : (
                 <Typography.Text type="secondary">暂无审批节点（可能尚未提交）</Typography.Text>
@@ -741,6 +858,11 @@ export default function OnboardingPage() {
                           {localizeTimelineText(t.displayText)
                             || `${t.assignee || '-'} · ${approvalActionLabel(t.action || t.node)}`}
                         </Typography.Text>
+                        {t.assignee && t.displayText ? (
+                          <div>
+                            <Typography.Text type="secondary">操作人：{t.assignee}</Typography.Text>
+                          </div>
+                        ) : null}
                         {t.comment ? (
                           <div>
                             <Typography.Text type="secondary">

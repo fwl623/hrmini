@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.module.auth.constant.AuthRedisKeys;
+import com.company.hrms.module.auth.service.DeptHeadRoleSyncService;
 import com.company.hrms.module.org.constant.OrgRedisKeys;
 import com.company.hrms.module.org.dto.CreateDeptRequest;
 import com.company.hrms.module.org.dto.DeptCanDeleteVO;
@@ -50,6 +51,7 @@ public class DeptServiceImpl implements DeptService {
     private final PositionMapper positionMapper;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final DeptHeadRoleSyncService deptHeadRoleSyncService;
 
     @Override
     public List<DeptTreeNodeVO> getTree() {
@@ -164,9 +166,7 @@ public class DeptServiceImpl implements DeptService {
         departmentMapper.updateById(dept);
 
         evictTreeCache();
-        if (request.getHeadEmployeeId() != null) {
-            invalidateHeadPerms(null, request.getHeadEmployeeId());
-        }
+        syncHeadRoles(null, request.getHeadEmployeeId());
         log.info("创建部门 id={}, code={}, level={}", dept.getId(), code, level);
         return Map.of("id", dept.getId());
     }
@@ -202,9 +202,7 @@ public class DeptServiceImpl implements DeptService {
 
         evictTreeCache();
         if (!Objects.equals(oldHeadId, newHeadId)) {
-            // DataScope 当前按 LoginUser.deptId（员工所属部门）生效，不读 head_employee_id；
-            // 仍清新旧负责人权限缓存，避免角色/展示层缓存与负责人字段脱节。
-            invalidateHeadPerms(oldHeadId, newHeadId);
+            syncHeadRoles(oldHeadId, newHeadId);
         }
         log.info("更新部门 id={}", id);
     }
@@ -221,8 +219,12 @@ public class DeptServiceImpl implements DeptService {
             throw new BusinessException(ErrorCode.DEPT_NOT_EMPTY);
         }
         freeDeptCode(dept);
+        Long headId = dept.getHeadEmployeeId();
         departmentMapper.deleteById(id);
         evictTreeCache();
+        if (headId != null) {
+            syncHeadRoles(headId, null);
+        }
         log.info("删除部门 id={}", id);
     }
 
@@ -254,9 +256,13 @@ public class DeptServiceImpl implements DeptService {
         }
 
         freeDeptCode(source);
+        Long sourceHeadId = source.getHeadEmployeeId();
         departmentMapper.deleteById(id);
         evictTreeCache();
         invalidateUserPerms(userIds);
+        if (sourceHeadId != null) {
+            syncHeadRoles(sourceHeadId, null);
+        }
         log.info("部门合并 source={} -> target={}", id, targetId);
     }
 
@@ -483,6 +489,26 @@ public class DeptServiceImpl implements DeptService {
         if (!keys.isEmpty()) {
             redisTemplate.delete(keys);
         }
+    }
+
+    /**
+     * 负责人变更：新负责人自动授 DEPT_MANAGER；旧负责人仅在不再负责任何部门且为自动授予时回收。
+     * DataScope 仍按员工所属部门生效，此处同步的是审批/菜单所需角色。
+     */
+    private void syncHeadRoles(Long oldHeadEmployeeId, Long newHeadEmployeeId) {
+        if (Objects.equals(oldHeadEmployeeId, newHeadEmployeeId)) {
+            return;
+        }
+        if (newHeadEmployeeId != null) {
+            Long newUserId = orgEmployeeMapper.selectUserIdByEmployeeId(newHeadEmployeeId);
+            deptHeadRoleSyncService.grantAutoDeptManager(newHeadEmployeeId, newUserId);
+        }
+        if (oldHeadEmployeeId != null) {
+            int remaining = departmentMapper.countByHeadEmployeeId(oldHeadEmployeeId);
+            Long oldUserId = orgEmployeeMapper.selectUserIdByEmployeeId(oldHeadEmployeeId);
+            deptHeadRoleSyncService.revokeAutoDeptManager(oldHeadEmployeeId, oldUserId, remaining);
+        }
+        invalidateHeadPerms(oldHeadEmployeeId, newHeadEmployeeId);
     }
 
     private void invalidateHeadPerms(Long oldHeadEmployeeId, Long newHeadEmployeeId) {

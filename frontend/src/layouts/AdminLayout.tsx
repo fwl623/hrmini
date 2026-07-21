@@ -43,6 +43,7 @@ const AdminLayout: React.FC = () => {
   const username = initialState?.currentUser?.username ?? '用户';
 
   // 对齐 PRD：财务专员仅工作台+薪资；财务经理另可见审批中心
+  // 系统管理员是功能账号，管理端不展示「个人中心」菜单（权限逻辑不变）
   const menuAccess: Record<string, boolean> = {
     workbench: true,
     org: access.canViewDept || access.canViewPosition,
@@ -53,10 +54,10 @@ const AdminLayout: React.FC = () => {
     attendance: access.canManageAttendance,
     payroll: access.canViewPayroll,
     system: access.canManageSystem,
-    ai: access.canUseAiAssistant,
+    ai: access.canUseAiAssistant || access.canManageAiKnowledge,
     aiKnowledge: access.canManageAiKnowledge,
-    portal: true,
-    portalPayslip: access.canViewOwnPayslip,
+    portal: !access.canSysAdmin,
+    portalPayslip: !access.canSysAdmin && access.canViewOwnPayslip,
   };
 
   const menuItems: MenuItem[] = useMemo(() => {
@@ -206,13 +207,17 @@ const AdminLayout: React.FC = () => {
   };
 
   const userMenu: MenuProps['items'] = [
-    {
-      key: 'profile',
-      icon: <IdcardOutlined />,
-      label: '个人中心',
-      onClick: () => history.push('/portal/profile'),
-    },
-    { type: 'divider' },
+    ...(access.canSysAdmin
+      ? []
+      : [
+          {
+            key: 'profile',
+            icon: <IdcardOutlined />,
+            label: '个人中心',
+            onClick: () => history.push('/portal/profile'),
+          } as NonNullable<MenuProps['items']>[number],
+          { type: 'divider' as const },
+        ]),
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: handleLogout },
   ];
 

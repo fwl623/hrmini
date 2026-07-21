@@ -37,6 +37,7 @@ public final class ApprovalDtos {
         private TaskBriefVO task;
         private InstanceBriefVO instance;
         private Map<String, Object> businessDetail;
+        private List<NodeProgressVO> nodes;
         private List<TimelineItemVO> timeline;
         private List<String> actions;
     }
@@ -112,6 +113,12 @@ public final class ApprovalDtos {
         private String label;
         /** pending / current / done / cancelled */
         private String state;
+        /** 配置/原审批人展示名 */
+        private String assigneeName;
+        /** 实际审批人（转交/委托后） */
+        private String actualAssigneeName;
+        /** 该节点任务状态：pending/approved/rejected/cancelled */
+        private String taskStatus;
     }
 
     @Data

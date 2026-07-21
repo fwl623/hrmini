@@ -32,6 +32,23 @@ export const TIMELINE_STATUS_LABEL: Record<string, string> = {
   error: '已驳回',
 };
 
+/** 流程节点 state → 中文 */
+export const NODE_STATE_LABEL: Record<string, string> = {
+  pending: '未到达',
+  current: '审批中',
+  done: '已完成',
+  cancelled: '已取消',
+};
+
+/** 任务状态 → 中文 */
+export const TASK_STATUS_LABEL: Record<string, string> = {
+  pending: '待审批',
+  approved: '已同意',
+  rejected: '已驳回',
+  cancelled: '已取消',
+  done: '已完成',
+};
+
 /** 离职类型 → 中文 */
 export const RESIGNATION_TYPE_LABEL: Record<string, string> = {
   resignation: '辞职',
@@ -72,6 +89,16 @@ export function approvalActionLabel(code?: string | null): string {
 export function timelineStatusLabel(code?: string | null): string {
   if (!code) return '-';
   return TIMELINE_STATUS_LABEL[code] || code;
+}
+
+export function nodeStateLabel(code?: string | null): string {
+  if (!code) return '-';
+  return NODE_STATE_LABEL[code] || code;
+}
+
+export function taskStatusLabel(code?: string | null): string {
+  if (!code) return '-';
+  return TASK_STATUS_LABEL[String(code).toLowerCase()] || code;
 }
 
 export function resignationTypeLabel(code?: string | null): string {

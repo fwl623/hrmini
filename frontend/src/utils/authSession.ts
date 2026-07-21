@@ -1,5 +1,11 @@
 import { history } from '@umijs/max';
-import { ADMIN_ROLES, ROLES, resolvePrimaryRole, type RoleCode } from '@/constants/roles';
+import {
+  ADMIN_ROLES,
+  ROLES,
+  hasAdminEntryPermission,
+  resolvePrimaryRole,
+  type RoleCode,
+} from '@/constants/roles';
 import { logout } from '@/services/auth';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { useUserStore } from '@/stores/userStore';
@@ -17,13 +23,13 @@ export function normalizeRoles(roles: unknown): string[] {
 
 /**
  * 登录后首页：
- * - 有管理端角色（SYS_ADMIN / HR / 主管 / 财务）→ 管理后台工作台
- * - 仅普通员工 → 员工门户
+ * - 有管理端角色，或被分配了管理端权限码 → 管理后台工作台
+ * - 仅普通员工（无管理端权限）→ 员工门户
  */
-export function getHomePath(roles: string[] = []): string {
+export function getHomePath(roles: string[] = [], permissions: string[] = []): string {
   const list = normalizeRoles(roles);
   const hasAdminRole = list.some((role) => ADMIN_ROLES.includes(role as RoleCode));
-  if (hasAdminRole) {
+  if (hasAdminRole || hasAdminEntryPermission(permissions)) {
     return '/admin/workbench';
   }
   const primary = resolvePrimaryRole(list);

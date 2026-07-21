@@ -18,4 +18,10 @@ public interface DepartmentMapper extends BaseMapper<Department> {
 
     @Select("SELECT COUNT(1) FROM department WHERE code = #{code} AND id <> #{excludeId}")
     int countByCodeExclude(@Param("code") String code, @Param("excludeId") Long excludeId);
+
+    @Select("""
+            SELECT COUNT(1) FROM department
+            WHERE head_employee_id = #{employeeId} AND deleted = 0
+            """)
+    int countByHeadEmployeeId(@Param("employeeId") Long employeeId);
 }

@@ -41,6 +41,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -334,6 +335,9 @@ public class DbApprovalService implements ApprovalEngineService {
 
         detail.setBusinessDetail(buildBusinessDetail(instance, display, task));
 
+        int current = instance.getCurrentNode() == null ? 1 : instance.getCurrentNode();
+        String instStatus = instance.getStatus() == null ? "" : instance.getStatus().toUpperCase(Locale.ROOT);
+        detail.setNodes(buildNodeProgress(instance, nodes, current, instStatus));
         detail.setTimeline(buildTimeline(instance.getId()));
         List<String> actions = new ArrayList<>();
         if ("PENDING".equalsIgnoreCase(task.getStatus())
@@ -394,8 +398,9 @@ public class DbApprovalService implements ApprovalEngineService {
             task.setActualAssigneeId(body.getTargetUserId());
             task.setComment(body.getComment());
             taskMapper.updateById(task);
+            String targetName = currentUserProvider.displayName(body.getTargetUserId());
             writeLog(instance.getId(), taskId, userId, "FORWARD", body.getComment(),
-                    "PENDING", "PENDING", "转交给用户" + body.getTargetUserId());
+                    "PENDING", "PENDING", "转交给" + targetName);
             notifyPublisher.scheduleRemind(taskId, body.getTargetUserId(), instance.getProcessType());
             return;
         }
@@ -533,25 +538,7 @@ public class DbApprovalService implements ApprovalEngineService {
         int current = instance.getCurrentNode() == null ? 1 : instance.getCurrentNode();
         String instStatus = instance.getStatus() == null ? "" : instance.getStatus().toUpperCase(Locale.ROOT);
 
-        List<ApprovalDtos.NodeProgressVO> nodes = new ArrayList<>();
-        for (ProcessNodeDef n : nodeDefs) {
-            ApprovalDtos.NodeProgressVO np = new ApprovalDtos.NodeProgressVO();
-            np.setOrder(n.getOrder());
-            np.setLabel(n.getLabel());
-            if ("CANCELLED".equals(instStatus) || "WITHDRAWN".equals(instStatus)) {
-                np.setState(n.getOrder() < current ? "done" : "cancelled");
-            } else if ("APPROVED".equals(instStatus) || "COMPLETED".equals(instStatus)) {
-                np.setState("done");
-            } else if ("REJECTED".equals(instStatus)) {
-                np.setState(n.getOrder() < current ? "done" : (n.getOrder() == current ? "current" : "pending"));
-            } else {
-                // PENDING
-                if (n.getOrder() < current) np.setState("done");
-                else if (n.getOrder() == current) np.setState("current");
-                else np.setState("pending");
-            }
-            nodes.add(np);
-        }
+        List<ApprovalDtos.NodeProgressVO> nodes = buildNodeProgress(instance, nodeDefs, current, instStatus);
 
         ApprovalDtos.InstanceDetailVO vo = new ApprovalDtos.InstanceDetailVO();
         vo.setInstanceId(instance.getId());
@@ -746,9 +733,75 @@ public class DbApprovalService implements ApprovalEngineService {
                     t.setAction(l.getAction());
                     t.setComment(l.getComment());
                     t.setTime(fmt(l.getCreatedAt()));
-                    t.setDisplayText(enrichHandoverDisplayText(l.getDisplayText()));
+                    String display = enrichHandoverDisplayText(l.getDisplayText());
+                    if (display != null && display.startsWith("转交给用户")) {
+                        // 兼容历史日志：转交给用户{id} → 转交给{姓名}
+                        try {
+                            long uid = Long.parseLong(display.substring("转交给用户".length()).trim());
+                            display = "转交给" + currentUserProvider.displayName(uid);
+                        } catch (Exception ignored) {
+                            // keep original
+                        }
+                    }
+                    t.setDisplayText(display);
                     return t;
                 }).collect(Collectors.toList());
+    }
+
+    /** 流程节点 + 任务派单人/转交人/任务状态 */
+    private List<ApprovalDtos.NodeProgressVO> buildNodeProgress(ApprovalInstance instance,
+                                                               List<ProcessNodeDef> nodeDefs,
+                                                               int current,
+                                                               String instStatus) {
+        List<ApprovalTask> tasks = taskMapper.selectList(new LambdaQueryWrapper<ApprovalTask>()
+                .eq(ApprovalTask::getInstanceId, instance.getId())
+                .orderByAsc(ApprovalTask::getId));
+        Map<Integer, ApprovalTask> latestByOrder = new HashMap<>();
+        if (tasks != null) {
+            for (ApprovalTask t : tasks) {
+                if (t.getNodeOrder() != null) {
+                    latestByOrder.put(t.getNodeOrder(), t);
+                }
+            }
+        }
+
+        List<ApprovalDtos.NodeProgressVO> nodes = new ArrayList<>();
+        for (ProcessNodeDef n : nodeDefs) {
+            ApprovalDtos.NodeProgressVO np = new ApprovalDtos.NodeProgressVO();
+            np.setOrder(n.getOrder());
+            np.setLabel(n.getLabel());
+            if ("CANCELLED".equals(instStatus) || "WITHDRAWN".equals(instStatus)) {
+                np.setState(n.getOrder() < current ? "done" : "cancelled");
+            } else if ("APPROVED".equals(instStatus) || "COMPLETED".equals(instStatus)) {
+                np.setState("done");
+            } else if ("REJECTED".equals(instStatus)) {
+                np.setState(n.getOrder() < current ? "done" : (n.getOrder() == current ? "current" : "pending"));
+            } else if (n.getOrder() < current) {
+                np.setState("done");
+            } else if (n.getOrder() == current) {
+                np.setState("current");
+            } else {
+                np.setState("pending");
+            }
+
+            if (n.getAssigneeUserId() != null && n.getAssigneeUserId() > 0) {
+                np.setAssigneeName(currentUserProvider.displayName(n.getAssigneeUserId()));
+            }
+            ApprovalTask task = latestByOrder.get(n.getOrder());
+            if (task != null) {
+                np.setTaskStatus(apiStatus(task.getStatus()));
+                if (task.getAssigneeId() != null && task.getAssigneeId() > 0) {
+                    np.setAssigneeName(currentUserProvider.displayName(task.getAssigneeId()));
+                }
+                if (task.getActualAssigneeId() != null
+                        && task.getActualAssigneeId() > 0
+                        && !Objects.equals(task.getActualAssigneeId(), task.getAssigneeId())) {
+                    np.setActualAssigneeName(currentUserProvider.displayName(task.getActualAssigneeId()));
+                }
+            }
+            nodes.add(np);
+        }
+        return nodes;
     }
 
     private ApprovalDtos.TaskListItemVO toTaskItem(ApprovalTask task, long userId) {

@@ -2,11 +2,10 @@ package com.company.hrms.module.auth.service.serviceImpl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.company.hrms.common.enums.RoleCode;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
-import com.company.hrms.common.exception.ForbiddenException;
-import com.company.hrms.common.security.SecurityUtils;
+import com.company.hrms.common.enums.RoleCode;
+import com.company.hrms.common.security.PermissionGuard;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.module.auth.config.PermissionCacheManager;
@@ -16,8 +15,10 @@ import com.company.hrms.module.auth.dto.UserVO;
 import com.company.hrms.module.auth.entity.LoginLog;
 import com.company.hrms.module.auth.entity.OperationLog;
 import com.company.hrms.module.auth.entity.SysUser;
+import com.company.hrms.module.auth.mapper.DeptHeadAutoRoleMapper;
 import com.company.hrms.module.auth.mapper.LoginLogMapper;
 import com.company.hrms.module.auth.mapper.OperationLogMapper;
+import com.company.hrms.module.auth.mapper.SysRoleMapper;
 import com.company.hrms.module.auth.mapper.SysUserMapper;
 import com.company.hrms.module.auth.mapper.SysUserRoleMapper;
 import com.company.hrms.module.auth.service.AuthService;
@@ -29,7 +30,9 @@ import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,6 +40,8 @@ public class SystemUserServiceImpl implements SystemUserService {
 
     private final SysUserMapper sysUserMapper;
     private final SysUserRoleMapper sysUserRoleMapper;
+    private final SysRoleMapper sysRoleMapper;
+    private final DeptHeadAutoRoleMapper deptHeadAutoRoleMapper;
     private final LoginLogMapper loginLogMapper;
     private final OperationLogMapper operationLogMapper;
     private final PasswordEncoder passwordEncoder;
@@ -45,6 +50,8 @@ public class SystemUserServiceImpl implements SystemUserService {
 
     public SystemUserServiceImpl(SysUserMapper sysUserMapper,
                                  SysUserRoleMapper sysUserRoleMapper,
+                                 SysRoleMapper sysRoleMapper,
+                                 DeptHeadAutoRoleMapper deptHeadAutoRoleMapper,
                                  LoginLogMapper loginLogMapper,
                                  OperationLogMapper operationLogMapper,
                                  PasswordEncoder passwordEncoder,
@@ -52,6 +59,8 @@ public class SystemUserServiceImpl implements SystemUserService {
                                  AuthService authService) {
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
+        this.sysRoleMapper = sysRoleMapper;
+        this.deptHeadAutoRoleMapper = deptHeadAutoRoleMapper;
         this.loginLogMapper = loginLogMapper;
         this.operationLogMapper = operationLogMapper;
         this.passwordEncoder = passwordEncoder;
@@ -61,7 +70,7 @@ public class SystemUserServiceImpl implements SystemUserService {
 
     @Override
     public PageResult<UserVO> pageUsers(String keyword, PageParam pageParam) {
-        requireSysAdmin();
+        requireUserView();
         LambdaQueryWrapper<SysUser> qw = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(keyword)) {
             qw.like(SysUser::getUsername, keyword.trim());
@@ -76,7 +85,7 @@ public class SystemUserServiceImpl implements SystemUserService {
     @Override
     @Transactional
     public Long createUser(CreateUserRequest request) {
-        requireSysAdmin();
+        requireUserEdit();
         Long exists = sysUserMapper.selectCount(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getUsername, request.getUsername()));
         if (exists != null && exists > 0) {
@@ -111,7 +120,7 @@ public class SystemUserServiceImpl implements SystemUserService {
     @Override
     @Transactional
     public void updateUser(Long id, UpdateUserRequest request) {
-        requireSysAdmin();
+        requireUserEdit();
         SysUser user = sysUserMapper.selectById(id);
         if (user == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID.getCode(), "用户不存在");
@@ -130,13 +139,19 @@ public class SystemUserServiceImpl implements SystemUserService {
             for (Long roleId : request.getRoleIds()) {
                 sysUserRoleMapper.insert(id, roleId);
             }
+            // 手工改角色若去掉 DEPT_MANAGER，清掉自动授予标记，避免来源表脏数据
+            Long deptMgrRoleId = sysRoleMapper.selectIdByCode(RoleCode.DEPT_MANAGER.name());
+            Set<Long> roleIds = new HashSet<>(request.getRoleIds());
+            if (deptMgrRoleId != null && !roleIds.contains(deptMgrRoleId)) {
+                deptHeadAutoRoleMapper.deleteByUserId(id);
+            }
             permissionCacheManager.evict(id);
         }
     }
 
     @Override
     public PageResult<LoginLog> pageLoginLogs(PageParam pageParam) {
-        requireSysAdmin();
+        requireUserView();
         Page<LoginLog> page = loginLogMapper.selectPage(
                 new Page<>(pageParam.getPage(), pageParam.getPageSize()),
                 new LambdaQueryWrapper<LoginLog>().orderByDesc(LoginLog::getLoginTime));
@@ -145,17 +160,21 @@ public class SystemUserServiceImpl implements SystemUserService {
 
     @Override
     public PageResult<OperationLog> pageOperationLogs(PageParam pageParam) {
-        requireSysAdmin();
+        requireUserView();
         Page<OperationLog> page = operationLogMapper.selectPage(
                 new Page<>(pageParam.getPage(), pageParam.getPageSize()),
                 new LambdaQueryWrapper<OperationLog>().orderByDesc(OperationLog::getCreatedAt));
         return PageResult.of(page.getRecords(), page.getTotal(), pageParam);
     }
 
-    private void requireSysAdmin() {
-        if (!SecurityUtils.requireLoginUser().hasRole(RoleCode.SYS_ADMIN.name())) {
-            throw new ForbiddenException();
-        }
+    /** 查看用户/日志：system:user:view 或 menu:system */
+    private void requireUserView() {
+        PermissionGuard.requireAny("system:user:view", "menu:system");
+    }
+
+    /** 编辑用户：system:user:edit 或 menu:system */
+    private void requireUserEdit() {
+        PermissionGuard.requireAny("system:user:edit", "menu:system");
     }
 
     private UserVO toVO(SysUser user) {
