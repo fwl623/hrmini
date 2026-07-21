@@ -9,7 +9,7 @@ function roleIn(role: string | undefined, list: readonly RoleCode[]): boolean {
  * 菜单门控优先认权限码（角色管理可分配）；角色作兼容兜底。
  * 数据权限仍由后端 DataScope 保证。
  *
- * DEPT_MANAGER：本部门花名册 + 审批中心；无组织管理 / 手机号变更 / 入转调离管理台
+ * DEPT_MANAGER：组织架构只读 + 本部门花名册 + 审批中心；无增删改组织 / 手机号变更 / 入转调离管理台
  * FINANCE（专员）：薪资全量 + 本人档案；无审批中心
  * FINANCE_MANAGER（经理）：同上 + 审批中心（调岗调薪等待办）
  */
@@ -18,11 +18,11 @@ export default function access(initialState: API.InitialState) {
   const has = (code: string) => permissions.includes(code);
   /** 人事业务主角色（含管理员配置侧）；不含财务 */
   const isHr = roleIn(roleCode, [ROLES.SYS_ADMIN, ROLES.HR_STAFF]);
-  /** 组织架构：PRD §2.2 仅系统管理员 / HR，部门主管不可见 */
-  const isOrgReader = isHr;
   const isFinanceFamily = roleIn(roleCode, [ROLES.FINANCE, ROLES.FINANCE_MANAGER]);
   const isFinanceManager = roleCode === ROLES.FINANCE_MANAGER;
   const isDeptManager = roleCode === ROLES.DEPT_MANAGER;
+  /** 组织架构可读：HR/管理员/部门主管；财务不可见；写操作另见 canEdit* */
+  const isOrgReader = isHr || isDeptManager;
 
   return {
     canSysAdmin: roleCode === ROLES.SYS_ADMIN,

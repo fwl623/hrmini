@@ -41,7 +41,15 @@ mybatis-plus:
   type-aliases-package: com.company.hrms.*.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 走 SLF4J；需要看 SQL 时在 logging.level 把对应 mapper 包设为 debug
+    # 勿用 StdOutImpl：会无视日志级别，把每条 SQL 直接刷到控制台
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+# 默认日志：业务 info；SQL 默认关闭（见上）
+logging:
+  level:
+    root: info
+    com.company.hrms: info
 
 # 公共模块配置（生产务必用环境变量覆盖密钥）
 #

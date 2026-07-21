@@ -59,24 +59,35 @@ const GRADE_OPTIONS = [
 const EmployeeListPage: React.FC = () => {
   const navigate = useNavigate();
   const access = useAccess();
+  /** 部门主管：后端 DataScope 已限定本部门树，无需再按部门筛选 */
+  const hideDeptFilter = !!access.canManager;
   const [deptTreeOptions, setDeptTreeOptions] = useState<TreeOption[]>([]);
   const [positionOptions, setPositionOptions] = useState<{ label: string; value: number }[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const [deptRes, posRes] = await Promise.all([
-          getDeptTree(),
-          listPositions({ page: 1, pageSize: 200 }),
-        ]);
-        setDeptTreeOptions(toDeptTreeOptions(deptRes.data ?? []));
-        const list = posRes.data?.list ?? [];
-        setPositionOptions(list.map((p) => ({ label: p.name, value: p.id })));
+        const tasks: Promise<unknown>[] = [listPositions({ page: 1, pageSize: 200 })];
+        if (!hideDeptFilter) {
+          tasks.unshift(getDeptTree());
+        }
+        const results = await Promise.all(tasks);
+        if (!hideDeptFilter) {
+          const deptRes = results[0] as Awaited<ReturnType<typeof getDeptTree>>;
+          const posRes = results[1] as Awaited<ReturnType<typeof listPositions>>;
+          setDeptTreeOptions(toDeptTreeOptions(deptRes.data ?? []));
+          setPositionOptions((posRes.data?.list ?? []).map((p) => ({ label: p.name, value: p.id })));
+        } else {
+          const posRes = results[0] as Awaited<ReturnType<typeof listPositions>>;
+          setPositionOptions((posRes.data?.list ?? []).map((p) => ({ label: p.name, value: p.id })));
+        }
       } catch {
-        message.warning('部门/职位筛选项加载失败，可稍后刷新重试');
+        message.warning(
+          hideDeptFilter ? '职位筛选项加载失败，可稍后刷新重试' : '部门/职位筛选项加载失败，可稍后刷新重试',
+        );
       }
     })();
-  }, []);
+  }, [hideDeptFilter]);
 
   const columns: ProColumns<EmployeeItem>[] = useMemo(
     () => [
@@ -93,6 +104,7 @@ const EmployeeListPage: React.FC = () => {
         title: '部门',
         dataIndex: 'departmentIds',
         hideInTable: true,
+        hideInSearch: hideDeptFilter,
         renderFormItem: () => (
           <TreeSelect
             treeData={deptTreeOptions}
@@ -276,7 +288,14 @@ const EmployeeListPage: React.FC = () => {
         },
       },
     ],
-    [access.canManageResignation, access.canManageWorkflow, deptTreeOptions, navigate, positionOptions],
+    [
+      access.canManageResignation,
+      access.canManageWorkflow,
+      deptTreeOptions,
+      hideDeptFilter,
+      navigate,
+      positionOptions,
+    ],
   );
 
   return (
@@ -294,7 +313,8 @@ const EmployeeListPage: React.FC = () => {
           page: current,
           pageSize,
           keyword: (formValues.keyword as string) || '',
-          departmentIds: joinIds(formValues.departmentIds),
+          // 部门主管不传部门条件，由后端 DEPT_TREE DataScope 限定本部门及下级
+          departmentIds: hideDeptFilter ? '' : joinIds(formValues.departmentIds),
           positionIds: joinIds(formValues.positionIds),
           employmentStatus: joinIds(formValues.employmentStatus),
           gradeLevels: joinIds(formValues.gradeLevels),

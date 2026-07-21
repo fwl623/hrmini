@@ -6,11 +6,11 @@ import com.company.hrms.common.security.LoginUser;
 import com.company.hrms.common.security.SecurityUtils;
 
 /**
- * 组织架构接口鉴权，与前端 {@code access.ts} / PRD §2.2 对齐：
+ * 组织架构接口鉴权，与前端 {@code access.ts} 对齐：
  * <ul>
  *   <li>写操作：SYS_ADMIN / HR_STAFF，或持有对应 edit 权限码</li>
- *   <li>读操作：SYS_ADMIN / HR_STAFF，或持有 view/edit/menu 权限（PRD §2.2 部门主管无组织架构）</li>
- *   <li>FINANCE / 纯 EMPLOYEE / DEPT_MANAGER：不可读组织架构管理</li>
+ *   <li>读操作：SYS_ADMIN / HR_STAFF / DEPT_MANAGER，或持有 view/edit/menu 权限</li>
+ *   <li>FINANCE / 纯 EMPLOYEE：不可读组织架构（财务仅薪资域）</li>
  * </ul>
  */
 public final class OrgAccessGuard {
@@ -72,8 +72,8 @@ public final class OrgAccessGuard {
         return user.hasRole(RoleCode.SYS_ADMIN.name()) || user.hasRole(RoleCode.HR_STAFF.name());
     }
 
-    /** 可选部门/职位的管理端角色（不含 FINANCE / DEPT_MANAGER / 纯 EMPLOYEE） */
+    /** 可选部门/职位的管理端角色（不含 FINANCE / 纯 EMPLOYEE） */
     private static boolean isOrgPrivilegedRole(LoginUser user) {
-        return isHrOrAdmin(user);
+        return isHrOrAdmin(user) || user.hasRole(RoleCode.DEPT_MANAGER.name());
     }
 }
