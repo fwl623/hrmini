@@ -367,6 +367,55 @@ public class ApprovalEventListener {
                 attendanceMonthlySummaryMapper.updateById(monthly);
             }
 
+            // v2.1: 加班→调休自动转换（1小时=0.125天）
+            try {
+                java.math.BigDecimal compDays = app.getHours().divide(java.math.BigDecimal.valueOf(8), 3, java.math.RoundingMode.HALF_UP);
+                if (compDays.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                    // 查找或创建调休余额记录
+                    com.company.hrms.attendance.entity.LeaveBalance lb = leaveBalanceMapper.selectByEmployeeAndTypeAndYear(
+                            empId, "COMP_OFF", overtimeDate.getYear());
+                    java.math.BigDecimal before;
+                    if (lb == null) {
+                        lb = new com.company.hrms.attendance.entity.LeaveBalance();
+                        lb.setEmployeeId(empId);
+                        lb.setLeaveType("COMP_OFF");
+                        lb.setYear(overtimeDate.getYear());
+                        lb.setTotalQuota(compDays);
+                        lb.setUsedQuota(java.math.BigDecimal.ZERO);
+                        lb.setRemainingQuota(compDays);
+                        lb.setBalance(compDays);
+                        lb.setEffectiveDate(overtimeDate);
+                        lb.setExpireDate(overtimeDate.withDayOfMonth(overtimeDate.lengthOfMonth()).plusMonths(1));
+                        lb.setVersion(0);
+                        before = java.math.BigDecimal.ZERO;
+                        leaveBalanceMapper.insert(lb);
+                    } else {
+                        before = lb.getRemainingQuota() != null ? lb.getRemainingQuota() : lb.getBalance();
+                        java.math.BigDecimal after = before.add(compDays);
+                        if (lb.getRemainingQuota() != null) lb.setRemainingQuota(after);
+                        lb.setBalance(after);
+                        if (lb.getTotalQuota() != null) lb.setTotalQuota(lb.getTotalQuota().add(compDays));
+                        lb.setVersion(lb.getVersion() != null ? lb.getVersion() + 1 : 1);
+                        leaveBalanceMapper.updateById(lb);
+                    }
+
+                    // 写入余额变动日志
+                    com.company.hrms.attendance.entity.BalanceChangeLog log = new com.company.hrms.attendance.entity.BalanceChangeLog();
+                    log.setEmployeeId(empId);
+                    log.setLeaveType("COMP_OFF");
+                    log.setChangeAmount(compDays);
+                    log.setSourceType("OVERTIME");
+                    log.setSourceId(applicationId);
+                    log.setBalanceBefore(before);
+                    log.setBalanceAfter(lb.getRemainingQuota() != null ? lb.getRemainingQuota() : lb.getBalance());
+                    log.setStatus("CONFIRMED");
+                    log.setRemark("加班" + app.getHours() + "小时→调休" + compDays + "天");
+                    balanceChangeLogMapper.insert(log);
+                }
+            } catch (Exception e) {
+                log.warn("加班→调休转换失败", e);
+            }
+
             log.info("加班已通过, 台账已写入: id={}, hours={}", applicationId, app.getHours());
         } else if ("REJECTED".equals(result)) {
             app.setStatus("REJECTED");
