@@ -67,6 +67,12 @@ public class LeaveService {
      */
     public List<LeaveBalanceVO> getBalances(Long employeeId) {
         List<LeaveBalance> balances = leaveBalanceMapper.selectByEmployeeId(employeeId);
+        // 如果没有任何假期余额记录，返回默认值（显示0而不是空）
+        if (balances == null || balances.isEmpty()) {
+            return java.util.List.of(
+                    new LeaveBalanceVO("ANNUAL", java.math.BigDecimal.ZERO),
+                    new LeaveBalanceVO("COMP_OFF", java.math.BigDecimal.ZERO));
+        }
         List<LeaveBalanceVO> vos = new ArrayList<>();
         for (LeaveBalance lb : balances) {
             vos.add(new LeaveBalanceVO(lb.getLeaveType(), lb.getBalance()));
