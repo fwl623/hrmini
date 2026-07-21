@@ -284,6 +284,9 @@ public class LeaveService {
         form.put("leaveType", app.getLeaveType());
         form.put("days", days);
         form.put("employeeId", employeeId);
+        if (app.getAttachmentUrl() != null && !app.getAttachmentUrl().isBlank()) {
+            form.put("attachment", app.getAttachmentUrl());
+        }
         req.setFormData(form);
         CreateApprovalResult result = approvalEngineService.createInstance(req);
         app.setInstanceId(result.getInstanceId());

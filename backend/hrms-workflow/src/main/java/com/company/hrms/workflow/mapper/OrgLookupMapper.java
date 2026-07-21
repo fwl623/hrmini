@@ -56,6 +56,20 @@ public interface OrgLookupMapper {
             """)
     java.util.Map<String, Object> selectMobileChangeBrief(@Param("id") Long id);
 
+    /** 请假审批详情：类型/天数/原因/证明材料 */
+    @Select("""
+            SELECT leave_type AS leaveType,
+                   leave_days AS days,
+                   reason,
+                   attachment_url AS attachment,
+                   start_time AS startTime,
+                   end_time AS endTime
+            FROM leave_application
+            WHERE id = #{id}
+            LIMIT 1
+            """)
+    java.util.Map<String, Object> selectLeaveBrief(@Param("id") Long id);
+
     /**
      * 审批交接人选人：姓名/工号模糊，仅在职/试用/待离职；不含敏感字段。
      * 不走花名册 DataScope，供财务经理等部门负责人在离职审批中选交接人。
@@ -109,4 +123,69 @@ public interface OrgLookupMapper {
             LIMIT 1
             """)
     java.util.Map<String, Object> selectEmployeeNameAndPositionByEmployeeId(@Param("employeeId") Long employeeId);
+
+    /**
+     * 审批委托候选人：启用账号，且具备审批能力
+     * （角色 SYS_ADMIN / HR_STAFF / DEPT_MANAGER / FINANCE_MANAGER，
+     * 或权限 approval:handle / approval:action / menu:workflow / menu:approval）。
+     * keyword 为空时返回前若干条，便于下拉初始展示。
+     */
+    @Select("""
+            SELECT DISTINCT u.id AS userId,
+                   COALESCE(NULLIF(TRIM(e.name), ''), u.username) AS name,
+                   u.username AS username,
+                   e.employee_no AS empNo,
+                   d.name AS department
+            FROM sys_user u
+            INNER JOIN sys_user_role ur ON ur.user_id = u.id
+            INNER JOIN sys_role r ON r.id = ur.role_id
+            LEFT JOIN employee e ON e.user_id = u.id AND (e.deleted = 0 OR e.deleted IS NULL)
+            LEFT JOIN department d ON d.id = e.department_id AND d.deleted = 0
+            WHERE u.status = 1
+              AND u.id <> #{excludeUserId}
+              AND (
+                    r.code IN ('SYS_ADMIN', 'HR_STAFF', 'DEPT_MANAGER', 'FINANCE_MANAGER')
+                 OR EXISTS (
+                        SELECT 1 FROM sys_user_role ur2
+                        INNER JOIN sys_role_permission rp ON rp.role_id = ur2.role_id
+                        INNER JOIN sys_permission p ON p.id = rp.permission_id
+                        WHERE ur2.user_id = u.id
+                          AND p.code IN ('approval:handle', 'approval:action', 'menu:workflow', 'menu:approval')
+                    )
+              )
+              AND (
+                    #{keyword} IS NULL OR #{keyword} = ''
+                 OR e.name LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.employee_no LIKE CONCAT('%', #{keyword}, '%')
+                 OR u.username LIKE CONCAT('%', #{keyword}, '%')
+                 OR CAST(u.id AS CHAR) = #{keyword}
+              )
+            ORDER BY u.id ASC
+            LIMIT 30
+            """)
+    List<java.util.Map<String, Object>> searchDelegateCandidates(
+            @Param("keyword") String keyword,
+            @Param("excludeUserId") Long excludeUserId);
+
+    /** 被委托人是否具备审批能力（启用 + 审批角色或权限） */
+    @Select("""
+            SELECT COUNT(1) FROM sys_user u
+            WHERE u.id = #{userId} AND u.status = 1
+              AND (
+                    EXISTS (
+                        SELECT 1 FROM sys_user_role ur
+                        INNER JOIN sys_role r ON r.id = ur.role_id
+                        WHERE ur.user_id = u.id
+                          AND r.code IN ('SYS_ADMIN', 'HR_STAFF', 'DEPT_MANAGER', 'FINANCE_MANAGER')
+                    )
+                 OR EXISTS (
+                        SELECT 1 FROM sys_user_role ur
+                        INNER JOIN sys_role_permission rp ON rp.role_id = ur.role_id
+                        INNER JOIN sys_permission p ON p.id = rp.permission_id
+                        WHERE ur.user_id = u.id
+                          AND p.code IN ('approval:handle', 'approval:action', 'menu:workflow', 'menu:approval')
+                    )
+              )
+            """)
+    int countUserHasApproverCapability(@Param("userId") Long userId);
 }

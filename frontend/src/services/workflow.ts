@@ -185,6 +185,26 @@ export async function searchHandoverCandidates(keyword: string) {
   return res.data ?? [];
 }
 
+export interface DelegateCandidate {
+  userId: number;
+  name: string;
+  username?: string;
+  empNo?: string;
+  department?: string;
+}
+
+/** GET /approvals/delegate-candidates — 审批委托选人（仅有审批权限） */
+export async function searchDelegateCandidates(keyword?: string) {
+  const res = await request<API.Result<DelegateCandidate[]>>(
+    `${APPROVAL_PREFIX}/delegate-candidates`,
+    {
+      method: 'GET',
+      params: { keyword: keyword || undefined },
+    },
+  );
+  return res.data ?? [];
+}
+
 export interface DelegationItem {
   id: number;
   delegatorId: number;
