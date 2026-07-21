@@ -167,6 +167,14 @@ public class PunchService {
             }
 
             attendanceRecordMapper.insert(record);
+
+            // v2.1: 实时更新日汇总（双槽位判定）
+            try {
+                updateDailySummaryInMemory(employeeId, storeDate);
+            } catch (Exception e) {
+                log.warn("实时更新日汇总失败（不影响打卡）: empId={}, date={}", employeeId, storeDate, e);
+            }
+
             log.info("员工打卡: empId={}, type={}, status={}, serverTime={}, storeTime={}",
                     employeeId, type, punchStatus, serverTime, storeTime);
             return punchStatus;
@@ -536,6 +544,72 @@ public class PunchService {
             log.warn("补卡配额 Redis 不可用，回落 DB: empId={}, ym={}, err={}", employeeId, ym, e.getMessage());
             return attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
         }
+    }
+
+    // ========== 日汇总实时更新（v2.1） ==========
+
+    private void updateDailySummaryInMemory(Long employeeId, LocalDate date) {
+        List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, date);
+        boolean amLeave = false, pmLeave = false;
+        try {
+            List<com.company.hrms.attendance.entity.LeaveApplication> leaves = leaveApplicationMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
+                            .eq(com.company.hrms.attendance.entity.LeaveApplication::getEmployeeId, employeeId)
+                            .eq(com.company.hrms.attendance.entity.LeaveApplication::getStatus, "APPROVED")
+                            .le(com.company.hrms.attendance.entity.LeaveApplication::getStartTime, date.plusDays(1).atStartOfDay())
+                            .ge(com.company.hrms.attendance.entity.LeaveApplication::getEndTime, date.atStartOfDay()));
+            for (com.company.hrms.attendance.entity.LeaveApplication la : leaves) {
+                java.time.LocalTime s = la.getStartTime().toLocalTime();
+                java.time.LocalTime e = la.getEndTime().toLocalTime();
+                if (s.isBefore(java.time.LocalTime.NOON) && e.isAfter(java.time.LocalTime.MIDNIGHT)) amLeave = true;
+                if (e.isAfter(java.time.LocalTime.NOON) && s.isBefore(java.time.LocalTime.NOON)) pmLeave = true;
+            }
+        } catch (Exception e) { log.warn("查询请假覆盖失败", e); }
+
+        java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
+        java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
+        int threshold = 15;
+        int amCode = 5, pmCode = 5;
+        if (amLeave) amCode = 4;
+        else {
+            AttendanceRecord inRec = dayRecords.stream().filter(r -> "IN".equals(r.getPunchType()))
+                    .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime)).orElse(null);
+            if (inRec != null) {
+                java.time.LocalTime t = inRec.getPunchTime().toLocalTime();
+                if (!t.isAfter(workStart)) amCode = 0;
+                else if (!t.isAfter(workStart.plusMinutes(threshold))) amCode = 1;
+                else amCode = 3;
+            }
+        }
+        if (pmLeave) pmCode = 4;
+        else {
+            AttendanceRecord outRec = dayRecords.stream().filter(r -> "OUT".equals(r.getPunchType()))
+                    .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime)).orElse(null);
+            if (outRec != null) {
+                java.time.LocalTime t = outRec.getPunchTime().toLocalTime();
+                if (!t.isBefore(workEnd)) pmCode = 0;
+                else if (!t.isBefore(workEnd.minusMinutes(threshold))) pmCode = 2;
+                else pmCode = 3;
+            }
+        }
+        com.company.hrms.attendance.entity.AttendanceDailySummary existing = attendanceDailySummaryMapper.selectByEmployeeAndDate(employeeId, date);
+        com.company.hrms.attendance.entity.AttendanceDailySummary ds;
+        if (existing == null) {
+            ds = new com.company.hrms.attendance.entity.AttendanceDailySummary();
+            ds.setEmployeeId(employeeId);
+            ds.setSummaryDate(date);
+        } else {
+            ds = existing;
+        }
+        ds.setDayStatus("am:" + amCode + ",pm:" + pmCode);
+        dayRecords.stream().filter(r -> "IN".equals(r.getPunchType()))
+                .min(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
+                .ifPresent(r -> ds.setClockInTime(r.getPunchTime()));
+        dayRecords.stream().filter(r -> "OUT".equals(r.getPunchType()))
+                .max(java.util.Comparator.comparing(AttendanceRecord::getPunchTime))
+                .ifPresent(r -> ds.setClockOutTime(r.getPunchTime()));
+        if (ds.getId() == null) attendanceDailySummaryMapper.insert(ds);
+        else attendanceDailySummaryMapper.updateById(ds);
     }
 
     // ========== 私有方法 ==========
