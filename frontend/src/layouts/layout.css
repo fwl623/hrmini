@@ -3,7 +3,7 @@
    仅修改外观，不动功能逻辑
    ============================================================ */
 
-/* ---------- 侧边栏滚动条隐藏 (管理后台) ---------- */
+/* ---------- 侧边栏滚动条隐藏（管理后台 / 个人中心共用） ---------- */
 .hrms-sider-scroll,
 .hrms-sider-scroll .ant-layout-sider-children {
   scrollbar-width: none;
@@ -12,20 +12,6 @@
 
 .hrms-sider-scroll::-webkit-scrollbar,
 .hrms-sider-scroll .ant-layout-sider-children::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
-/* ---------- 侧边栏滚动条隐藏 (门户) ---------- */
-.hrms-portal-sider,
-.hrms-portal-sider .ant-layout-sider-children {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.hrms-portal-sider::-webkit-scrollbar,
-.hrms-portal-sider .ant-layout-sider-children::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;

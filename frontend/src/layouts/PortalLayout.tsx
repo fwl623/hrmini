@@ -1,10 +1,11 @@
 import { DashboardOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { Outlet, history, useAccess, useLocation, useModel } from '@umijs/max';
-import { Dropdown, Layout, Menu, Space, Typography } from 'antd';
+import { Dropdown, Layout, Menu, Space } from 'antd';
 import type { MenuProps } from 'antd';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import AiFloatBall from '@/components/AiAssistant/AiFloatBall';
-import { ADMIN_ROLES, type RoleCode } from '@/constants/roles';
+import { ADMIN_ROLES, roleLabel, type RoleCode } from '@/constants/roles';
+import { getMyProfile } from '@/services/employee';
 import { forceLogout } from '@/utils/authSession';
 import './layout.css';
 
@@ -26,12 +27,37 @@ const PortalLayout: React.FC = () => {
   const { initialState } = useModel('@@initialState');
   const access = useAccess();
   const username = initialState?.currentUser?.username ?? '员工';
+  const roleCode = initialState?.currentUser?.roleCode;
+  const identity = roleLabel(roleCode) || '员工';
+  const [employeeName, setEmployeeName] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const employeeId = initialState?.currentUser?.employeeId;
+    if (!employeeId) {
+      setEmployeeName('');
+      return undefined;
+    }
+    getMyProfile()
+      .then((res) => {
+        if (!cancelled && res.code === 0 && res.data?.name) {
+          setEmployeeName(res.data.name);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [initialState?.currentUser?.employeeId]);
+
+  const headerGreeting = employeeName
+    ? `你好！${identity} ${employeeName}`
+    : `你好！${identity}`;
 
   const portalMenuItems = useMemo(
     () =>
       (ALL_PORTAL_MENU ?? []).filter((item) => {
         if (!item || typeof item !== 'object' || !('key' in item)) return false;
-        // 本人工资条：用 canViewOwnPayslip，勿用管理端 canViewPayroll（会拦掉普通员工）
         if (item.key === '/portal/payslips') {
           return access.canViewOwnPayslip;
         }
@@ -65,25 +91,26 @@ const PortalLayout: React.FC = () => {
   return (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider
-        theme="light"
+        theme="dark"
         width={220}
-        className="hrms-portal-sider"
-        style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden', background: '#fff' }}
+        className="hrms-sider-scroll"
+        style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden', background: '#001529' }}
       >
-        <div className="hrms-sider-logo" style={{ borderBottom: '1px solid var(--hrms-border-light, #f0f1f3)' }}>
-          <span className="logo-text" style={{ color: '#1D2129', fontSize: 16, fontWeight: 600 }}>个人中心</span>
+        <div className="hrms-sider-logo">
+          <div className="logo-icon">H</div>
+          <span className="logo-text">HRMS 个人中心</span>
         </div>
         <Menu
+          theme="dark"
           mode="inline"
           selectedKeys={[location.pathname]}
           items={portalMenuItems}
           onClick={({ key }) => history.push(key)}
-          style={{ borderInlineEnd: 'none', background: '#fff' }}
         />
       </Sider>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Header className="hrms-header">
-          <span className="hrms-header-title">员工自助门户</span>
+          <span className="hrms-header-title">{headerGreeting}</span>
           <Dropdown menu={{ items: userMenu }} placement="bottomRight">
             <Space className="hrms-header-right">
               <span className="hrms-header-avatar">

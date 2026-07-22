@@ -14,7 +14,6 @@ import {
   Row,
   Select,
   Space,
-  Statistic,
   Tag,
   Timeline,
   TimePicker,
@@ -25,8 +24,6 @@ import type { Dayjs } from 'dayjs';
 import {
   AimOutlined,
   CheckCircleOutlined,
-  ClockCircleOutlined,
-  CloseCircleOutlined,
   LeftOutlined,
   RightOutlined,
 } from '@ant-design/icons';
@@ -238,129 +235,130 @@ const AttendancePunchPage: React.FC = () => {
   };
 
   return (
-    <Row gutter={[24, 24]}>
-      <Col xs={24} lg={8}>
-        <Card>
-          <Typography.Title level={2} style={{ textAlign: 'center', marginBottom: 0 }}>
-            {now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </Typography.Title>
-          <Typography.Text type="secondary" style={{ display: 'block', textAlign: 'center' }}>
-            {now.toLocaleDateString('zh-CN', {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-              weekday: 'long',
-            })}
-          </Typography.Text>
-        </Card>
+    <div className="hrms-portal-attendance">
+      <div className="hrms-page-header">
+        <h2>考勤打卡</h2>
+        <p>完成今日上下班打卡，并查看本月出勤日历</p>
+      </div>
 
-        <Card style={{ marginTop: 16 }}>
-          <Space direction="vertical" style={{ width: '100%' }} size="large">
-            <Button
-              type="primary"
-              size="large"
-              block
-              icon={<AimOutlined />}
-              loading={loading}
-              onClick={() => handlePunch('in')}
-              style={{ height: 48 }}
-            >
-              上班打卡
-            </Button>
-            <Button
-              size="large"
-              block
-              icon={<AimOutlined />}
-              loading={loading}
-              onClick={() => handlePunch('out')}
-              style={{ height: 48 }}
-            >
-              下班打卡
-            </Button>
-          </Space>
-          {lastPunch && (
-            <Typography.Text type="success" style={{ display: 'block', marginTop: 12, textAlign: 'center' }}>
-              <CheckCircleOutlined /> 上次打卡：{lastPunch}
-            </Typography.Text>
-          )}
-        </Card>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={8}>
+          <Card className="hrms-punch-clock-card" bordered={false}>
+            <div className="hrms-punch-clock-time">
+              {now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </div>
+            <div className="hrms-punch-clock-date">
+              {now.toLocaleDateString('zh-CN', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                weekday: 'long',
+              })}
+            </div>
+            <Space direction="vertical" style={{ width: '100%' }} size={12}>
+              <Button
+                type="primary"
+                size="large"
+                block
+                className="hrms-punch-btn"
+                icon={<AimOutlined />}
+                loading={loading}
+                onClick={() => handlePunch('in')}
+              >
+                上班打卡
+              </Button>
+              <Button
+                size="large"
+                block
+                className="hrms-punch-btn hrms-punch-btn-out"
+                icon={<AimOutlined />}
+                loading={loading}
+                onClick={() => handlePunch('out')}
+              >
+                下班打卡
+              </Button>
+            </Space>
+            {lastPunch && (
+              <div className="hrms-punch-last">
+                <CheckCircleOutlined /> 上次打卡：{lastPunch}
+              </div>
+            )}
+            <div className="hrms-punch-quota">
+              <Typography.Text type="secondary">
+                本月补卡剩余 {quota.remainingQuota} / {quota.totalQuota} 次
+              </Typography.Text>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => setFixModalOpen(true)}
+                disabled={quota.remainingQuota <= 0}
+              >
+                申请补卡
+              </Button>
+            </div>
+          </Card>
+        </Col>
 
-        <Card style={{ marginTop: 16 }} size="small">
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Typography.Text type="secondary">
-              本月补卡剩余次数：{quota.remainingQuota} 次（最多 {quota.totalQuota} 次/月）
-            </Typography.Text>
-            <Button
-              type="link"
-              size="small"
-              onClick={() => setFixModalOpen(true)}
-              disabled={quota.remainingQuota <= 0}
-            >
-              申请补卡
-            </Button>
-          </Space>
-        </Card>
-      </Col>
+        <Col xs={24} lg={16}>
+          <Card title={`本月打卡 · ${dayjs().format('YYYY年MM月')}`} className="hrms-punch-stat-card">
+            <Row gutter={[12, 12]}>
+              <Col xs={12} sm={6}>
+                <div className="hrms-punch-stat-item">
+                  <div className="hrms-punch-stat-label">本月已打卡</div>
+                  <div className="hrms-punch-stat-value primary">
+                    {monthTotal.actual}
+                    <span className="hrms-punch-stat-suffix">/ {monthTotal.should}</span>
+                  </div>
+                </div>
+              </Col>
+              <Col xs={12} sm={6}>
+                <div className="hrms-punch-stat-item">
+                  <div className="hrms-punch-stat-label">本月迟到</div>
+                  <div className={`hrms-punch-stat-value ${monthTotal.late > 0 ? 'warning' : ''}`}>
+                    {monthTotal.late}
+                  </div>
+                </div>
+              </Col>
+              <Col xs={12} sm={6}>
+                <div className="hrms-punch-stat-item">
+                  <div className="hrms-punch-stat-label">本月早退</div>
+                  <div className={`hrms-punch-stat-value ${monthTotal.early > 0 ? 'warning' : ''}`}>
+                    {monthTotal.early}
+                  </div>
+                </div>
+              </Col>
+              <Col xs={12} sm={6}>
+                <div className="hrms-punch-stat-item">
+                  <div className="hrms-punch-stat-label">本月缺卡</div>
+                  <div className={`hrms-punch-stat-value ${monthTotal.absent > 0 ? 'danger' : ''}`}>
+                    {monthTotal.absent}
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          </Card>
 
-      <Col xs={24} lg={16}>
-        <Card title={`本月打卡 - ${dayjs().format('YYYY年MM月')}`}>
-          <Row gutter={[16, 16]}>
-            <Col xs={12} sm={6}>
-              <Statistic
-                title="本月已打卡"
-                value={monthTotal.actual}
-                suffix={`/ ${monthTotal.should}`}
-                valueStyle={{ color: '#1890ff' }}
+          <Card title="今日打卡记录" style={{ marginTop: 16 }}>
+            {records.length > 0 ? (
+              <Timeline
+                items={records.map((r, i) => ({
+                  key: i,
+                  color: punchStatusColorMap[r.status] || 'gray',
+                  children: (
+                    <>
+                      <Typography.Text strong>{r.time}</Typography.Text>
+                      <Tag color={punchStatusColorMap[r.status] || 'default'} style={{ marginLeft: 8 }}>
+                        {r.type} · {punchStatusLabelMap[r.status] || r.status}
+                      </Tag>
+                    </>
+                  ),
+                }))}
               />
-            </Col>
-            <Col xs={12} sm={6}>
-              <Statistic
-                title="本月迟到"
-                value={monthTotal.late}
-                valueStyle={{ color: monthTotal.late > 0 ? '#faad14' : undefined }}
-                prefix={<ClockCircleOutlined />}
-              />
-            </Col>
-            <Col xs={12} sm={6}>
-              <Statistic
-                title="本月早退"
-                value={monthTotal.early}
-                valueStyle={{ color: monthTotal.early > 0 ? '#faad14' : undefined }}
-                prefix={<ClockCircleOutlined />}
-              />
-            </Col>
-            <Col xs={12} sm={6}>
-              <Statistic
-                title="本月缺卡"
-                value={monthTotal.absent}
-                valueStyle={{ color: monthTotal.absent > 0 ? '#ff4d4f' : undefined }}
-                prefix={<CloseCircleOutlined />}
-              />
-            </Col>
-          </Row>
-        </Card>
-
-        <Card title="今日打卡记录" style={{ marginTop: 16 }}>
-          {records.length > 0 ? (
-            <Timeline
-              items={records.map((r, i) => ({
-                key: i,
-                color: punchStatusColorMap[r.status] || 'gray',
-                children: (
-                  <>
-                    <Typography.Text strong>{r.time}</Typography.Text>
-                    <Tag color={punchStatusColorMap[r.status] || 'default'} style={{ marginLeft: 8 }}>
-                      {r.type} · {punchStatusLabelMap[r.status] || r.status}
-                    </Tag>
-                  </>
-                ),
-              }))}
-            />
-          ) : (
-            <Typography.Text type="secondary">暂无打卡记录</Typography.Text>
-          )}
-        </Card>
-      </Col>
+            ) : (
+              <div className="hrms-punch-empty">暂无打卡记录</div>
+            )}
+          </Card>
+        </Col>
 
       <Col span={24}>
         <Card
@@ -438,14 +436,13 @@ const AttendancePunchPage: React.FC = () => {
                   : { label: status, bg: '#f5f5f5', dot: '#bfbfbf' });
               const selected = selectedDay?.date === key;
               const isToday = cell.date.isSame(dayjs(), 'day');
-              const isPast = cell.date.isBefore(dayjs(), 'day');
               return (
                 <div
                   key={cell.key}
                   onClick={() => setSelectedDay(day ?? { date: key, dayStatus: status })}
                   style={{
                     borderRadius: 8,
-                    background: selected ? '#e6f7ff' : meta.bg,
+                    background: selected ? '#e8f0ff' : meta.bg,
                     minHeight: 56,
                     cursor: 'pointer',
                     padding: '6px 4px',
@@ -454,15 +451,21 @@ const AttendancePunchPage: React.FC = () => {
                     alignItems: 'center',
                     justifyContent: 'flex-start',
                     gap: 4,
-                    border: selected ? '2px solid #1677ff' : isToday ? '2px solid #91caff' : '1px solid #f0f0f0',
+                    border: selected
+                      ? '2px solid var(--hrms-primary, #165dff)'
+                      : isToday
+                        ? '2px solid #94bfff'
+                        : '1px solid var(--hrms-border-light, #f0f1f3)',
                     transition: 'all 0.2s',
                     opacity: cell.date.isAfter(dayjs(), 'day') ? 0.5 : 1,
                   }}
                   onMouseEnter={(e) => {
-                    if (!selected) e.currentTarget.style.borderColor = '#91caff';
+                    if (!selected) e.currentTarget.style.borderColor = '#94bfff';
                   }}
                   onMouseLeave={(e) => {
-                    if (!selected && !isToday) e.currentTarget.style.borderColor = '#f0f0f0';
+                    if (!selected && !isToday) {
+                      e.currentTarget.style.borderColor = 'var(--hrms-border-light, #f0f1f3)';
+                    }
                   }}
                 >
                   <span
@@ -497,30 +500,15 @@ const AttendancePunchPage: React.FC = () => {
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Typography.Text strong>{selectedDay.date}</Typography.Text>
-                  {selectedDay.dayStatus && selectedDay.dayStatus !== '--' && (
-                    <Tag color={DAY_STATUS_META[selectedDay.dayStatus]?.dot || 'default'}>
-                      {DAY_STATUS_META[selectedDay.dayStatus]?.label || selectedDay.dayStatus}
-                    </Tag>
-                  )}
+                  <Tag color={punchStatusColorMap[selectedDay.dayStatus] || 'default'}>
+                    {DAY_STATUS_META[selectedDay.dayStatus]?.label || selectedDay.dayStatus}
+                  </Tag>
                 </div>
-                {selectedDay.dayStatus && selectedDay.dayStatus !== '--' ? (
-                  <div style={{ display: 'flex', gap: 24 }}>
-                    <div>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>上班打卡</Typography.Text>
-                      <div style={{ fontSize: 16, fontWeight: 500, marginTop: 2 }}>
-                        {selectedDay.clockInTime || '--:--'}
-                      </div>
-                    </div>
-                    <div>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>下班打卡</Typography.Text>
-                      <div style={{ fontSize: 16, fontWeight: 500, marginTop: 2 }}>
-                        {selectedDay.clockOutTime || '--:--'}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                    休息日或尚未生成考勤汇总
+                {(selectedDay.clockInTime || selectedDay.clockOutTime) && (
+                  <Typography.Text type="secondary">
+                    {selectedDay.clockInTime ? `上班 ${selectedDay.clockInTime}` : '上班 —'}
+                    {' · '}
+                    {selectedDay.clockOutTime ? `下班 ${selectedDay.clockOutTime}` : '下班 —'}
                   </Typography.Text>
                 )}
               </Space>
@@ -528,42 +516,37 @@ const AttendancePunchPage: React.FC = () => {
           )}
         </Card>
       </Col>
+      </Row>
 
       <Modal
         title="申请补卡"
         open={fixModalOpen}
+        onCancel={() => setFixModalOpen(false)}
         onOk={handleFixSubmit}
-        onCancel={() => {
-          setFixModalOpen(false);
-          fixForm.resetFields();
-        }}
         confirmLoading={fixSubmitting}
+        destroyOnClose
       >
         <Form form={fixForm} layout="vertical">
           <Form.Item name="punchDate" label="补卡日期" rules={[{ required: true, message: '请选择日期' }]}>
-            <DatePicker style={{ width: '100%' }} disabledDate={(d) => !!d && d.isAfter(dayjs())} />
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="type" label="补卡类型" rules={[{ required: true, message: '请选择类型' }]}>
             <Select
               options={[
-                { label: '上班卡', value: 'in' },
-                { label: '下班卡', value: 'out' },
+                { label: '上班卡', value: 'IN' },
+                { label: '下班卡', value: 'OUT' },
               ]}
             />
           </Form.Item>
           <Form.Item name="punchTime" label="补卡时间" rules={[{ required: true, message: '请选择时间' }]}>
             <TimePicker format="HH:mm" style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item
-            name="reason"
-            label="补卡原因"
-            rules={[{ required: true, max: 256, message: '请输入原因（≤256字符）' }]}
-          >
-            <Input.TextArea rows={3} maxLength={256} showCount />
+          <Form.Item name="reason" label="补卡原因" rules={[{ required: true, message: '请填写原因' }]}>
+            <Input.TextArea rows={3} maxLength={200} showCount />
           </Form.Item>
         </Form>
       </Modal>
-    </Row>
+    </div>
   );
 };
 
