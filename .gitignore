@@ -105,3 +105,6 @@ data/uploads/
 
 # 本地暂存的 Flyway 脚本（勿提交）
 _local_park/
+
+# 本地种子数据
+docs/db/seed_intern_liushiyi.sql
