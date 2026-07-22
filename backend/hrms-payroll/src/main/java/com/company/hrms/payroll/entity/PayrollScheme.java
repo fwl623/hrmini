@@ -38,6 +38,18 @@ public class PayrollScheme {
     @TableField("description")
     private String description;
 
+    /** 迟到扣款类型：FIXED/RATIO/STEP */
+    @TableField("late_deduction_type")
+    private String lateDeductionType;
+
+    /** 扣款值：固定金额(元)或比例(0~1)或阶梯基准 */
+    @TableField("late_deduction_value")
+    private java.math.BigDecimal lateDeductionValue;
+
+    /** 阶梯规则配置JSON */
+    @TableField("late_deduction_config")
+    private String lateDeductionConfig;
+
     /**
      * 生效日期
      * 格式：yyyy-MM-dd

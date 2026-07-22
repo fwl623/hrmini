@@ -13,14 +13,24 @@ const PayslipPage: React.FC = () => {
     { title: '账期', dataIndex: 'period', width: 100 },
     { title: '应发', dataIndex: 'grossSalary', render: (v: number) => `¥${(v || 0).toFixed(2)}` },
     { title: '实发', dataIndex: 'netSalary', render: (v: number) => `¥${(v || 0).toFixed(2)}` },
-    { title: '状态', dataIndex: 'status', render: (v: string) =>
-      <Tag color={v === 'distributed' ? 'green' : 'default'}>{v === 'distributed' ? '已发放' : v}</Tag>
-    },
+    { title: '状态', dataIndex: 'status', render: (v: string) => {
+      const label: Record<string, string> = {
+        DRAFT: '草稿', APPROVING: '审批中', APPROVED: '已通过',
+        REJECTED: '已驳回', DISTRIBUTED: '已发放', RELEASED: '已发放',
+        PENDING_CONFIRM: '待确认',
+      };
+      const color: Record<string, string> = {
+        DRAFT: 'default', APPROVING: 'processing', APPROVED: 'success',
+        REJECTED: 'error', DISTRIBUTED: 'green', RELEASED: 'green',
+        PENDING_CONFIRM: 'warning',
+      };
+      return <Tag color={color[v] || 'default'}>{label[v] || v}</Tag>;
+    }},
   ];
 
   return (
     <Card title="工资条管理">
-      <ProTable rowKey="employeeId" columns={columns}
+      <ProTable rowKey={(r) => `${r.employeeId}-${r.period}`} columns={columns}
         request={async (params) => { try {
           const res = await getPayslips({ page: params.current, pageSize: params.pageSize });
           return { data: (res.data as any)?.list || [], total: (res.data as any)?.total || 0, success: true };

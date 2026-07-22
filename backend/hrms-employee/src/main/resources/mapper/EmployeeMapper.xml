@@ -35,7 +35,7 @@
 
     <select id="search" resultType="com.company.hrms.employee.entity.Employee">
         SELECT e.id, e.employee_no, e.name, e.grade, e.employment_status, e.hire_date,
-               d.name AS department_name,
+               e.department_id, d.name AS department_name,
                p.name AS position_name
         FROM employee e
         <!-- TODO: org接口未完成 — 直接 JOIN department/position 表取名称，后续可改为调用 hrms-org Feign 接口 -->

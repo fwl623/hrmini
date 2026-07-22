@@ -13,6 +13,7 @@ import {
   Popconfirm,
   Tag,
   message,
+  Alert,
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined } from '@ant-design/icons';
 import type { ActionType } from '@ant-design/pro-components';
@@ -38,6 +39,7 @@ const AttendanceGroupPage: React.FC = () => {
   const [saving, setSaving] = React.useState(false);
   const [deptTree, setDeptTree] = useState<any[]>([]);
   const [empList, setEmpList] = useState<any[]>([]);
+  const shiftType = Form.useWatch('shiftType', form);
 
   useEffect(() => {
     getDeptTree().then((res: any) => setDeptTree(res.data || [])).catch(() => {});
@@ -113,6 +115,8 @@ const AttendanceGroupPage: React.FC = () => {
         restEnd: detail?.lunchEndTime ? dayjs(detail.lunchEndTime, 'HH:mm') : undefined,
         lateThreshold: detail?.lateThresholdMinutes ?? 15,
         earlyLeaveThreshold: detail?.earlyLeaveThresholdMinutes ?? 15,
+        flexStartEarliest: detail?.flexStartEarliest ? dayjs(detail.flexStartEarliest, 'HH:mm') : undefined,
+        flexStartLatest: detail?.flexStartLatest ? dayjs(detail.flexStartLatest, 'HH:mm') : undefined,
         departmentIds: scope.departmentIds || [],
         employeeIds: scope.employeeIds || [],
       });
@@ -145,18 +149,35 @@ const AttendanceGroupPage: React.FC = () => {
         employeeIds: values.employeeIds || [],
       };
 
-      // 构造 API 请求数据（字段名映射：表单 → API 契约）
+      // 构造 API 请求数据（按班次类型组装）
       const payload: any = {
         name: values.name,
         shiftType: values.shiftType,
-        onDuty: values.onDuty?.format('HH:mm'),
-        offDuty: values.offDuty?.format('HH:mm'),
         restStart: values.restStart?.format('HH:mm') || null,
         restEnd: values.restEnd?.format('HH:mm') || null,
-        lateThreshold: values.lateThreshold ?? 15,
-        earlyLeaveThreshold: values.earlyLeaveThreshold ?? 15,
         applicableScope,
       };
+
+      if (values.shiftType === 'FLEXIBLE') {
+        // 弹性班次：只需要弹性范围 + 下班时间
+        payload.flexibleRange = {
+          earliest: values.flexStartEarliest?.format('HH:mm'),
+          latest: values.flexStartLatest?.format('HH:mm'),
+        };
+        payload.offDuty = values.offDuty?.format('HH:mm');
+        payload.lateThreshold = values.lateThreshold ?? 15;
+        payload.earlyLeaveThreshold = values.earlyLeaveThreshold ?? 15;
+      } else if (values.shiftType === 'SCHEDULE') {
+        // 排班制当前等同于固定班次处理
+        payload.onDuty = values.onDuty?.format('HH:mm');
+        payload.offDuty = values.offDuty?.format('HH:mm');
+      } else {
+        // FIXED：标准固定班
+        payload.onDuty = values.onDuty?.format('HH:mm');
+        payload.offDuty = values.offDuty?.format('HH:mm');
+        payload.lateThreshold = values.lateThreshold ?? 15;
+        payload.earlyLeaveThreshold = values.earlyLeaveThreshold ?? 15;
+      }
 
       if (editingGroup) {
         await updateGroup(editingGroup.id, payload as any);
@@ -221,30 +242,83 @@ const AttendanceGroupPage: React.FC = () => {
             <Input placeholder="2-20 字符" />
           </Form.Item>
           <Form.Item name="shiftType" label="班次类型" rules={[{ required: true }]}>
-            <Select options={SHIFT_TYPE_OPTIONS} />
+            <Select options={SHIFT_TYPE_OPTIONS} placeholder="请选择班次类型" />
           </Form.Item>
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="onDuty" label="上班时间" rules={[{ required: true }]}>
-              <TimePicker format="HH:mm" />
-            </Form.Item>
-            <Form.Item name="offDuty" label="下班时间" rules={[{ required: true }]}>
-              <TimePicker format="HH:mm" />
-            </Form.Item>
-            <Form.Item name="restStart" label="午休开始">
-              <TimePicker format="HH:mm" />
-            </Form.Item>
-            <Form.Item name="restEnd" label="午休结束">
-              <TimePicker format="HH:mm" />
-            </Form.Item>
-          </Space>
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="lateThreshold" label="迟到阈值(min)" initialValue={15}>
-              <InputNumber min={0} max={120} />
-            </Form.Item>
-            <Form.Item name="earlyLeaveThreshold" label="早退阈值(min)" initialValue={15}>
-              <InputNumber min={0} max={120} />
-            </Form.Item>
-          </Space>
+
+          {/* ── 排班制提示 ── */}
+          {shiftType === 'SCHEDULE' && (
+            <Alert
+              type="warning"
+              showIcon
+              message="排班制开发中，暂等同于固定班次处理"
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
+          {/* ── FIXED 固定班次 / SCHEDULE 排班制 ── */}
+          {(shiftType === 'FIXED' || shiftType === 'SCHEDULE') && (
+            <>
+              <Space style={{ display: 'flex' }} align="start">
+                <Form.Item name="onDuty" label="上班时间" rules={[{ required: true }]}>
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+                <Form.Item name="offDuty" label="下班时间" rules={[{ required: true }]}>
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+                <Form.Item name="restStart" label="午休开始">
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+                <Form.Item name="restEnd" label="午休结束">
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+              </Space>
+              {shiftType === 'FIXED' && (
+                <Space style={{ display: 'flex' }} align="start">
+                  <Form.Item name="lateThreshold" label="迟到阈值(min)" initialValue={15}>
+                    <InputNumber min={0} max={120} />
+                  </Form.Item>
+                  <Form.Item name="earlyLeaveThreshold" label="早退阈值(min)" initialValue={15}>
+                    <InputNumber min={0} max={120} />
+                  </Form.Item>
+                </Space>
+              )}
+            </>
+          )}
+
+          {/* ── FLEXIBLE 弹性班次 ── */}
+          {shiftType === 'FLEXIBLE' && (
+            <>
+              <Space style={{ display: 'flex' }} align="start">
+                <Form.Item name="flexStartEarliest" label="弹性最早打卡" rules={[{ required: true }]}>
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+                <Form.Item name="flexStartLatest" label="弹性最晚打卡" rules={[{ required: true }]}>
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+              </Space>
+              <Space style={{ display: 'flex' }} align="start">
+                <Form.Item name="offDuty" label="下班时间" rules={[{ required: true }]}>
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+                <Form.Item name="restStart" label="午休开始">
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+                <Form.Item name="restEnd" label="午休结束">
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+              </Space>
+              <Space style={{ display: 'flex' }} align="start">
+                <Form.Item name="lateThreshold" label="迟到阈值(min)" initialValue={15}>
+                  <InputNumber min={0} max={120} />
+                </Form.Item>
+                <Form.Item name="earlyLeaveThreshold" label="早退阈值(min)" initialValue={15}>
+                  <InputNumber min={0} max={120} />
+                </Form.Item>
+              </Space>
+            </>
+          )}
+
+          {/* ── 适用范围 ── */}
           <Form.Item name="departmentIds" label="适用部门">
             <TreeSelect
               treeData={deptTree}

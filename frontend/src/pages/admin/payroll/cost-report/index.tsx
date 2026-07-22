@@ -1,177 +1,350 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, DatePicker, TreeSelect, Space, Spin, Empty, message } from 'antd';
-import { Line, Column } from '@ant-design/plots';
-import dayjs from 'dayjs';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, Row, Col, Select, TreeSelect, Space, Spin, Empty, Table, Tag } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
-import { getCostReport } from '@/services/payroll';
+import { request } from '@umijs/max';
 
-const { RangePicker } = DatePicker;
+interface EmployeeDetail {
+  employeeId: number;
+  employeeName: string;
+  positionName: string;
+  hireDate: string;
+  grossSalary: number;
+  netSalary: number;
+}
 
-// 模拟部门树数据 —— 联调时替换为真实接口
-const mockDeptTree = [
-  {
-    title: '总公司',
-    value: 0,
-    children: [
-      { title: '技术部', value: 1 },
-      { title: '市场部', value: 2 },
-      { title: '财务部', value: 3 },
-      { title: '人事部', value: 4 },
-    ],
-  },
-];
+interface DeptSalaryItem {
+  deptId: number;
+  deptName: string;
+  employeeCount: number;
+  totalSalary: number;
+  totalActualSalary: number;
+  hasDetail: boolean;
+  employees: EmployeeDetail[];
+}
+
+interface DeptReport {
+  deptId: number;
+  deptName: string;
+  period: string;
+  totalEmployeeCount: number;
+  totalSalary: number;
+  totalActualSalary: number;
+  children: DeptSalaryItem[];
+}
+
+const formatWan = (v: number | null | undefined) => {
+  if (v == null || isNaN(v)) return '0.00';
+  return (v / 10000).toFixed(2);
+};
 
 const CostReportPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const [periodRange, setPeriodRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>([
-    dayjs().subtract(5, 'month').startOf('month'),
-    dayjs().endOf('month'),
-  ]);
-  const [departmentId, setDepartmentId] = useState<number | undefined>(undefined);
-  const [trendData, setTrendData] = useState<{ period: string; grossTotal: number; netTotal: number }[]>([]);
-  const [deptData, setDeptData] = useState<{ deptName: string; grossTotal: number; netTotal: number }[]>([]);
+  const [deptTree, setDeptTree] = useState<any[]>([]);
+  const [selectedDept, setSelectedDept] = useState<number | undefined>(undefined);
+  const [periods, setPeriods] = useState<string[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<string | undefined>(undefined);
+  const [report, setReport] = useState<DeptReport | null>(null);
+  const [expandedRowKeys, setExpandedRowKeys] = useState<number[]>([]);
 
-  const fetchData = async (from?: string, to?: string, deptId?: number) => {
-    if (!from || !to) return;
+  useEffect(() => {
+    loadDeptTree();
+    loadPeriods();
+  }, []);
+
+  const loadDeptTree = async () => {
+    try {
+      const res = await request('/api/v1/departments/tree', {
+        method: 'GET',
+        skipErrorHandler: true,
+      });
+      const tree = (res as any)?.data || [];
+      if (tree.length > 0) {
+        setDeptTree(tree);
+        setSelectedDept(tree[0].id);
+        return;
+      }
+    } catch {
+      // 部门树无权限（如财务角色），使用静态部门数据
+    }
+    setDeptTree([
+      { id: 1, name: '数字马力', children: [
+        { id: 10, name: '技术部' }, { id: 11, name: '人力资源部' },
+        { id: 12, name: '财务部' }, { id: 13, name: '市场部' }, { id: 14, name: '销售部' },
+      ]}
+    ]);
+    setSelectedDept(1);
+  };
+
+  const loadPeriods = async () => {
+    try {
+      const res = await request('/api/v1/payroll/cost-report/available-periods');
+      const list = (res as any)?.data || [];
+      setPeriods(list);
+      if (list.length > 0 && !selectedPeriod) {
+        setSelectedPeriod(list[0]);
+      }
+    } catch {
+      setPeriods([]);
+    }
+  };
+
+  const fetchData = async (deptId: number, period: string) => {
     setLoading(true);
     try {
-      const res = await getCostReport({ periodFrom: from, periodTo: to, departmentId: deptId });
-      const data = res.data as API.CostReportVO;
-      if (data) {
-        setTrendData(data.trend || []);
-        setDeptData(data.deptDistribution || []);
-      }
-    } catch (err: any) {
-      message.error(err?.message || '获取成本报表失败');
+      const res = await request(
+        `/api/v1/payroll/cost-report/department-salary?deptId=${deptId}&period=${period}`,
+      );
+      const data = (res as any)?.data as DeptReport | undefined;
+      setReport(data || null);
+    } catch {
+      setReport(null);
     } finally {
       setLoading(false);
     }
   };
 
+  // 切换筛选条件刷新表格时，所有行默认收起
   useEffect(() => {
-    if (periodRange?.[0] && periodRange?.[1]) {
-      fetchData(
-        periodRange[0].format('YYYY-MM'),
-        periodRange[1].format('YYYY-MM'),
-        departmentId,
-      );
+    if (selectedDept && selectedPeriod) {
+      setExpandedRowKeys([]);
+      fetchData(selectedDept, selectedPeriod);
     }
+  }, [selectedDept, selectedPeriod]);
+
+  // 数据刷新后重置展开状态
+  useEffect(() => {
+    setExpandedRowKeys([]);
+  }, [report]);
+
+  // 切换展开/收起
+  const toggleExpand = useCallback((deptId: number) => {
+    setExpandedRowKeys((prev) =>
+      prev.includes(deptId)
+        ? prev.filter((id) => id !== deptId)
+        : [...prev, deptId],
+    );
   }, []);
 
-  const handleSearch = () => {
-    if (!periodRange?.[0] || !periodRange?.[1]) {
-      message.warning('请选择账期范围');
-      return;
+  // ==================== 表格列定义 ====================
+
+  const deptColumns: ColumnsType<DeptSalaryItem> = [
+    {
+      title: '部门名称',
+      dataIndex: 'deptName',
+      key: 'deptName',
+    },
+    {
+      title: '在职人数',
+      dataIndex: 'employeeCount',
+      key: 'employeeCount',
+      width: 100,
+      align: 'center',
+    },
+    {
+      title: '应发总额',
+      dataIndex: 'totalSalary',
+      key: 'totalSalary',
+      width: 140,
+      align: 'right',
+      render: (v: number) => `${formatWan(v)}万`,
+    },
+    {
+      title: '实发总额',
+      dataIndex: 'totalActualSalary',
+      key: 'totalActualSalary',
+      width: 140,
+      align: 'right',
+      render: (v: number) => `${formatWan(v)}万`,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 130,
+      align: 'center',
+      render: (_: any, record: DeptSalaryItem) => {
+        if (!record.hasDetail) {
+          return <Tag color="default">无明细</Tag>;
+        }
+        const isExpanded = expandedRowKeys.includes(record.deptId);
+        return (
+          <a
+            style={{ color: '#1677ff', cursor: 'pointer' }}
+            onClick={() => toggleExpand(record.deptId)}
+          >
+            {isExpanded ? '收起明细' : '展开明细'}
+          </a>
+        );
+      },
+    },
+  ];
+
+  const empColumns: ColumnsType<EmployeeDetail> = [
+    {
+      title: '员工姓名',
+      dataIndex: 'employeeName',
+      key: 'employeeName',
+      width: 120,
+    },
+    {
+      title: '岗位',
+      dataIndex: 'positionName',
+      key: 'positionName',
+      width: 150,
+    },
+    {
+      title: '入职日期',
+      dataIndex: 'hireDate',
+      key: 'hireDate',
+      width: 120,
+      align: 'center',
+    },
+    {
+      title: '应发工资',
+      dataIndex: 'grossSalary',
+      key: 'grossSalary',
+      width: 120,
+      align: 'right',
+      render: (v: number) => `${formatWan(v)}万`,
+    },
+    {
+      title: '实发工资',
+      dataIndex: 'netSalary',
+      key: 'netSalary',
+      width: 120,
+      align: 'right',
+      render: (v: number) => `${formatWan(v)}万`,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      align: 'center',
+      render: (_: any, record: EmployeeDetail) => (
+        <a
+          onClick={() => {
+            window.open(
+              `/admin/payroll/payslips?month=${selectedPeriod}&employeeId=${record.employeeId}`,
+              '_blank',
+            );
+          }}
+        >
+          查看工资条
+        </a>
+      ),
+    },
+  ];
+
+  // ==================== 展开渲染 ====================
+
+  const expandedRowRender = (record: DeptSalaryItem) => {
+    if (!record.employees || record.employees.length === 0) {
+      return <Empty description="暂无员工明细" />;
     }
-    fetchData(
-      periodRange[0].format('YYYY-MM'),
-      periodRange[1].format('YYYY-MM'),
-      departmentId,
+    return (
+      <Table<EmployeeDetail>
+        columns={empColumns}
+        dataSource={record.employees}
+        rowKey="employeeId"
+        pagination={false}
+        size="small"
+        bordered={false}
+        style={{ margin: 0 }}
+      />
     );
-  };
-
-  // Line chart data: transform to flat structure with series field
-  const lineChartData = trendData.flatMap((item) => [
-    { period: item.period, value: item.grossTotal, type: '应发总额' },
-    { period: item.period, value: item.netTotal, type: '实发总额' },
-  ]);
-
-  const lineConfig = {
-    data: lineChartData,
-    xField: 'period' as const,
-    yField: 'value' as const,
-    seriesField: 'type' as const,
-    color: ['#1677ff', '#52c41a'],
-    smooth: true,
-    point: { size: 3 },
-    legend: {
-      position: 'top' as const,
-    },
-    yAxis: {
-      label: {
-        formatter: (v: number) => `${(v / 10000).toFixed(2)}万`,
-      },
-    },
-    tooltip: {
-      formatter: (datum: any) => ({
-        name: datum.type,
-        value: `${datum.value?.toFixed(2)} 元`,
-      }),
-    },
-    height: 300,
-  };
-
-  const columnConfig = {
-    data: deptData,
-    xField: 'deptName' as const,
-    yField: 'grossTotal' as const,
-    color: '#1677ff',
-    label: {
-      position: 'top' as const,
-      formatter: (datum: any) => `${(datum.grossTotal / 10000).toFixed(2)}万`,
-    },
-    yAxis: {
-      label: {
-        formatter: (v: number) => `${(v / 10000).toFixed(2)}万`,
-      },
-    },
-    tooltip: {
-      formatter: (datum: any) => ({
-        name: '薪资总额',
-        value: `${datum.grossTotal?.toFixed(2)} 元`,
-      }),
-    },
-    height: 300,
   };
 
   return (
     <Card title="成本报表">
       <Space style={{ marginBottom: 24 }} wrap>
-        <RangePicker
-          picker="month"
-          value={periodRange as any}
-          onChange={(dates) => setPeriodRange(dates as any)}
-          allowClear={false}
-        />
         <TreeSelect
-          treeData={mockDeptTree}
+          treeData={deptTree}
           placeholder="选择部门"
           allowClear
-          style={{ width: 200 }}
-          value={departmentId}
-          onChange={(val) => setDepartmentId(val)}
+          style={{ width: 240 }}
+          value={selectedDept}
+          onChange={(val) => setSelectedDept(val)}
           treeDefaultExpandAll
+          fieldNames={{ label: 'name', value: 'id' }}
         />
-        <span>
-          <a onClick={handleSearch} style={{ cursor: 'pointer' }}>
-            查询
-          </a>
-        </span>
+        <Select
+          placeholder="选择核算月份"
+          style={{ width: 150 }}
+          value={selectedPeriod}
+          onChange={(val) => setSelectedPeriod(val)}
+          options={periods.map((p) => ({ label: p, value: p }))}
+          notFoundContent="暂无核算数据"
+        />
       </Space>
 
-      <Spin spinning={loading}>
-        <Row gutter={[24, 24]}>
-          <Col span={24}>
-            <Card title="薪资成本月度趋势" size="small">
-              {lineChartData.length > 0 ? (
-                <Line {...lineConfig} />
-              ) : (
-                <Empty description="暂无趋势数据" />
-              )}
+      {/* 统计卡片 */}
+      {report && (
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col span={8}>
+            <Card size="small">
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: '#999', fontSize: 13 }}>员工总数</div>
+                <div style={{ fontSize: 24, fontWeight: 600, color: '#1677ff' }}>
+                  {report.totalEmployeeCount}
+                </div>
+              </div>
             </Card>
           </Col>
-          <Col span={24}>
-            <Card title="部门薪资分布" size="small">
-              {deptData.length > 0 ? (
-                <Column {...columnConfig} />
-              ) : (
-                <Empty description="暂无分布数据" />
-              )}
+          <Col span={8}>
+            <Card size="small">
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: '#999', fontSize: 13 }}>应发总额</div>
+                <div style={{ fontSize: 24, fontWeight: 600, color: '#52c41a' }}>
+                  {formatWan(report.totalSalary)}万
+                </div>
+              </div>
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card size="small">
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: '#999', fontSize: 13 }}>实发总额</div>
+                <div style={{ fontSize: 24, fontWeight: 600, color: '#faad14' }}>
+                  {formatWan(report.totalActualSalary)}万
+                </div>
+              </div>
             </Card>
           </Col>
         </Row>
+      )}
+
+      {/* 部门薪资汇总列表 */}
+      <Spin spinning={loading}>
+        <Card title="部门薪资汇总" size="small">
+          {report && report.children && report.children.length > 0 ? (
+            <Table<DeptSalaryItem>
+              columns={deptColumns}
+              dataSource={report.children}
+              rowKey="deptId"
+              pagination={false}
+              expandable={{
+                expandedRowRender,
+                expandedRowKeys,
+                rowExpandable: (record) => record.hasDetail,
+                // 左侧 +/- 图标仅展示状态，不绑定点击事件
+                expandIcon: ({ expanded }) => (
+                  <span style={{ cursor: 'default', userSelect: 'none' }}>
+                    {expanded ? '−' : '+'}
+                  </span>
+                ),
+              }}
+            />
+          ) : (
+            <Empty
+              description={
+                selectedPeriod ? '所选月份暂无薪资核算数据' : '请选择部门和月份'
+              }
+            />
+          )}
+        </Card>
       </Spin>
     </Card>
   );
 };
+
 export default CostReportPage;

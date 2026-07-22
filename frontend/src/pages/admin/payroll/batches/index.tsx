@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Card, Button, Tag, message, Modal, Input, Space, Progress, Table } from 'antd';
+import { Card, Button, Tag, message, Modal, Input, Select, Space, Progress, Table } from 'antd';
 import {
   PlusOutlined,
   PlayCircleOutlined,
@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
+import dayjs from 'dayjs';
 
 import {
   getBatches,
@@ -64,7 +65,8 @@ const anomalyFlagColor: Record<string, string> = {
 const BatchPage: React.FC = () => {
   const actionRef = useRef<ActionType>();
   const [createOpen, setCreateOpen] = useState(false);
-  const [period, setPeriod] = useState('');
+  const [year, setYear] = useState<number>(dayjs().year());
+  const [month, setMonth] = useState<number>(dayjs().month() + 1);
 
   // Detail modal state
   const [detailOpen, setDetailOpen] = useState(false);
@@ -153,15 +155,13 @@ const BatchPage: React.FC = () => {
   ];
 
   const handleCreate = async () => {
-    if (!period) {
-      message.error('请输入账期');
-      return;
-    }
+    const period = `${year}-${String(month).padStart(2, '0')}`;
     try {
       await createBatch({ period });
       message.success('创建成功');
       setCreateOpen(false);
-      setPeriod('');
+      setYear(dayjs().year());
+      setMonth(dayjs().month() + 1);
       actionRef.current?.reload();
     } catch (err: any) {
       message.error(err?.message);
@@ -330,13 +330,22 @@ const BatchPage: React.FC = () => {
         title="新建批次"
         open={createOpen}
         onOk={handleCreate}
-        onCancel={() => setCreateOpen(false)}
+        onCancel={() => { setCreateOpen(false); setYear(dayjs().year()); setMonth(dayjs().month() + 1); }}
       >
-        <Input
-          placeholder="账期格式: 2026-07"
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-        />
+        <Space>
+          <Select value={year} onChange={setYear} style={{ width: 100 }}
+            options={Array.from({ length: 5 }, (_, i) => {
+              const y = dayjs().year() - i;
+              return { label: `${y}年`, value: y };
+            })}
+          />
+          <Select value={month} onChange={setMonth} style={{ width: 100 }}
+            options={Array.from({ length: 12 }, (_, i) => ({
+              label: `${i + 1}月`, value: i + 1,
+            }))}
+          />
+          <span style={{ color: '#999' }}>→ {year}-{String(month).padStart(2, '0')}</span>
+        </Space>
       </Modal>
 
       {/* Detail modal with anomaly highlighting */}
