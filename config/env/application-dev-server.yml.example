@@ -20,5 +20,7 @@ spring:
     username: hrms
     password: hrms123
 
+# 启用 MQ 时还需：application.yml 去掉 RabbitAutoConfiguration exclude，并设 hrms.rabbitmq.enabled=true
+
 # 本机开发请另用 application-dev-local.yml（见 application-dev-local.yml.example）
 # 并设置 hrms.feign.mock-enabled=false 以关闭入职 Feign Mock

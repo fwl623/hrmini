@@ -49,7 +49,12 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * 统一落库审批引擎（唯一实现）。
+ * 【DB 审批引擎】现网主路径：待办持久化在 MySQL，重启不丢。
+ *   业务 Service 组装 ProcessNodeDef 链 → {@link #createInstance}
+ *   写 approval_instance + 首节点 approval_task + 日志
+ *   {@link #action}：校验归属/委托 → 写日志 → 通过推进下一节点或回调业务终态；驳回回调业务驳回
+ *   撤回：实例结束 + 业务单回退（如入职回 draft）
+ * 状态机只算「下一状态」；本类负责「实例/任务/日志」落库。单据状态不以 Redis 做主存储。
  */
 @Service
 public class DbApprovalService implements ApprovalEngineService {
@@ -108,6 +113,21 @@ public class DbApprovalService implements ApprovalEngineService {
         this.employeeLifecycleService = employeeLifecycleService;
     }
 
+    /**
+     * 跨模块统一入口：根据 {@link CreateApprovalRequest} 创建审批实例并返回 instanceId。
+     * 考勤/薪资等模块通过 {@link ApprovalEngineService} 接口调用；入转调离业务更常走下方 String 重载。
+     * <p>
+     * 【谁调用】{@code ApprovalController.startInstance}；
+     * {@code LeaveService} / {@code OvertimeService} / {@code PunchService}（注入 ApprovalEngineService）
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>校验 processType、businessId；{@code AssigneeResolver.resolveNodes} 按流程类型解析默认节点链</li>
+     *   <li>{@code enrichNodeAssignees}：把 SUPERVISOR/DEPT_MANAGER/HR 等占位解析为真实 userId</li>
+     *   <li>组装 {@code InstanceDisplay}（标题、申请人、摘要）后委托 {@link #createInstance(String, String, Long, List, InstanceDisplay, Map)}</li>
+     *   <li>返回 {@code CreateApprovalResult(instanceId, "PENDING")}</li>
+     * </ol>
+     */
     @Override
     @Transactional
     public CreateApprovalResult createInstance(CreateApprovalRequest request) {
@@ -167,6 +187,22 @@ public class DbApprovalService implements ApprovalEngineService {
         return true;
     }
 
+    /**
+     * 入转调离等业务侧创建审批实例的核心重载：写入 instance、首节点 task、SUBMIT 日志。
+     * 节点链由业务 Service 预先组装（含 assigneeUserId），variables 供 AssigneeResolver 兜底解析。
+     * <p>
+     * 【谁调用】{@code OnboardingService.submit}、{@code RegularizationService.create}、
+     * {@code TransferService.create}、{@code ResignationService.createResignation}；
+     * 本类 {@link #createInstance(CreateApprovalRequest)} 内部委托
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>校验 nodes 非空；{@code ApprovalInstanceMapper.insert} 写 instance（status=PENDING，nodesJson 序列化）</li>
+     *   <li>{@code createTask}：{@code AssigneeResolver} + {@code DelegationService.resolveAssignee} 确定 actualAssignee</li>
+     *   <li>{@code ApprovalTaskMapper.insert} 首节点 PENDING 任务，slaDeadline=now+48h</li>
+     *   <li>{@code ApprovalNotifyPublisher.scheduleRemind} 投递催办 MQ；{@code writeLog} 记录 SUBMIT</li>
+     * </ol>
+     */
     @Transactional
     public Long createInstance(String processType,
                                String businessKey,
@@ -218,6 +254,19 @@ public class DbApprovalService implements ApprovalEngineService {
         return instanceMapper.selectById(instanceId) != null;
     }
 
+    /**
+     * 【干什么】统计当前用户可见待办的 pending 数、今日已办数、超期数，供审批中心 KPI 卡片。
+     * <p>
+     * 【谁调用】{@code ApprovalController.taskStats}
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>{@code tasksVisibleToUser} 查本人 assignee/actualAssignee 及委托待办</li>
+     *   <li>pending：status=PENDING 且 {@code isEffectiveAssignee} 为 true</li>
+     *   <li>approvedToday：completedAt 为今天且 status=APPROVED/DONE</li>
+     *   <li>overdueCount：PENDING 且 slaDeadline 已过期</li>
+     * </ol>
+     */
     public ApprovalDtos.TaskStatsVO taskStats(long userId) {
         List<ApprovalTask> mine = taskMapper.selectList(tasksVisibleToUser(userId));
         ApprovalDtos.TaskStatsVO vo = new ApprovalDtos.TaskStatsVO();
@@ -284,6 +333,19 @@ public class DbApprovalService implements ApprovalEngineService {
         return list;
     }
 
+    /**
+     * 【干什么】分页查询当前用户的审批待办/已办列表，支持按 status、processType、keyword 筛选。
+     * <p>
+     * 【谁调用】{@code ApprovalController.listTasks}
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>{@code tasksVisibleToUser} + {@code ApprovalTaskMapper.selectList} 按 id 倒序</li>
+     *   <li>status=pending 时过滤 {@code isEffectiveAssignee}（含委托解析）</li>
+     *   <li>{@code toTaskItem} 关联 instance 组装标题/申请人/节点标签</li>
+     *   <li>内存过滤 processType、keyword 后 {@code pageOf} 分页</li>
+     * </ol>
+     */
     public PageResult<ApprovalDtos.TaskListItemVO> listTasks(long userId, String status, String processType,
                                                              String keyword, int page, int pageSize) {
         LambdaQueryWrapper<ApprovalTask> q = tasksVisibleToUser(userId).orderByDesc(ApprovalTask::getId);
@@ -310,6 +372,19 @@ public class DbApprovalService implements ApprovalEngineService {
         return pageOf(all, page, pageSize);
     }
 
+    /**
+     * 【干什么】返回单条待办的完整详情：任务摘要、实例信息、业务 Detail、节点进度、时间线、可操作按钮。
+     * <p>
+     * 【谁调用】{@code ApprovalController.getTaskDetail}
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>{@code ApprovalTaskMapper.selectById} + {@code ApprovalInstanceMapper.selectById} 加载任务与实例</li>
+     *   <li>{@code buildBusinessDetail} 按 processType 分发到各业务 Service（如 OnboardingService.businessDetail）</li>
+     *   <li>{@code buildNodeProgress} / {@code buildTimeline} 组装进度与时间线</li>
+     *   <li>PENDING 且 {@code isEffectiveAssignee} 时 actions 含 APPROVE/REJECT/FORWARD</li>
+     * </ol>
+     */
     public ApprovalDtos.TaskDetailVO getTaskDetail(long taskId, long userId) {
         ApprovalTask task = taskMapper.selectById(taskId);
         if (task == null) {
@@ -354,6 +429,19 @@ public class DbApprovalService implements ApprovalEngineService {
         return detail;
     }
 
+    /**
+     * 【干什么】对指定待办任务发起催办，立即通知当前有效审批人并写 REMIND 日志。
+     * <p>
+     * 【谁调用】{@code ApprovalController.remindTask}
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>校验任务存在且 status=PENDING，否则抛 {@code APPROVAL_ALREADY_HANDLED}</li>
+     *   <li>{@code effectiveAssigneeId} 解析实际审批人（含转交/委托）</li>
+     *   <li>{@code ApprovalNotifyPublisher.publishImmediateRemind} 发即时催办（MQ 或日志降级）</li>
+     *   <li>{@code writeLog} 记录 REMIND 动作</li>
+     * </ol>
+     */
     @Transactional
     public void remind(long taskId, long operatorId) {
         ApprovalTask task = taskMapper.selectById(taskId);
@@ -369,6 +457,20 @@ public class DbApprovalService implements ApprovalEngineService {
                 "PENDING", "PENDING", "催办");
     }
 
+    /**
+     * 【干什么】审批操作主链路：处理待办的 APPROVE / REJECT / FORWARD，推进节点或触发业务终态回调。
+     * <p>
+     * 【谁调用】{@code ApprovalController.action}；前端 {@code pages/admin/approval} → {@code postTaskAction}
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>校验 task 为 PENDING；{@code effectiveAssigneeId} 须等于 operator，否则 403</li>
+     *   <li>REJECT 须 comment；FORWARD 须 targetUserId，更新 actualAssigneeId 并重排催办</li>
+     *   <li>正式离职 RESIGNATION 第 1 岗 APPROVE 时可带 handoverEmployeeId → {@code ResignationService.confirmHandover}</li>
+     *   <li>更新 task 状态 → {@code writeLog}；REJECT：instance=REJECTED → {@code LifecycleApprovalHandler.onRejected} + MQ 事件</li>
+     *   <li>APPROVE：有下一节点则 {@code createTask} 推进 currentNode；否则 instance=APPROVED → {@code LifecycleApprovalHandler.onApproved} + MQ</li>
+     * </ol>
+     */
     @Transactional
     public void action(long taskId, long userId, ApprovalDtos.ActionRequest body) {
         if (body == null || body.getAction() == null) {
@@ -456,14 +558,32 @@ public class DbApprovalService implements ApprovalEngineService {
         }
     }
 
+    /**
+     * 【干什么】撤回审批实例（两参数重载）：取消 instance 及全部 PENDING 任务，并回调业务撤回逻辑。
+     * <p>
+     * 【谁调用】{@code DbApprovalService.withdrawInstance}（{@link ApprovalEngineService} 接口实现）；
+     * {@code OnboardingService.withdraw} / {@code ResignationService.cancelMyRequest} 等经 withdrawInstance 间接调用
+     * <p>
+     * 【怎么实现】委托 {@link #doWithdrawInstance(long, long, Long)}，employeeId 传 null
+     */
     @Transactional
     public void doWithdrawInstance(long instanceId, long userId) {
         doWithdrawInstance(instanceId, userId, null);
     }
 
     /**
-     * 撤回审批实例。initiatorId 可能存 userId 或 employeeId（请假等业务用 employeeId）。
-     * HR_STAFF / SYS_ADMIN 可代撤（管理端撤销请假等，BUG-025）。
+     * 【干什么】撤回审批实例（三参数重载）：兼容 initiatorId 存 userId 或 employeeId 的场景。
+     * 仅 PENDING 且无任何节点已审批时可撤；HR/管理员可代撤。
+     * <p>
+     * 【谁调用】{@code ApprovalController.withdrawInstance}；{@link #doWithdrawInstance(long, long)} 内部委托
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>校验 initiator 匹配 userId/employeeId 或 {@code isHrOrAdmin}</li>
+     *   <li>instance.status 须 PENDING；任一 task 非 PENDING 则不可撤</li>
+     *   <li>instance 与全部 PENDING task 置 CANCELLED；{@code writeLog} 记录 WITHDRAW</li>
+     *   <li>{@code LifecycleApprovalHandler.onWithdrawn} 回调各业务 Service 回退单据状态</li>
+     * </ol>
      */
     @Transactional
     public void doWithdrawInstance(long instanceId, long userId, Long employeeId) {
@@ -502,6 +622,18 @@ public class DbApprovalService implements ApprovalEngineService {
         publishCompleted(instance, "CANCELLED", "撤回申请");
     }
 
+    /**
+     * 【干什么】分页查询当前用户发起的审批实例列表（我发起的 Tab）。
+     * <p>
+     * 【谁调用】{@code ApprovalController.listMyInstances}
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>{@code ApprovalInstanceMapper.selectList} 按 initiatorId=userId 倒序</li>
+     *   <li>{@code displayOf} 实时解析申请人姓名；{@code labelOf} 取当前节点标签</li>
+     *   <li>内存 {@code pageOf} 分页返回</li>
+     * </ol>
+     */
     public PageResult<ApprovalDtos.InstanceListItemVO> listMyInstances(long userId, int page, int pageSize) {
         List<ApprovalInstance> list = instanceMapper.selectList(new LambdaQueryWrapper<ApprovalInstance>()
                 .eq(ApprovalInstance::getInitiatorId, userId)
@@ -524,7 +656,16 @@ public class DbApprovalService implements ApprovalEngineService {
     }
 
     /**
-     * 发起人查看实例进度（兼容 initiatorId 存 userId 或 employeeId）
+     * 【干什么】发起人（或 HR）查看审批实例进度：节点状态、时间线、业务 Detail，不含待办操作按钮。
+     * <p>
+     * 【谁调用】{@code ApprovalController.getInstanceDetail}；入职/请假等业务页查看审批进度
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>校验 initiator 匹配 userId/employeeId 或 {@code isHrOrAdmin}</li>
+     *   <li>{@code buildNodeProgress} + {@code buildTimeline} 组装进度与时间线</li>
+     *   <li>{@code buildBusinessDetail}（task=null）按 processType 拉取业务详情</li>
+     * </ol>
      */
     public ApprovalDtos.InstanceDetailVO getInstanceDetail(long instanceId, long userId, Long employeeId) {
         ApprovalInstance instance = instanceMapper.selectById(instanceId);

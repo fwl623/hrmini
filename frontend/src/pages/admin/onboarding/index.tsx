@@ -1,3 +1,24 @@
+/**
+ * 【模块说明 · 入职管理页】路由 /admin/onboarding
+ *
+ * 干什么：HR 维护入职申请全生命周期——新建/编辑草稿、提交与撤回审批、审批通过后确认入职或放弃；
+ *         查看审批进度 Steps/Timeline；已入职且仍试用期（employmentStatus=10）的员工可跳转转正页。
+ *
+ * 主要状态（页面 useState，无全局 Store）：
+ * - list / stats：入职单列表 + 顶部各状态 Statistic 卡片
+ * - open / editingId / form：新建/编辑 Modal
+ * - dateModal / dateForm：修改预计入职日
+ * - progressOpen / progressNodes / progressTimeline：审批进度 Drawer
+ * - deptTreeOptions / positions / managerOptions：表单级联（部门→职位→直属上级）
+ *
+ * 调哪些 API：
+ * - @/services/workflow：fetchOnboardingApplications、create/update/delete/submit/withdraw/
+ *   confirm/abandon、fetchInstanceDetail
+ * - @/services/org：getDeptTree、listPositions
+ * - @/services/employee：getEmployeeList、getEmployeeDetail（直属上级候选人）
+ *
+ * actionsForStatus：行级按钮显隐矩阵，见下方函数注释；前端只做体验层，后端仍校验状态机。
+ */
 import {
   Button,
   Card,
@@ -126,6 +147,16 @@ const NODE_STATE_TO_STEP: Record<string, 'wait' | 'process' | 'finish' | 'error'
   cancelled: 'error',
 };
 
+/**
+ * 【行级按钮矩阵 actionsForStatus】
+ * 按入职单 status + employmentStatus + expectedOnboardDate 集中计算表格「操作」列显隐，避免列内散落 if。
+ * - draft/rejected：edit / submit / remove（编辑、提交/重提、删除）
+ * - pending：withdraw / viewProgress（撤回、审批进度）
+ * - approved_pending：confirm / confirmReady / abandon / changeDate / viewProgress
+ *   （confirmReady=预计入职日已到才可点确认入职，否则置灰+Tooltip）
+ * - onboarded 且 employmentStatus===10：regularize（跳转 admin/regularization）
+ * - rejected：viewReject（驳回详情）；onboarded/rejected/abandoned 等可 viewProgress
+ */
 function actionsForStatus(status: string, employmentStatus?: number, expectedOnboardDate?: string) {
   const onboardDateReached = !expectedOnboardDate
     || !dayjs(expectedOnboardDate).isAfter(dayjs(), 'day');
@@ -147,7 +178,7 @@ function actionsForStatus(status: string, employmentStatus?: number, expectedOnb
 }
 
 /**
- * 入职管理：StatCards + 状态按钮矩阵（含草稿编辑 / 驳回重提 / 改入职日 / 部门职位选择器）
+ * 入职管理页组件入口；权限 canManageWorkflow（部门主管不进本页，只进审批中心）。
  */
 export default function OnboardingPage() {
   const [list, setList] = useState<OnboardingItem[]>([]);
@@ -281,22 +312,24 @@ export default function OnboardingPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [deptRes, posRes] = await Promise.all([
-          getDeptTree(),
-          listPositions({ page: 1, pageSize: 200 }),
-        ]);
-        const nodes = deptRes.data ?? [];
-        setDeptTreeOptions(toDeptTreeOptions(nodes));
-        setDeptById(flattenDeptNodes(nodes));
-        setPositions(posRes.data?.list ?? []);
-      } catch {
-        message.warning('部门/职位选项加载失败，可稍后刷新重试');
-      }
-    })();
+  const loadOptions = useCallback(async () => {
+    try {
+      const [deptRes, posRes] = await Promise.all([
+        getDeptTree(),
+        listPositions({ page: 1, pageSize: 200 }),
+      ]);
+      const nodes = deptRes.data ?? [];
+      setDeptTreeOptions(toDeptTreeOptions(nodes));
+      setDeptById(flattenDeptNodes(nodes));
+      setPositions(posRes.data?.list ?? []);
+    } catch {
+      message.warning('部门/职位选项加载失败，可稍后刷新重试');
+    }
   }, []);
+
+  useEffect(() => {
+    loadOptions();
+  }, [loadOptions]);
 
   useEffect(() => {
     if (!open) return;

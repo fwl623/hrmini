@@ -10,11 +10,11 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 12MB
-  # RabbitMQ 已启用（连接服务器 39.101.67.167:5672）
-  # 如需回退：取消本 exclude 注释，再注释 application-dev.yml 中 rabbitmq 配置
-  # autoconfigure:
-  #   exclude:
-  #     - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+  # 本地默认排除 AMQP：本机无 RabbitMQ 时不刷 Connection refused。
+  # 启用 MQ 时：① 注释掉下面 exclude ② hrms.rabbitmq.enabled=true ③ 配置 spring.rabbitmq.*
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
       # Redis：登录/鉴权已依赖 StringRedisTemplate，勿再排除 RedisAutoConfiguration
       # - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       # - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
@@ -60,7 +60,8 @@ hrms:
   # 入职确认默认走本地真实建档/建号；仅联调隔离时可设 true 用 Mock
   feign:
     mock-enabled: false
-  # Day4：RabbitMQ 催办默认关闭（骨架 + OverdueCheckJob）；启用见 RabbitConfig 注释
+  # 本地默认关闭：入转调离催办降级日志；考勤/薪资 Listener 也不装配。
+  # 启用时与 spring.autoconfigure.exclude 中的 RabbitAutoConfiguration 一并打开。
   rabbitmq:
     enabled: false
   # 短信：联调开启开发码；生产设 hrms.sms.dev-enabled=false

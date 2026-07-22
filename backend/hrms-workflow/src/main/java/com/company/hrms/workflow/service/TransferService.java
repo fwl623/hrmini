@@ -34,6 +34,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 【调岗业务 Service】管理调岗申请、三/四节点审批链及生效日延迟执行；
+ * 审批通过后调用 {@link EmployeeLifecycleService#applyTransfer} 变更员工组织与薪资。
+ */
 @Service
 public class TransferService {
 
@@ -61,7 +65,14 @@ public class TransferService {
         this.orgLookupMapper = orgLookupMapper;
     }
 
-    /** 审批中心业务详情 */
+    /**
+     *  组装审批中心展示用的调岗业务详情 Map（原/新部门、职位、调薪、生效日等）。
+     * 【调用】{@code DbApprovalService.buildBusinessDetail}（processType=TRANSFER）
+     * 【实现】
+     *   <li>{@code TransferApplicationMapper.selectById} 加载申请</li>
+     *   <li>{@code EmployeeLifecycleService} / {@code OrgLookupMapper} 解析员工与部门职位名称</li>
+     *   <li>填充 from/new 部门、职位、直属上级、调薪、reason、status</li>
+     */
     public Map<String, Object> businessDetail(Long applicationId) {
         Map<String, Object> biz = new HashMap<>();
         if (applicationId == null) {
@@ -108,6 +119,10 @@ public class TransferService {
         return biz;
     }
 
+    /**
+     *  HR 分页查询调岗申请列表，可选按 status 筛选。
+     * 【调用】{@code TransferController.list}
+     */
     public PageResult<LifecycleDtos.TransferVO> list(int page, int pageSize, String status) {
         requireHrOrAdmin();
         LambdaQueryWrapper<TransferApplication> q = new LambdaQueryWrapper<TransferApplication>()
@@ -126,6 +141,10 @@ public class TransferService {
         return PageResult.of(list, all.size(), p, size);
     }
 
+    /**
+     *  按 id 返回调岗申请详情（含审批节点进度）。
+     * 【调用】{@code TransferController.detail}
+     */
     public LifecycleDtos.TransferVO detail(Long id) {
         requireHrOrAdmin();
         TransferApplication app = mapper.selectById(id);
@@ -135,6 +154,16 @@ public class TransferService {
         return toVo(app, true);
     }
 
+    /**
+     * HR 发起调岗：校验部门变更约束(30004)，落调岗单并创建审批实例。
+     * 含调薪时审批链增加财务节点（原部门→新部门→财务→HR 备案）。
+     * 【调用】{@code TransferController.create}
+     * 【实现】
+     *   <li>{@code requireHrOrAdmin}；校验 newDepartmentId ≠ 原部门、生效日、员工状态(10/20)</li>
+     *   <li>{@code TransferApplicationMapper.insert} status=APPROVING，记录 from/new 部门职位等</li>
+     *   <li>{@code buildTransferNodes} 组装节点链 → {@code DbApprovalService.createInstance}（TRANSFER）</li>
+     *   <li>回写 instanceId，{@code toVo} 返回详情</li>
+     */
     @Transactional
     public LifecycleDtos.TransferVO create(LifecycleDtos.TransferCreateRequest req) {
         requireHrOrAdmin();
@@ -210,6 +239,10 @@ public class TransferService {
         return toVo(app, true);
     }
 
+    /**
+     *  调岗审批全部通过回调：生效日未到则 PENDING_EFFECT；否则立即 {@code doEffect} 变更员工档案。
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onApproved}（processType=TRANSFER）
+     */
     @Transactional
     public void onApproved(Long appId) {
         TransferApplication app = mapper.selectById(appId);
@@ -228,7 +261,10 @@ public class TransferService {
         doEffect(app);
     }
 
-    /** Job / 联调：将到期待生效调岗单生效 */
+    /**
+     *  定时 Job / 联调手动触发：将到期待生效调岗单执行 {@code doEffect}。
+     * 【调用】{@code TransferEffectJob}；{@code TransferController.effectDue}（联调）
+     */
     @Transactional
     public int effectDueTransfers(LocalDate today) {
         List<TransferApplication> due = mapper.selectList(new LambdaQueryWrapper<TransferApplication>()
@@ -263,6 +299,10 @@ public class TransferService {
         log.info("调岗已生效 appId={} employeeId={}", app.getId(), app.getEmployeeId());
     }
 
+    /**
+     *  调岗审批被驳回或撤回：调岗单 → REJECTED 或 CANCELLED。
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onRejected} / {@code LifecycleApprovalHandlerImpl.onWithdrawn}
+     */
     @Transactional
     public void onRejectedOrWithdrawn(Long appId, boolean withdrawn) {
         TransferApplication app = mapper.selectById(appId);

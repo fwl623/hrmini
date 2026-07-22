@@ -39,6 +39,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 【入职业务 Service】管单据与 PRD 规则；审批实例交给 {@link DbApprovalService}。
+ * 确认入职调用链：
+ * confirm → 状态校验 approved_pending + 入职日已到 → EmployeeArchiveClient.archive →
+ * AuthAccountClient.createAccount → 状态机 → onboarded → ApprovalNotifyPublisher（MQ 或日志降级）。
+ * 事务：建档/建号/状态更新在同一事务思路；通知失败只打日志，不轻易拖死主事务。
+ */
 @Service("workflowOnboardingService")
 public class OnboardingService {
 
@@ -77,6 +84,16 @@ public class OnboardingService {
         this.notifyPublisher = notifyPublisher;
     }
 
+    /**
+     *  分页查询入职申请列表，可选按 status 筛选；响应附带各状态统计 stats。
+     * 【调用】{@code OnboardingController.list}
+     * 【实现】
+     *   {@code requireHrOrAdmin} 校验 HR/管理员权限
+     *   {@code OnboardingApplicationMapper.selectList} 按 id 倒序查表，可选 status 等值条件
+     *   {@code applyVisibilityFilter} 非 HR/管理员仅可见本人创建的单据
+     *   内存分页 {@code subList}，逐条 {@code toVo} 转 VO
+     *   调用 {@link #stats()} 填充统计卡片数据
+     */
     public OnboardingDtos.OnboardingListResponse list(int page, int pageSize, String status) {
         requireHrOrAdmin();
         LambdaQueryWrapper<OnboardingApplication> q = new LambdaQueryWrapper<OnboardingApplication>()
@@ -100,12 +117,24 @@ public class OnboardingService {
         return resp;
     }
 
+    /**
+     *  按 id 返回单条入职申请详情（表单回填、详情抽屉）。
+     * 【调用】{@code OnboardingController.detail}
+     * 【实现】
+     *   {@code require(id)} 经 {@code OnboardingApplicationMapper.selectById} 加载，不存在抛 404
+     *   {@code assertCanView}：HR/管理员、创建人、目标部门负责人可查看
+     *   {@code toVo} 组装 VO（含职位是否标准、职级薪资上限、驳回原因等）
+     */
     public OnboardingDtos.OnboardingVO detail(long id) {
         OnboardingApplication app = require(id);
         assertCanView(app);
         return toVo(app);
     }
 
+    /**
+     *  统计各状态入职单数量（draft/pending/approved_pending/onboarded/rejected/abandoned）。
+     * 【调用】{@code OnboardingController.stats}；{@link #list} 内嵌调用
+     */
     public OnboardingDtos.OnboardingStatsVO stats() {
         requireHrOrAdmin();
         LambdaQueryWrapper<OnboardingApplication> q = new LambdaQueryWrapper<>();
@@ -127,6 +156,10 @@ public class OnboardingService {
         return s;
     }
 
+    /**
+     *  新建入职草稿（status=draft），尚未进入审批中心。
+     * 【调用】{@code OnboardingController.create}
+     */
     @Transactional
     public OnboardingDtos.OnboardingVO create(OnboardingDtos.OnboardingFormRequest req, long userId) {
         requireHrOrAdmin();
@@ -145,6 +178,17 @@ public class OnboardingService {
         return toVo(app);
     }
 
+    /**
+     * 编辑入职单：草稿/驳回可改全量字段；待入职（approved_pending）仅可改预计入职日。
+     * <p>
+     * 【调用】{@code OnboardingController.update}
+     * <p>
+     * 【实现】
+     *   <li>{@code require(id)} 加载申请，按 status 分支</li>
+     *   <li>approved_pending：{@code assertCanManageApprovedPending}，仅更新 expectedOnboardDate</li>
+     *   <li>draft/rejected：{@code assertCanMutate} → 校验表单/手机号唯一 → {@code applyForm} → {@code updateById}</li>
+     *   <li>其它状态抛 {@code APPROVAL_STATE_INVALID}</li>
+     */
     @Transactional
     public OnboardingDtos.OnboardingVO update(long id, OnboardingDtos.OnboardingFormRequest req) {
         OnboardingApplication app = require(id);
@@ -180,6 +224,10 @@ public class OnboardingService {
         return toVo(app);
     }
 
+    /**
+     *  删除草稿或已驳回的入职申请。
+     * 【调用】{@code OnboardingController.delete}
+     */
     @Transactional
     public void delete(long id) {
         OnboardingApplication app = require(id);
@@ -192,6 +240,17 @@ public class OnboardingService {
         mapper.deleteById(id);
     }
 
+    /**
+     * 提交入职审批：业务单 draft/rejected → pending，并创建审批实例与首节点待办。
+     * 非标准职位或薪资超职级时 needSecondApproval=true，审批链多一级 HR 二审。
+     * 【调用】{@code OnboardingController.submit}；前端 {@code admin/onboarding} → {@code submitOnboardingApplication}
+     * 【实现】
+     *   <li>{@code assertCanMutate} → {@code ApprovalStateMachine.transit(SUBMIT)} 更新 status</li>
+     *   <li>{@code needSecondApproval} 判定非标职位/超薪，组装 variables（departmentId、gradeMax 等）</li>
+     *   <li>{@code buildOnboardingNodes}：部门负责人 + 可选 HR 二审（{@code EmployeeLifecycleService} 解析审批人）</li>
+     *   <li>{@code DbApprovalService.createInstance}（processType=ONBOARDING）写 instance + task + 日志</li>
+     *   <li>回写 {@code instanceId} 到入职单</li>
+     */
     @Transactional
     public OnboardingDtos.OnboardingVO submit(long id, long userId) {
         OnboardingApplication app = require(id);
@@ -230,6 +289,10 @@ public class OnboardingService {
         return toVo(app);
     }
 
+    /**
+     *  撤回审批中的入职单：结束审批实例，业务单回 draft。
+     * 【调用】{@code OnboardingController.withdraw}
+     */
     @Transactional
     public OnboardingDtos.OnboardingVO withdraw(long id, long userId) {
         OnboardingApplication app = require(id);
@@ -248,6 +311,11 @@ public class OnboardingService {
         return toVo(require(id));
     }
 
+    /**
+     * 【主链路】HR 确认入职：审批通过后建档、开登录账号，status → onboarded。
+     * 注意：审批通过（approved_pending）后员工尚不能登录，必须经本方法完成。
+     * 【调用】{@code OnboardingController.confirm}；前端 {@code admin/onboarding} → {@code confirmOnboardingApplication}
+     */
     @Transactional
     public OnboardingDtos.OnboardingVO confirm(long id) {
         requireHrOrAdmin();
@@ -317,6 +385,10 @@ public class OnboardingService {
         return toVo(app);
     }
 
+    /**
+     *  放弃入职：审批已通过待入职阶段不再建档，status → abandoned。
+     * 【调用】{@code OnboardingController.abandon}
+     */
     @Transactional
     public OnboardingDtos.OnboardingVO abandon(long id) {
         OnboardingApplication app = require(id);
@@ -337,6 +409,20 @@ public class OnboardingService {
         return toVo(app);
     }
 
+    /**
+     * 审批引擎终态回调：审批通过 → approved_pending（待 HR confirm）；驳回 → rejected。
+     * 通过后员工仍不能登录，须再走 {@link #confirm(long)}。
+     * <p>
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onApproved/onRejected} → 本方法
+     * <p>
+     * 【实现】
+     * <ol>
+     *   <li>{@code parseBusinessId(businessKey)} 解析申请 id</li>
+     *   <li>加载入职单，仅 pending 状态可流转（幂等/防重复回调）</li>
+     *   <li>approved：{@code ApprovalStateMachine.transit(APPROVE)}；否则 {@code transit(REJECT)}</li>
+     *   <li>{@code mapper.updateById} 更新 status 与 updatedAt</li>
+     * </ol>
+     */
     public void onApprovalFinished(String businessKey, boolean approved, String comment) {
         Long id = parseBusinessId(businessKey);
         if (id == null) {
@@ -365,6 +451,11 @@ public class OnboardingService {
         mapper.updateById(app);
     }
 
+    /**
+     * 审批撤回回调：pending 状态的入职单回退为 draft。
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onWithdrawn} → 本方法
+     * 【实现】
+     */
     public void onApprovalWithdrawn(String businessKey) {
         Long id = parseBusinessId(businessKey);
         if (id == null) {
@@ -383,7 +474,19 @@ public class OnboardingService {
         }
     }
 
-    /** 审批中心业务详情 */
+    /**
+     * 组装审批中心展示用的入职业务详情 Map（姓名、部门、职位、薪资、是否需二审等）。
+     * <p>
+     * 【调用】{@code DbApprovalService.buildBusinessDetail} → 本方法（processType=ONBOARDING）
+     * <p>
+     * 【实现】
+     * <ol>
+     *   <li>{@code OnboardingApplicationMapper.selectById} 加载申请</li>
+     *   <li>{@code OrgLookupMapper} 解析部门/职位名称；{@code EmployeeLifecycleService} 查直属上级姓名</li>
+     *   <li>填充 positionStandard、gradeMax、needSecondApproval 等审批辅助字段</li>
+     *   <li>若 rejected，{@code ApprovalLogMapper} 查最近 REJECT 日志作为 rejectReason</li>
+     * </ol>
+     */
     public Map<String, Object> businessDetail(Long applicationId) {
         Map<String, Object> biz = new HashMap<>();
         if (applicationId == null) {
