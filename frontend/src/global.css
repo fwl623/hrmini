@@ -764,34 +764,104 @@ body {
   color: var(--hrms-primary) !important;
 }
 
-/* ---------- 门户页面特殊样式 ---------- */
-/* 门户侧边栏 */
-.hrms-portal-sider .ant-layout-sider-children {
-  background: #fff;
-  border-right: 1px solid var(--hrms-border-light);
+/* ---------- 门户考勤打卡页 ---------- */
+.hrms-portal-attendance .hrms-punch-clock-card {
+  background: linear-gradient(165deg, #f7faff 0%, #ffffff 48%, #ffffff 100%);
+  border: 1px solid var(--hrms-border-light) !important;
 }
 
-.hrms-portal-sider .hrms-sider-logo {
-  border-bottom: 1px solid var(--hrms-border-light);
-}
-
-.hrms-portal-sider .hrms-sider-logo .logo-text {
+.hrms-punch-clock-time {
+  text-align: center;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 1px;
   color: var(--hrms-text);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
-.hrms-portal-sider .ant-menu-item {
-  color: var(--hrms-text-secondary) !important;
+.hrms-punch-clock-date {
+  text-align: center;
+  color: var(--hrms-text-muted);
+  font-size: 13px;
+  margin: 8px 0 20px;
 }
 
-.hrms-portal-sider .ant-menu-item:hover {
+.hrms-punch-btn {
+  height: 48px !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+}
+
+.hrms-punch-btn-out {
+  border-color: var(--hrms-primary) !important;
   color: var(--hrms-primary) !important;
+}
+
+.hrms-punch-btn-out:hover {
   background: var(--hrms-primary-bg) !important;
 }
 
-.hrms-portal-sider .ant-menu-item-selected {
-  color: var(--hrms-primary) !important;
-  background: var(--hrms-primary-bg) !important;
-  font-weight: 500 !important;
+.hrms-punch-last {
+  margin-top: 14px;
+  text-align: center;
+  color: #00b42a;
+  font-size: 13px;
+}
+
+.hrms-punch-quota {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--hrms-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hrms-punch-stat-item {
+  background: var(--hrms-bg);
+  border-radius: 8px;
+  padding: 14px 12px;
+  min-height: 84px;
+}
+
+.hrms-punch-stat-label {
+  font-size: 12px;
+  color: var(--hrms-text-muted);
+  margin-bottom: 8px;
+}
+
+.hrms-punch-stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--hrms-text);
+  line-height: 1.1;
+}
+
+.hrms-punch-stat-value.primary {
+  color: var(--hrms-primary);
+}
+
+.hrms-punch-stat-value.warning {
+  color: #faad14;
+}
+
+.hrms-punch-stat-value.danger {
+  color: #ff4d4f;
+}
+
+.hrms-punch-stat-suffix {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--hrms-text-muted);
+  margin-left: 4px;
+}
+
+.hrms-punch-empty {
+  color: var(--hrms-text-muted);
+  font-size: 13px;
+  padding: 8px 0;
 }
 
 /* ---------- 登录页 ---------- */

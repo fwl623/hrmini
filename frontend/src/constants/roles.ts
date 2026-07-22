@@ -56,9 +56,19 @@ export function resolvePrimaryRole(roles: string[] = []): string {
   return roles[0] ?? '';
 }
 
+/** 是否仅有普通员工角色（无任何管理端角色）→ 只能进 /portal */
+export function isEmployeeOnly(roles: string[] = []): boolean {
+  const list = roles.map((r) => String(r).trim().toUpperCase()).filter(Boolean);
+  if (!list.length) return false;
+  const hasEmployee = list.includes(ROLES.EMPLOYEE);
+  const hasAdmin = list.some((role) => ADMIN_ROLES.includes(role as RoleCode));
+  return hasEmployee && !hasAdmin;
+}
+
 /**
- * 持有任一管理端菜单/系统 API 权限码时，即使角色仅为 EMPLOYEE 也可进入 /admin。
- * 与角色管理里可分配的 permission.code 对齐。
+ * 持有任一「业务管理」菜单/系统 API 权限码时，可进入 /admin
+ * （纯 EMPLOYEE 不受此项影响，见 isEmployeeOnly）。
+ * 不含 menu:workbench / ai:chat——普通员工种子权限常带这两项。
  */
 export const ADMIN_ENTRY_PERMISSIONS: string[] = [
   'menu:system',
@@ -69,7 +79,6 @@ export const ADMIN_ENTRY_PERMISSIONS: string[] = [
   'menu:attendance',
   'menu:payroll',
   'menu:workflow',
-  'menu:workbench',
   'system:user:view',
   'system:user:edit',
   'system:role:view',
@@ -89,6 +98,14 @@ export function hasAdminEntryPermission(permissions: string[] = []): boolean {
   if (!permissions.length) return false;
   const set = new Set(permissions);
   return ADMIN_ENTRY_PERMISSIONS.some((code) => set.has(code));
+}
+
+/** 是否允许进入管理端：有管理角色，或（非纯员工且）持有管理端权限码 */
+export function canAccessAdmin(roles: string[] = [], permissions: string[] = []): boolean {
+  if (isEmployeeOnly(roles)) return false;
+  const list = roles.map((r) => String(r).trim().toUpperCase()).filter(Boolean);
+  const hasAdminRole = list.some((role) => ADMIN_ROLES.includes(role as RoleCode));
+  return hasAdminRole || hasAdminEntryPermission(permissions);
 }
 
 export const API_BASE = '/api/v1';
