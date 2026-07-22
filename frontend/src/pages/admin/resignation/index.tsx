@@ -33,10 +33,10 @@ import {
 import { getEmployeeDetail, getEmployeeList } from '@/services/employee';
 
 /**
- * HR/管理员离职管理（PRD §5.4 双通道）
- * - Tab「员工申请」：审批通过后可发起正式离职
- * - Tab「正式离职」：正式单列表；也可直提（线下协商占位）
- * - 支持 ?requestId= 从审批中心跳转
+ * HR/管理员离职管理（双通道）
+ * - Tab「员工申请」：员工登记的意向；HR 可直接发起正式离职
+ * - Tab「正式离职」：正式单列表（部门负责人确认交接 → HR）；也可直提
+ * - 支持 ?requestId= 从列表跳转
  * - 支持 ?employeeId=&name=&open=1 从花名册「更多-离职」带入
  * 工作交接人由部门负责人在审批中心确认。
  */
@@ -90,8 +90,8 @@ export default function AdminResignationPage() {
           message.warning('未找到对应离职申请');
           return;
         }
-        if (row.status !== 'APPROVED') {
-          message.warning('该申请尚未审批通过，无法发起正式离职');
+        if (row.status !== 'PENDING' && row.status !== 'APPROVED') {
+          message.warning('该申请状态不可发起正式离职');
           setTab('requests');
           return;
         }
@@ -206,14 +206,25 @@ export default function AdminResignationPage() {
     {
       title: '操作',
       width: 160,
-      render: (_, row) =>
-        row.status === 'APPROVED' && access.canManageResignation ? (
-          <Button type="link" onClick={() => openFormalFromRequest(row)}>
-            发起正式离职
-          </Button>
+      render: (_, row) => {
+        const alreadyFormal = resignations.some((r) => r.requestId === row.id);
+        const canStart =
+          (row.status === 'PENDING' || row.status === 'APPROVED') &&
+          access.canManageResignation &&
+          !alreadyFormal;
+        if (canStart) {
+          return (
+            <Button type="link" onClick={() => openFormalFromRequest(row)}>
+              发起正式离职
+            </Button>
+          );
+        }
+        return alreadyFormal ? (
+          <Typography.Text type="secondary">已转正式离职</Typography.Text>
         ) : (
           '-'
-        ),
+        );
+      },
     },
   ];
 
@@ -366,7 +377,11 @@ export default function AdminResignationPage() {
               disabledDate={(d) => !!d && d < dayjs().startOf('day')}
             />
           </Form.Item>
-          <Form.Item name="reasonCategory" label="离职原因" rules={[{ required: true }]}>
+          <Form.Item
+            name="reasonCategory"
+            label="离职原因"
+            rules={[{ required: true, message: '请选择离职原因' }]}
+          >
             <Select
               options={[
                 { value: 'VOLUNTARY', label: '自愿' },
@@ -375,7 +390,11 @@ export default function AdminResignationPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="resignationType" label="离职类型" rules={[{ required: true }]}>
+          <Form.Item
+            name="resignationType"
+            label="离职类型"
+            rules={[{ required: true, message: '请选择离职类型' }]}
+          >
             <Select
               options={[
                 { value: 'resignation', label: '辞职' },

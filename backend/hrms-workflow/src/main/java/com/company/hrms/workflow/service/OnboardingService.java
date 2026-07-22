@@ -256,6 +256,10 @@ public class OnboardingService {
             throw new BusinessException(ErrorCode.APPROVAL_STATE_INVALID, "仅「审批通过待入职」可确认入职");
         }
         LocalDate actual = LocalDate.now();
+        if (app.getExpectedOnboardDate() != null && actual.isBefore(app.getExpectedOnboardDate())) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID,
+                    "预计入职日未到，最早可于 " + app.getExpectedOnboardDate() + " 确认入职；如需提前请先改入职日");
+        }
         OnboardingArchiveCommand cmd = new OnboardingArchiveCommand();
         cmd.setApplicationId(app.getId());
         cmd.setActualOnboardDate(actual);
@@ -662,6 +666,12 @@ public class OnboardingService {
         vo.setBaseSalary(app.getBaseSalary());
         vo.setActualOnboardDate(app.getActualOnboardDate());
         vo.setEmployeeId(app.getEmployeeId());
+        if (app.getEmployeeId() != null) {
+            Employee emp = employeeMapper.selectById(app.getEmployeeId());
+            if (emp != null && (emp.getDeleted() == null || emp.getDeleted() == 0)) {
+                vo.setEmploymentStatus(emp.getEmploymentStatus());
+            }
+        }
         vo.setCreatedBy(app.getCreatedBy());
         vo.setCreatedAt(app.getCreatedAt() == null ? null : DT.format(app.getCreatedAt()));
         vo.setUpdatedAt(app.getUpdatedAt() == null ? null : DT.format(app.getUpdatedAt()));

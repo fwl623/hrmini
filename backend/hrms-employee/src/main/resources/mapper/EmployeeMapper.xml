@@ -124,6 +124,10 @@
         SELECT <include refid="BaseColumns"/> FROM employee WHERE mobile = #{mobile} AND deleted = 0
     </select>
 
+    <select id="selectAnyByMobile" resultMap="BaseMap">
+        SELECT <include refid="BaseColumns"/> FROM employee WHERE mobile = #{mobile} LIMIT 1
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO employee (employee_no, user_id, name, gender, mobile, email,
             department_id, position_id, grade, manager_id, work_location,
@@ -155,6 +159,8 @@
             <if test="lastWorkDay != null">last_work_day = #{lastWorkDay},</if>
             <if test="probationPayRatio != null">probation_pay_ratio = #{probationPayRatio},</if>
             <if test="probationEndDate != null">probation_end_date = #{probationEndDate},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            updated_at = NOW()
         </set>
         WHERE id = #{id}
     </update>

@@ -60,9 +60,7 @@ public class OnboardingServiceImpl implements OnboardingService {
         if (cmd.getMobile() == null || !cmd.getMobile().matches("^1\\d{10}$")) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "手机号无效");
         }
-        if (employeeMapper.selectByMobile(cmd.getMobile()) != null) {
-            throw new BusinessException(ErrorCode.MOBILE_DUPLICATE);
-        }
+        ensureMobileFreeForOnboarding(cmd.getMobile());
 
         LocalDate hireDate = cmd.getActualOnboardDate() != null
                 ? cmd.getActualOnboardDate()
@@ -145,6 +143,45 @@ public class OnboardingServiceImpl implements OnboardingService {
         log.info("入职建档完成 applicationId={} employeeId={} empNo={} userId={}",
                 cmd.getApplicationId(), employeeId, empNo, userId);
         return employeeId;
+    }
+
+    /**
+     * uk_mobile 全表唯一（含逻辑删除）。在职占用 → 业务冲突；
+     * 离职/软删仍占号 → 自动腾出，避免 INSERT 撞唯一键变成 90001。
+     */
+    private void ensureMobileFreeForOnboarding(String mobile) {
+        Employee occupied = employeeMapper.selectAnyByMobile(mobile);
+        if (occupied == null) {
+            return;
+        }
+        boolean inactive = (occupied.getDeleted() != null && occupied.getDeleted() == 1)
+                || (occupied.getEmploymentStatus() != null && occupied.getEmploymentStatus() == 40);
+        if (!inactive) {
+            throw new BusinessException(ErrorCode.MOBILE_DUPLICATE);
+        }
+        String vacated = vacateMobilePlaceholder(mobile, occupied.getId());
+        Employee patch = new Employee();
+        patch.setId(occupied.getId());
+        patch.setMobile(vacated);
+        employeeMapper.updateById(patch);
+        log.info("入职前腾出软删/离职占用手机号 employeeId={} {} -> {}", occupied.getId(), mobile, vacated);
+        if (occupied.getUserId() != null) {
+            try {
+                internalUserService.updateUsername(occupied.getUserId(), vacated);
+            } catch (Exception e) {
+                log.warn("入职前改写旧账号用户名失败 userId={} mobile={}: {}",
+                        occupied.getUserId(), vacated, e.getMessage());
+            }
+        }
+    }
+
+    private static String vacateMobilePlaceholder(String originalMobile, Long employeeId) {
+        String candidate = originalMobile + "D" + employeeId;
+        if (candidate.length() <= 16) {
+            return candidate;
+        }
+        String shortId = "D" + employeeId;
+        return shortId.length() <= 16 ? shortId : String.valueOf(employeeId);
     }
 
     /** 工号部门码须为 2 位；不足补 0，过长截断 */

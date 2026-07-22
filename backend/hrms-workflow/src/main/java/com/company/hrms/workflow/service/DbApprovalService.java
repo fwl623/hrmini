@@ -408,11 +408,12 @@ public class DbApprovalService implements ApprovalEngineService {
             return;
         }
 
-        // 正式离职第一岗：部门负责人须确认工作交接人
+        // 正式离职第一岗：部门负责人可选确认工作交接人
         if ("APPROVE".equals(action)
                 && "RESIGNATION".equalsIgnoreCase(instance.getProcessType())
                 && task.getNodeOrder() != null
-                && task.getNodeOrder() == 1) {
+                && task.getNodeOrder() == 1
+                && body.getHandoverEmployeeId() != null) {
             try {
                 Long appId = Long.parseLong(instance.getBusinessKey());
                 resignationService.confirmHandover(appId, body.getHandoverEmployeeId());

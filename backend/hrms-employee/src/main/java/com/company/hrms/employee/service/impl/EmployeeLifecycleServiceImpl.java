@@ -431,6 +431,8 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
                 log.info("离职腾出工号 employeeId={} {} -> {}", employeeId, originalNo, vacatedNo);
             }
         }
+        // uk_mobile / sys_user.username 全表唯一：腾出手机号，否则新入职同号会撞唯一键 → 90001
+        vacateMobileAndUsername(emp);
 
         eventPublisher.publishEvent(new EmployeeStatusChangeEvent(
                 this,
@@ -491,25 +493,57 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
      * 兼容历史：已离职但仍占标准工号时补腾出，并确保 history 可复用。
      */
     private void vacateIfReusableHeld(Employee emp) {
-        if (emp == null || emp.getId() == null || !StringUtils.hasText(emp.getEmployeeNo())) {
+        if (emp == null || emp.getId() == null) {
             return;
         }
-        String originalNo = emp.getEmployeeNo().trim();
-        // 已是占位号则跳过（含 R{id}）
-        if (!originalNo.matches("^[0-9A-Za-z]{9}$")) {
+        if (StringUtils.hasText(emp.getEmployeeNo())) {
+            String originalNo = emp.getEmployeeNo().trim();
+            // 已是占位号则跳过（含 R{id}）
+            if (originalNo.matches("^[0-9A-Za-z]{9}$")) {
+                try {
+                    employeeIdGenerator.release(originalNo);
+                } catch (Exception e) {
+                    log.warn("补释放工号失败 employeeId={} empNo={}: {}", emp.getId(), originalNo, e.getMessage());
+                }
+                String vacatedNo = vacateEmployeeNo(originalNo, emp.getId());
+                Employee noPatch = new Employee();
+                noPatch.setId(emp.getId());
+                noPatch.setEmployeeNo(vacatedNo);
+                employeeMapper.updateById(noPatch);
+                log.info("已离职补腾出工号 employeeId={} {} -> {}", emp.getId(), originalNo, vacatedNo);
+            }
+        }
+        vacateMobileAndUsername(emp);
+    }
+
+    /**
+     * 腾出 uk_mobile，并同步改写禁用账号的 username，避免确认入职撞唯一键。
+     */
+    private void vacateMobileAndUsername(Employee emp) {
+        if (emp == null || emp.getId() == null || !StringUtils.hasText(emp.getMobile())) {
             return;
         }
-        try {
-            employeeIdGenerator.release(originalNo);
-        } catch (Exception e) {
-            log.warn("补释放工号失败 employeeId={} empNo={}: {}", emp.getId(), originalNo, e.getMessage());
+        String originalMobile = emp.getMobile().trim();
+        // 已是占位号（含 D{id}）则跳过
+        if (!originalMobile.matches("^1\\d{10}$")) {
+            return;
         }
-        String vacatedNo = vacateEmployeeNo(originalNo, emp.getId());
-        Employee noPatch = new Employee();
-        noPatch.setId(emp.getId());
-        noPatch.setEmployeeNo(vacatedNo);
-        employeeMapper.updateById(noPatch);
-        log.info("已离职补腾出工号 employeeId={} {} -> {}", emp.getId(), originalNo, vacatedNo);
+        String vacatedMobile = vacateMobile(originalMobile, emp.getId());
+        Employee mobilePatch = new Employee();
+        mobilePatch.setId(emp.getId());
+        mobilePatch.setMobile(vacatedMobile);
+        employeeMapper.updateById(mobilePatch);
+        emp.setMobile(vacatedMobile);
+        log.info("离职腾出手机号 employeeId={} {} -> {}", emp.getId(), originalMobile, vacatedMobile);
+
+        if (emp.getUserId() != null) {
+            try {
+                internalUserService.updateUsername(emp.getUserId(), vacatedMobile);
+            } catch (Exception e) {
+                log.warn("离职同步改写账号用户名失败 employeeId={} userId={} mobile={}: {}",
+                        emp.getId(), emp.getUserId(), vacatedMobile, e.getMessage());
+            }
+        }
     }
 
     /**
@@ -522,6 +556,19 @@ public class EmployeeLifecycleServiceImpl implements EmployeeLifecycleService {
             return candidate;
         }
         String shortId = "R" + employeeId;
+        return shortId.length() <= 16 ? shortId : String.valueOf(employeeId);
+    }
+
+    /**
+     * 腾出 uk_mobile：占位号须唯一且长度 ≤16。
+     * 优先 {原手机号}D{id}；超长则退化为 D{id}。
+     */
+    static String vacateMobile(String originalMobile, Long employeeId) {
+        String candidate = originalMobile + "D" + employeeId;
+        if (candidate.length() <= 16) {
+            return candidate;
+        }
+        String shortId = "D" + employeeId;
         return shortId.length() <= 16 ? shortId : String.valueOf(employeeId);
     }
 

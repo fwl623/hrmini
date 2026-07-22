@@ -27,11 +27,16 @@ import {
 
 /**
  * 门户：离职申请表单 + 本人记录
+ * 员工申请仅登记意向；已有进行中申请时不可重复提交。
  */
 export default function PortalResignationPage() {
   const [list, setList] = useState<ResignationRequestItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
+
+  const hasActiveRequest = list.some(
+    (r) => r.status === 'PENDING' || r.status === 'APPROVED',
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,10 +106,18 @@ export default function PortalResignationPage() {
       <Typography.Title level={4} style={{ margin: 0 }}>
         我的离职申请
       </Typography.Title>
-      <Card title="提交申请">
+      <Card
+        title="提交申请"
+        extra={
+          hasActiveRequest ? (
+            <Typography.Text type="secondary">已有进行中的离职申请，不可重复提交</Typography.Text>
+          ) : null
+        }
+      >
         <Form
           form={form}
           layout="vertical"
+          disabled={hasActiveRequest}
           onFinish={async (v) => {
             try {
               await createMyResignationRequest({
@@ -113,7 +126,7 @@ export default function PortalResignationPage() {
                 resignationType: v.resignationType,
                 reasonDetail: v.reasonDetail,
               });
-              message.success('已提交，等待 HR 审批');
+              message.success('已提交，等待 HR 发起正式离职');
               form.resetFields();
               load();
             } catch (e) {
@@ -124,12 +137,16 @@ export default function PortalResignationPage() {
           <Form.Item
             name="expectedResignDate"
             label="期望离职日"
-            rules={[{ required: true }]}
+            rules={[{ required: true, message: '请选择期望离职日' }]}
             initialValue={dayjs().add(30, 'day')}
           >
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="reasonCategory" label="原因分类" rules={[{ required: true }]}>
+          <Form.Item
+            name="reasonCategory"
+            label="原因分类"
+            rules={[{ required: true, message: '请选择原因分类' }]}
+          >
             <Select
               options={[
                 { value: 'VOLUNTARY', label: '自愿' },
@@ -138,7 +155,11 @@ export default function PortalResignationPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="resignationType" label="离职类型" rules={[{ required: true }]}>
+          <Form.Item
+            name="resignationType"
+            label="离职类型"
+            rules={[{ required: true, message: '请选择离职类型' }]}
+          >
             <Select
               options={[
                 { value: 'resignation', label: '辞职' },
@@ -151,7 +172,7 @@ export default function PortalResignationPage() {
           <Form.Item name="reasonDetail" label="说明">
             <Input.TextArea rows={3} />
           </Form.Item>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" disabled={hasActiveRequest}>
             提交申请
           </Button>
         </Form>
