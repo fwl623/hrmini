@@ -11,7 +11,12 @@ import org.springframework.context.annotation.Primary;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Feign 客户端开关：默认走本地真实建档；{@code hrms.feign.mock-enabled=true} 时用 Mock。
+ * 【跨模块 Client 开关】模拟 Feign 边界。
+ * <ul>
+ *   <li>{@code hrms.feign.mock-enabled=true}：Mock 建档返回假 employeeId，审批链路可单模块推进</li>
+ *   <li>默认 false：本地真实 {@link EmployeeArchiveClient} 调 B 组建档</li>
+ * </ul>
+ * 讲解时强调：前端感知的是接口成功与否，不直接开关 Feign。
  */
 @Configuration
 public class FeignClientConfig {

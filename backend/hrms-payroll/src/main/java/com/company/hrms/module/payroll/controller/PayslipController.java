@@ -79,7 +79,7 @@ public class PayslipController {
                 voList.add(vo);
             }
         }
-        return Result.success(Map.of("list", voList, "total", page.getTotal()));
+        return Result.success(Map.of("list", voList, "total", (long) voList.size()));
     }
 
     /**

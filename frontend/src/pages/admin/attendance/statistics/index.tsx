@@ -33,14 +33,18 @@ const MonthPicker: React.FC<{ value?: string; onChange?: (v: string) => void }> 
   );
 };
 
-/** 将部门树展平为 TreeSelect 可用的节点列表（递归） */
-const flattenDeptTree = (nodes: DeptTreeNode[]): { title: string; value: number; key: string; children?: any[] }[] =>
-  nodes.map((n) => ({
-    title: n.name,
-    value: n.id,
-    key: `dept-${n.id}`,
-    children: n.children ? flattenDeptTree(n.children) : undefined,
-  }));
+/** 将部门树递归拍平为扁平的选项列表（Select 用） */
+const flattenDeptTree = (nodes: DeptTreeNode[]): { label: string; value: number; key: string }[] => {
+  const result: { label: string; value: number; key: string }[] = [];
+  const walk = (list: DeptTreeNode[]) => {
+    for (const n of list) {
+      result.push({ label: n.name, value: n.id, key: `dept-${n.id}` });
+      if (n.children && n.children.length > 0) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return result;
+};
 
 /* ───────────────────── 指标配置 ───────────────────── */
 interface MetricDef {
@@ -60,7 +64,7 @@ const personalMetrics: MetricDef[] = [
   { key: 'absentDays', label: '旷工', icon: <CloseCircleOutlined />, color: '#ff4d4f', suffix: '天' },
   { key: 'leaveDays', label: '请假', icon: <CoffeeOutlined />, color: '#722ed1', suffix: '天' },
   { key: 'overtimeHours', label: '加班', icon: <RiseOutlined />, color: '#13c2c2', suffix: 'h' },
-  { key: 'annualLeaveBalance', label: '年假余额', icon: <FallOutlined />, color: '#eb2f96', suffix: '天', precision: 1 },
+  { key: 'annualBalance', label: '年假余额', icon: <FallOutlined />, color: '#eb2f96', suffix: '天', precision: 1 },
 ];
 
 /* ═══════════════════════════════════════════════════
@@ -83,6 +87,7 @@ const AttendanceStatisticsPage: React.FC = () => {
   // ── 部门统计 ──
   const [deptTree, setDeptTree] = useState<DeptTreeNode[]>([]);
   const [selectedDept, setSelectedDept] = useState<number | undefined>();
+  const [selectedDeptName, setSelectedDeptName] = useState<string>('');
   const [deptPeriod, setDeptPeriod] = useState(dayjs().format('YYYY-MM'));
   const [deptData, setDeptData] = useState<any>(null);
   const [deptLoading, setDeptLoading] = useState(false);
@@ -309,10 +314,16 @@ const AttendanceStatisticsPage: React.FC = () => {
               placeholder="搜索并选择部门"
               allowClear
               filterOption={(input, option) =>
-                (option?.title as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
+                (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
               }
-              onChange={(val) => setSelectedDept(val as number)}
-              onClear={() => { setSelectedDept(undefined); setDeptData(null); }}
+              onChange={(val) => {
+                setSelectedDept(val as number);
+                // 从拍平的部门列表中查找对应名称
+                const flat = flattenDeptTree(deptTree);
+                const found = flat.find((d) => d.value === val);
+                setSelectedDeptName(found?.label ?? '');
+              }}
+              onClear={() => { setSelectedDept(undefined); setDeptData(null); setSelectedDeptName(''); }}
               value={selectedDept}
               style={{ width: 260 }}
               options={flattenDeptTree(deptTree)}
@@ -330,7 +341,7 @@ const AttendanceStatisticsPage: React.FC = () => {
       <Card>
         {deptData && (
           <Descriptions size="small" style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="部门">{deptData.departmentName}</Descriptions.Item>
+            <Descriptions.Item label="部门">{selectedDeptName || deptData.departmentName}</Descriptions.Item>
             <Descriptions.Item label="统计周期">{deptData.period}</Descriptions.Item>
           </Descriptions>
         )}

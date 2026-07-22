@@ -10,8 +10,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 审批催办 RabbitMQ：延迟队列 TTL 到期后经 DLX 转入 notify 队列。
- * 启用条件：{@code hrms.rabbitmq.enabled=true}，且已引入 amqp、未排除 RabbitAutoConfiguration。
+ * 【 RabbitMQ】审批催办延迟队列：TTL 到期后经 DLX 转入 notify 队列（不是 Redis Key 过期）。
+ * <p>
+ * 启用条件：{@code hrms.rabbitmq.enabled=true}。本地关闭时 {@link com.company.hrms.workflow.notify.ApprovalNotifyPublisher}
+ * 降级为打日志，主事务不受影响——演示环境可不依赖本机 RabbitMQ。
+ * <p>
+ * 命名：交换机 {@code hrms.approval.exchange}；延迟队列 {@code hrms.approval.notify.delay} → 业务队列 {@code hrms.approval.notify}。
  */
 @Configuration
 @ConditionalOnProperty(prefix = "hrms.rabbitmq", name = "enabled", havingValue = "true")

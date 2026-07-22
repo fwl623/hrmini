@@ -9,12 +9,22 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 入转调离业务状态机（纯 Java，无 Spring 注解）。
- * <p>
- * Day1：仅校验合法迁移并返回下一状态码；持久化由上层 Service 负责。
+ * 【状态机】入转调离业务状态机（纯 Java，无 Spring 依赖，便于单测）。
+ * Service  {@link #canTransit}/{@link #transit}，不把四套 if-else 散落各处；
+ * 持久化与审批待办由上层 Service / {@code DbApprovalService} 负责。非法迁移抛
+ * {@link IllegalStateException}，Service 转成业务错误码 {@code APPROVAL_STATE_INVALID}。
+ * 主路径：
+ * <ul>
+ *   <li>入职：{@code draft → pending → approved_pending → onboarded}，旁路 {@code rejected}/{@code abandoned}；
+ *       确认入职 = {@code approved_pending + APPROVE → onboarded}</li>
+ *   <li>转正：{@code pending → PASS / EXTEND / FAIL}（驳回映射 FAIL）</li>
+ *   <li>调岗：{@code pending → 三节点 → APPROVED}</li>
+ *   <li>正式离职：{@code pending → APPROVED → PENDING_RESIGN → RESIGNED}</li>
+ * </ul>
  */
 public final class ApprovalStateMachine {
 
+    /** 四种人事流程类型，与审批实例 processType、业务表一一对应 */
     public enum ProcessType {
         ONBOARDING,
         REGULARIZATION,
@@ -26,9 +36,11 @@ public final class ApprovalStateMachine {
     }
 
     /**
-     * @param processType 流程类型
-     * @param currentStatus 当前状态码（任务示例风格）
-     * @param action 操作
+     * 执行一次合法状态迁移；不合法则抛 IllegalStateException。
+     *
+     * @param processType   流程类型
+     * @param currentStatus 当前业务状态码（小写业务码，如 approved_pending）
+     * @param action        操作（SUBMIT/APPROVE/REJECT/WITHDRAW/…）
      * @return 迁移后的状态码
      */
     public static String transit(ProcessType processType, String currentStatus, ApprovalAction action) {
@@ -44,6 +56,7 @@ public final class ApprovalStateMachine {
         };
     }
 
+    /** 只问「能不能迁」，不抛异常；用于前端按钮显隐之外的后端二次校验前探测 */
     public static boolean canTransit(ProcessType processType, String currentStatus, ApprovalAction action) {
         try {
             transit(processType, currentStatus, action);
@@ -54,6 +67,7 @@ public final class ApprovalStateMachine {
     }
 
     // —— 入职：draft→pending→approved_pending→onboarded / rejected / abandoned ——
+    // PRD：禁止 POST /employees 直建在职员工；必须走 onboarding → 审批 → 确认入职
 
     private static String transitOnboarding(String current, ApprovalAction action) {
         ApprovalStatus.Onboarding from = ApprovalStatus.Onboarding.fromCode(current);
@@ -75,6 +89,7 @@ public final class ApprovalStateMachine {
                 ApprovalAction.FORWARD, ApprovalStatus.Onboarding.PENDING,
                 ApprovalAction.ABANDON, ApprovalStatus.Onboarding.ABANDONED
         ));
+        // APPROVE 在此态 = HR「确认入职」（非审批中心点同意）；ABANDON = 放弃入职
         g.put(ApprovalStatus.Onboarding.APPROVED_PENDING, Map.of(
                 ApprovalAction.APPROVE, ApprovalStatus.Onboarding.ONBOARDED, // confirm 语义
                 ApprovalAction.ABANDON, ApprovalStatus.Onboarding.ABANDONED
@@ -149,7 +164,8 @@ public final class ApprovalStateMachine {
         };
     }
 
-    // —— 离职：pending→APPROVED→PENDING_RESIGN→RESIGNED ——
+    // —— 正式离职审批单状态（注意：员工门户「离职申请」不走本状态机，只登记 PENDING）——
+    // pending→APPROVED→PENDING_RESIGN→RESIGNED
 
     private static String transitResignation(String current, ApprovalAction action) {
         ApprovalStatus.Resignation from = ApprovalStatus.Resignation.fromCode(current);

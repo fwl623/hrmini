@@ -1,3 +1,21 @@
+/**
+ * 【模块说明 · 审批中心】路由 /admin/approval
+ *
+ * 干什么：统一审批工作台——待办/已办/我发起三 Tab；点击行打开详情 Drawer，
+ *         展示业务摘要 + ApprovalTimeline + ApprovalActions；正式离职第一岗同意前可选工作交接人。
+ *
+ * 主要状态（页面 useState，无全局 Store）：
+ * - tab / list / stats / loading：Tab 切换与列表、顶部 KPI（待办/今日已办/超期）
+ * - selected / detail / drawerOpen / acting：详情 Drawer 与审批操作中
+ * - handoverOpen / handoverEmployeeId / handoverOptions：RESIGNATION 流程选手动交接人
+ *
+ * 调哪些 API（@/services/workflow）：
+ * - fetchTaskStats、fetchTasks（status=pending|done）、fetchMyInstances
+ * - fetchTaskDetail、fetchInstanceDetail（待办/已办/我发起详情）
+ * - postTaskAction、remindTask、withdrawInstance、searchHandoverCandidates
+ *
+ * 复用组件：ApprovalActions / ApprovalTimeline / ProcessStatusTag
+ */
 import {
   Card,
   Col,
@@ -49,11 +67,6 @@ import {
 
 type TabKey = 'todo' | 'done' | 'mine';
 
-/**
- * 审批中心：列表 + 详情 Drawer（Timeline + Actions + 催办）
- * - 正式离职第一岗：同意前可确认工作交接人（可选）
- * - 员工离职申请（RESIGNATION_REQUEST）同意后：提示是否立即发起正式离职
- */
 export default function ApprovalCenterPage() {
   const [tab, setTab] = useState<TabKey>('todo');
   const [loading, setLoading] = useState(false);

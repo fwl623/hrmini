@@ -37,7 +37,16 @@ export interface ProcessStatusTagProps {
 }
 
 /**
- * 流程状态彩色 Tag（入职/调岗/离职/审批任务等）
+ * 【流程状态 Tag 通用组件】
+ *
+ * 按 status 码映射 Ant Design Tag 颜色与中文标签；兼容大小写（draft/PENDING/approved_pending 等）。
+ * 支持 label prop 覆盖展示文案。
+ *
+ * 复用方：
+ * - pages/admin/approval/index.tsx（列表与详情状态）
+ * - pages/admin/regularization/index.tsx（转正记录状态）
+ * - pages/admin/resignation/index.tsx（员工申请 / 正式离职 Tab）
+ * - pages/portal/resignation/index.tsx（本人申请记录）
  */
 export default function ProcessStatusTag({ status, label }: ProcessStatusTagProps) {
   if (!status) {

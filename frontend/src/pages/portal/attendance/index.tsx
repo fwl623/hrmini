@@ -199,12 +199,15 @@ const AttendancePunchPage: React.FC = () => {
     setLoading(true);
     try {
       const res = await portalPunch({ type, punchTime: new Date().toISOString() });
-      const punchStatus = res.data?.punchStatus || 'NORMAL';
-      const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-      setLastPunch(`${type === 'in' ? '上班' : '下班'} ${timeStr} — ${punchStatusLabelMap[punchStatus]}`);
-      message.success(`${type === 'in' ? '上班' : '下班'}打卡成功`);
-      await loadData();
-      await loadCalendar(calendarMonth);
+      // 全局 errorHandler 已处理业务错误提示，此处只处理成功
+      if (res && res.code === 0) {
+        const punchStatus = res.data?.punchStatus || 'NORMAL';
+        const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        setLastPunch(`${type === 'in' ? '上班' : '下班'} ${timeStr} — ${punchStatusLabelMap[punchStatus]}`);
+        message.success(`${type === 'in' ? '上班' : '下班'}打卡成功`);
+        await loadData();
+        await loadCalendar(calendarMonth);
+      }
     } catch (err: any) {
       message.error(err?.message || '打卡失败');
     } finally {
@@ -216,17 +219,20 @@ const AttendancePunchPage: React.FC = () => {
     try {
       const values = await fixForm.validateFields();
       setFixSubmitting(true);
-      await applyPunchFix({
+      const res = await applyPunchFix({
         punchDate: values.punchDate.format('YYYY-MM-DD'),
         type: values.type,
         punchTime: values.punchTime.format('HH:mm'),
         reason: values.reason,
       });
-      message.success('补卡申请已提交，请等待审批');
-      setFixModalOpen(false);
-      fixForm.resetFields();
-      await loadData();
-      await loadCalendar(calendarMonth);
+      // 全局 errorHandler 已处理业务错误提示，此处只处理成功
+      if (res && res.code === 0) {
+        message.success('补卡申请已提交，请等待审批');
+        setFixModalOpen(false);
+        fixForm.resetFields();
+        await loadData();
+        await loadCalendar(calendarMonth);
+      }
     } catch (err: any) {
       if (err?.message) message.error(err.message);
     } finally {
@@ -256,27 +262,37 @@ const AttendancePunchPage: React.FC = () => {
               })}
             </div>
             <Space direction="vertical" style={{ width: '100%' }} size={12}>
-              <Button
-                type="primary"
-                size="large"
-                block
-                className="hrms-punch-btn"
-                icon={<AimOutlined />}
-                loading={loading}
-                onClick={() => handlePunch('in')}
-              >
-                上班打卡
-              </Button>
-              <Button
-                size="large"
-                block
-                className="hrms-punch-btn hrms-punch-btn-out"
-                icon={<AimOutlined />}
-                loading={loading}
-                onClick={() => handlePunch('out')}
-              >
-                下班打卡
-              </Button>
+              {(() => {
+                const hasClockedIn = records.some(r => r.type === '上班');
+                const hasClockedOut = records.some(r => r.type === '下班');
+                return (
+                  <>
+                    <Button
+                      type="primary"
+                      size="large"
+                      block
+                      className="hrms-punch-btn"
+                      icon={<AimOutlined />}
+                      loading={loading && !hasClockedIn}
+                      disabled={hasClockedIn}
+                      onClick={() => handlePunch('in')}
+                    >
+                      {hasClockedIn ? '已打卡' : '上班打卡'}
+                    </Button>
+                    <Button
+                      size="large"
+                      block
+                      className="hrms-punch-btn hrms-punch-btn-out"
+                      icon={<AimOutlined />}
+                      loading={loading && !hasClockedOut}
+                      disabled={hasClockedOut}
+                      onClick={() => handlePunch('out')}
+                    >
+                      {hasClockedOut ? '已打卡' : '下班打卡'}
+                    </Button>
+                  </>
+                );
+              })()}
             </Space>
             {lastPunch && (
               <div className="hrms-punch-last">
@@ -528,7 +544,18 @@ const AttendancePunchPage: React.FC = () => {
       >
         <Form form={fixForm} layout="vertical">
           <Form.Item name="punchDate" label="补卡日期" rules={[{ required: true, message: '请选择日期' }]}>
-            <DatePicker style={{ width: '100%' }} />
+            <DatePicker
+              style={{ width: '100%' }}
+              disabledDate={(d) => {
+                if (!d) return false;
+                // 禁止选择未来日期
+                if (d.isAfter(dayjs(), 'day')) return true;
+                // 禁止选择周末（0=周日 6=周六）
+                const day = d.day();
+                if (day === 0 || day === 6) return true;
+                return false;
+              }}
+            />
           </Form.Item>
           <Form.Item name="type" label="补卡类型" rules={[{ required: true, message: '请选择类型' }]}>
             <Select

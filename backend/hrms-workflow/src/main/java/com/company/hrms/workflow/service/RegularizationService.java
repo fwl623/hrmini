@@ -29,6 +29,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 【转正业务 Service】管理转正申请单与审批联动；
+ * 审批通过后按 PASS/EXTEND/FAIL 分支调用 {@link EmployeeLifecycleService} 改员工状态。
+ */
 @Service
 public class RegularizationService {
 
@@ -53,7 +57,13 @@ public class RegularizationService {
     }
 
     /**
-     * 待转正：试用结束日 ≤ 今天+7（含已逾期），排除已有审批中申请。
+     * 查询待转正员工列表：试用结束日 ≤ 今天+7（含已逾期），排除已有 APPROVING 转正单的员工。
+     * 【调用】{@code RegularizationController.listPending}；{@link #scanAndRemindHr} 内部调用
+     * 【实现】
+     * <ol>
+     *   <li>{@code EmployeeLifecycleService.listPendingRegularization} 查 B 模块试用到期员工</li>
+     *   <li>{@code RegularizationApplicationMapper} 查 status=APPROVING 的 employeeId 集合并排除</li>
+     * </ol>
      */
     public List<PendingRegularizationVO> listPending() {
         LocalDate today = LocalDate.now();
@@ -69,7 +79,14 @@ public class RegularizationService {
                 .collect(Collectors.toList());
     }
 
-    /** 供定时 Job：扫描并知会 HR */
+    /**
+     *  定时扫描待转正员工并 MQ/日志知会 HR（逾期人数一并统计）。
+     * 【调用】{@code RegularizationPendingScanJob}
+     * 【实现】
+     *   <li>{@link #listPending} 获取待转正列表</li>
+     *   <li>{@code EmployeeLifecycleService.resolveHrApproverUserId} 解析 HR 用户</li>
+     *   <li>{@code ApprovalNotifyPublisher.publishRegularizationPendingRemind} 发送提醒</li>
+     */
     public int scanAndRemindHr() {
         List<PendingRegularizationVO> pending = listPending();
         if (pending.isEmpty()) {
@@ -86,6 +103,13 @@ public class RegularizationService {
         return pending.size();
     }
 
+    /**
+     * 分页查询转正申请记录，可选按 status 筛选。
+     * 【调用】{@code RegularizationController.list}
+     * 【实现】
+     *   <li>{@code RegularizationApplicationMapper.selectList} 按 id 倒序，可选 status 条件</li>
+     *   <li>内存分页，{@code toVo} 转 VO（含 nextAction=START_RESIGNATION 当 FAIL 已完成）</li>
+     */
     public PageResult<LifecycleDtos.RegularizationVO> list(int page, int pageSize, String status) {
         LambdaQueryWrapper<RegularizationApplication> q = new LambdaQueryWrapper<RegularizationApplication>()
                 .orderByDesc(RegularizationApplication::getId);
@@ -103,6 +127,17 @@ public class RegularizationService {
         return PageResult.of(list, all.size(), p, size);
     }
 
+    /**
+     * HR 发起转正审批：落转正单并创建审批实例（部门负责人→HR 两节点）。
+     * approvalResult 为 PASS/EXTEND/FAIL，决定审批通过后的分支逻辑。
+     * 【调用】{@code RegularizationController.create}
+     * 【实现】
+     *   <li>校验员工为试用期(10)、performanceEvaluation、PASS/EXTEND/FAIL 及 extendMonths</li>
+     *   <li>防重复：同员工无 APPROVING 单</li>
+     *   <li>{@code RegularizationApplicationMapper.insert} status=APPROVING</li>
+     *   <li>{@code buildRegularizationNodes} → {@code DbApprovalService.createInstance}（REGULARIZATION）</li>
+     *   <li>回写 instanceId</li>
+     */
     @Transactional
     public LifecycleDtos.RegularizationVO create(LifecycleDtos.RegularizationCreateRequest req) {
         if (req == null || req.getEmployeeId() == null) {
@@ -161,6 +196,16 @@ public class RegularizationService {
         return toVo(app);
     }
 
+    /**
+     *  转正审批全部通过回调：按 approvalResult 执行 PASS（转正+可选调薪）/ EXTEND（延长试用期）/ FAIL（知会 HR 走离职）。
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onApproved}（processType=REGULARIZATION）
+     * 【实现】
+     *   <li>加载转正单，{@code requireStatus} 校验 APPROVING/PENDING</li>
+     *   <li>PASS：{@code EmployeeLifecycleService.regularizePass} + 可选 {@code applyRegularizationSalary}</li>
+     *   <li>EXTEND：{@code EmployeeLifecycleService.regularizeExtend}</li>
+     *   <li>FAIL：{@code ApprovalNotifyPublisher.publishRegularizationFailNeedResign}（MQ）</li>
+     *   <li>单 status → COMPLETED</li>
+     */
     @Transactional
     public void onApproved(Long appId) {
         RegularizationApplication app = mapper.selectById(appId);
@@ -193,6 +238,13 @@ public class RegularizationService {
         mapper.updateById(app);
     }
 
+    /**
+     *  转正审批被驳回或撤回：转正单 status → REJECTED。
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onRejected} / {@code LifecycleApprovalHandlerImpl.onWithdrawn}
+     * 【实现】
+     *   <li>加载转正单，{@code requireStatus} 校验 APPROVING/PENDING</li>
+     *   <li>{@code RegularizationApplicationMapper.updateById} status=REJECTED</li>
+     */
     @Transactional
     public void onRejectedOrWithdrawn(Long appId) {
         RegularizationApplication app = mapper.selectById(appId);
@@ -204,7 +256,15 @@ public class RegularizationService {
         mapper.updateById(app);
     }
 
-    /** 审批中心业务详情 */
+    /**
+     *  组装审批中心展示用的转正业务详情 Map。
+     * 【调用】{@code DbApprovalService.buildBusinessDetail}（processType=REGULARIZATION）
+     * 【实现】
+     *   <li>{@code RegularizationApplicationMapper.selectById} 加载申请</li>
+     *   <li>{@code EmployeeLifecycleService.requireEmployee} 补员工姓名/工号/部门</li>
+     *   <li>填充 approvalResult、试用期、绩效评价、调薪等字段</li>
+     *   <li>FAIL 且 COMPLETED 时附加 nextAction=START_RESIGNATION</li>
+     */
     public Map<String, Object> businessDetail(Long applicationId) {
         Map<String, Object> biz = new HashMap<>();
         if (applicationId == null) {

@@ -36,6 +36,23 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 薪资核算 Service（核心）
+ *
+ * 负责每月薪资的批量核算，涵盖：
+ * 1. 批次管理（创建、查询、状态流转）
+ * 2. 逐员工薪资计算（账套匹配 → 分段计薪 → 逐项计算 → 个税 → 异常检测）
+ * 3. 累计预扣法个税计算（跨月 YTD 累计）
+ * 4. 手工调整、图表聚合、成本报表
+ *
+ * 批次状态机：
+ *   DRAFT → CALCULATING → PENDING_CONFIRM → APPROVING → APPROVED → DISTRIBUTED
+ *                           ↑                                  │
+ *                           └────────── REJECTED ←─────────────┘
+ *
+ * 与考勤模块联动：读取 AttendanceMonthlySummary 用于迟到/请假扣款
+ * 与加班模块联动：读取 OvertimeLedger 按倍率分组计算加班费
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -61,23 +78,32 @@ public class CalculateService {
 
     // 考勤 Mapper
     private final AttendanceMonthlySummaryMapper attendanceSummaryMapper;
+    private final com.company.hrms.attendance.mapper.OvertimeLedgerMapper overtimeLedgerMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper attendanceDailySummaryMapper;
 
     // 组织架构 Mapper（用于图表部门聚合）
     private final DepartmentMapper departmentMapper;
 
-    // ==================== 薪资明细项 JSON 内部结构 ====================
+    // ========================================================================
+    //  内部数据结构：薪资明细项、分段区间
+    // ========================================================================
 
+    /** 薪资明细项（序列化为 detail_json 存储） */
     @Data
     private static class DetailItem {
         private String itemCode;
         private String itemName;
         private BigDecimal amount;
-        private String type; // EARNING / DEDUCTION
-        private List<PaySegment> segments; // 分段信息（仅 BASE_PAY 等分段项目有值）
+        private String type; // EARNING(应发项) / DEDUCTION(扣款项)
+        private List<PaySegment> segments; // 分段信息（仅 BASE_PAY 有值）
     }
 
     /**
      * 分段计薪区间
+     *
+     * 支持月中入职、转正等场景的比例分段。
+     * 例如月中入职：分段为 [入职前=0] + [入职后=1]
+     * 月中转正：分段为 [试用期=probationRatio] + [转正后=1]
      */
     @Data
     @AllArgsConstructor
@@ -88,8 +114,20 @@ public class CalculateService {
         private String reason;    // 分段原因：入职前/试用期/转正后/全月在职
     }
 
-    // ==================== 批次管理 ====================
+    // ========================================================================
+    //  批次管理
+    // ========================================================================
 
+    /**
+     * 创建核算批次
+     *
+     * 一个账期只允许创建一个批次（唯一约束 uk_period）。
+     * 初始状态为 DRAFT。
+     *
+     * @param period     账期（格式 YYYY-MM）
+     * @param operatorId 操作人（HR）ID
+     * @return 创建的批次
+     */
     public PayrollBatch createBatch(String period, Long operatorId) {
         PayrollBatch exist = batchMapper.selectOne(new LambdaQueryWrapper<PayrollBatch>()
                 .eq(PayrollBatch::getPeriod, period));
@@ -110,6 +148,7 @@ public class CalculateService {
         return batch;
     }
 
+    /** 批次列表分页查询 */
     public IPage<PayrollBatch> pageBatches(PageParam pageParam, String period) {
         LambdaQueryWrapper<PayrollBatch> wrapper = new LambdaQueryWrapper<PayrollBatch>()
                 .orderByDesc(PayrollBatch::getCreatedAt);
@@ -121,6 +160,7 @@ public class CalculateService {
                 wrapper);
     }
 
+    /** 批次详情查询 */
     public PayrollBatch getBatch(Long id) {
         PayrollBatch batch = batchMapper.selectById(id);
         if (batch == null) {
@@ -129,11 +169,26 @@ public class CalculateService {
         return batch;
     }
 
-    // ==================== 核心核算方法 ====================
+    // ========================================================================
+    //  核心核算
+    // ========================================================================
 
     /**
-     * 执行批次核算：DRAFT → PENDING_CONFIRM
-     * <p>核算流程：校验 → 加载在职员工 → 加载账套配置 → 逐员工计算 → 批量写入明细 → 更新批次统计</p>
+     * 执行批次核算（DRAFT → PENDING_CONFIRM）
+     *
+     * 完整流程：
+     *   1. 校验批次状态为 DRAFT
+     *   2. 状态 → CALCULATING
+     *   3. 清理该账期旧明细和个税 YTD（防重算冲突）
+     *   4. 查询所有在职员工（试用期 + 正式）
+     *   5. 加载所有启用的账套及 Items/Scope 配置
+     *   6. 加载个税税率表、上月环比数据
+     *   7. 逐员工核算（calculateForEmployee）
+     *   8. 批量写入明细 → 更新批次统计 → PENDING_CONFIRM
+     *
+     * 异常时回滚明细并恢复状态为 DRAFT（保留原数据）。
+     *
+     * @param id 批次 ID
      */
     @Transactional(rollbackFor = Exception.class)
     public void calculate(Long id) {
@@ -154,10 +209,10 @@ public class CalculateService {
         log.info("开始核算: batchId={}, period={}", id, period);
 
         // 清理该账期已有的个税YTD记录和核算明细（防止重算时唯一键冲突）
-        taxYtdRecordMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.payroll.entity.PayTaxYtdRecord>()
-                .eq(com.company.hrms.payroll.entity.PayTaxYtdRecord::getPeriod, period));
-        detailMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.payroll.entity.PayrollDetail>()
-                .eq(com.company.hrms.payroll.entity.PayrollDetail::getBatchId, id));
+        taxYtdRecordMapper.delete(new LambdaQueryWrapper<PayTaxYtdRecord>()
+                .eq(PayTaxYtdRecord::getPeriod, period));
+        detailMapper.delete(new LambdaQueryWrapper<PayrollDetail>()
+                .eq(PayrollDetail::getBatchId, id));
 
         try {
             // ========== 预加载配置数据 ==========
@@ -177,7 +232,7 @@ public class CalculateService {
                             .eq(PayrollScheme::getStatus, "enabled")
                             .eq(PayrollScheme::getDeleted, 0));
 
-            // 5. 批量加载账套的 Items 和 Scope
+            // 5. 批量加载账套的 Items 和 Scope（避免 N+1）
             Map<Long, List<PayrollSchemeItem>> schemeItemsMap = new HashMap<>();
             Map<Long, List<PayrollSchemeScope>> schemeScopeMap = new HashMap<>();
             for (PayrollScheme scheme : schemes) {
@@ -185,11 +240,11 @@ public class CalculateService {
                 schemeScopeMap.put(scheme.getId(), schemeScopeMapper.selectBySchemeId(scheme.getId()));
             }
 
-            // 6. 个税税率表
+            // 6. 个税税率表（查当年）
             int taxYear = Integer.parseInt(period.substring(0, 4));
             List<PayTaxBracket> taxBrackets = taxBracketMapper.selectByTaxYear(taxYear);
 
-            // 7. 前序批次明细（用于环比异常检测）
+            // 7. 前序批次明细（用于环比异常检测 SALARY_CHANGE_HIGH）
             String prevPeriod = getPrevPeriod(period);
             PayrollBatch prevBatch = batchMapper.selectByPeriod(prevPeriod);
             Map<Long, PayrollDetail> prevDetailMap = new HashMap<>();
@@ -245,6 +300,7 @@ public class CalculateService {
                     id, period, employees.size(), successCount, anomalyCount, grossTotal, netTotal);
 
         } catch (Exception e) {
+            // 核算失败时恢复 DRAFT 状态（事务回滚已撤销明细）
             batch.setStatus("DRAFT");
             batchMapper.updateById(batch);
             log.error("核算失败: batchId={}", id, e);
@@ -252,9 +308,7 @@ public class CalculateService {
         }
     }
 
-    /**
-     * 无员工时的快速完成
-     */
+    /** 无员工时的快速完成（清空批次统计） */
     private void finishBatch(PayrollBatch batch) {
         batch.setTotalCount(0);
         batch.setSuccessCount(0);
@@ -266,8 +320,24 @@ public class CalculateService {
         batchMapper.updateById(batch);
     }
 
-    // ==================== 单员工核算 ====================
+    // ========================================================================
+    //  单员工核算
+    // ========================================================================
 
+    /**
+     * 单员工薪资核算
+     *
+     * 流程：
+     *   a. 查询薪资档案（EmployeeSalaryProfile），无档案→FAILED
+     *   b. 匹配账套（优先档案指定 → Scope匹配 → 兜底第一个启用账套）
+     *   c. 获取工资项目列表（按 sortOrder 排序）
+     *   d. 获取月考勤数据（迟到次数、请假天数、加班时长）
+     *   e. 构建分段区间（buildSegments），支持入职/转正分段
+     *   f. 逐项计算（calcItem），按 item_type 分发
+     *   g. 累计预扣法计算个税（calcTax）
+     *   h. 汇总应发/实发
+     *   i. 异常检测（请假>15天、加班>50h、环比波动>30%）
+     */
     private PayrollDetail calculateForEmployee(
             Employee employee, String period, Long batchId,
             List<PayrollScheme> schemes,
@@ -279,8 +349,6 @@ public class CalculateService {
 
         // a. 查询薪资档案
         EmployeeSalaryProfile profile = salaryProfileMapper.selectByEmployeeId(employee.getId());
-
-        // 异常：无薪资档案（阻断）
         if (profile == null) {
             return buildFailedDetail(batchId, employee.getId(), "NO_PROFILE", "员工无薪资档案");
         }
@@ -297,7 +365,7 @@ public class CalculateService {
             return buildFailedDetail(batchId, employee.getId(), "NO_ITEMS", "账套无工资项目");
         }
 
-        // d. 获取考勤数据（不可用时填 0）
+        // d. 获取考勤数据（不可用时填 0，不影响核算）
         AttendanceMonthlySummary attendance = safeGetAttendance(employee.getId(), period);
         int lateCount = attendance != null && attendance.getLateCount() != null ? attendance.getLateCount() : 0;
         BigDecimal leaveDays = attendance != null && attendance.getLeaveDays() != null ? attendance.getLeaveDays() : BigDecimal.ZERO;
@@ -309,7 +377,7 @@ public class CalculateService {
                         Comparator.nullsLast(Comparator.naturalOrder())))
                 .collect(Collectors.toList());
 
-        // 准备基础数据
+        // 准备基础数据：薪资档案中的各项基数
         BigDecimal baseSalary = opt(profile.getBaseSalary());
         BigDecimal ssBase = opt(profile.getSsBase());
         BigDecimal hfBase = opt(profile.getHfBase());
@@ -320,7 +388,7 @@ public class CalculateService {
         }
         Map<String, BigDecimal> allowanceMap = parseAllowanceJson(profile.getAllowanceBaseJson());
 
-        // 构建分段区间
+        // 构建分段区间（处理月中入职/转正）
         List<PaySegment> segments = buildSegments(period, employee.getHireDate(),
                 employee.getProbationEndDate(), probationRatio);
 
@@ -330,9 +398,9 @@ public class CalculateService {
         for (PayrollSchemeItem item : sortedItems) {
             if ("TAX".equals(item.getItemType())) {
                 hasTaxItem = true;
-                continue; // 个税单独计算
+                continue; // 个税单独计算，最后处理
             }
-            DetailItem di = calcItem(item, baseSalary, ssBase, hfBase, performanceBase,
+            DetailItem di = calcItem(employee.getId(), item, baseSalary, ssBase, hfBase, performanceBase,
                     allowanceMap, lateCount, leaveDays, overtimeHours, segments, period);
             detailItems.add(di);
         }
@@ -340,14 +408,9 @@ public class CalculateService {
         // f. 累计预扣法计算个税
         DetailItem taxItem = calcTax(detailItems, employee.getId(), period,
                 baseSalary, ssBase, hfBase, taxBrackets, taxYear);
-        if (!hasTaxItem) {
-            // 如果账套没有配置 TAX 项，仍然计算并附加
-            detailItems.add(taxItem);
-        } else {
-            detailItems.add(taxItem);
-        }
+        detailItems.add(taxItem);
 
-        // g. 汇总应发 / 实发
+        // g. 汇总应发（EARNING）和扣款（DEDUCTION）
         BigDecimal grossSalary = BigDecimal.ZERO;
         BigDecimal deductions = BigDecimal.ZERO;
         for (DetailItem di : detailItems) {
@@ -364,15 +427,12 @@ public class CalculateService {
 
         // h. 异常检测
         List<String> anomalyFlags = new ArrayList<>();
-        // LEAVE_HIGH: 请假 > 15 天
         if (leaveDays.compareTo(new BigDecimal("15")) > 0) {
             anomalyFlags.add("LEAVE_HIGH");
         }
-        // OVERTIME_HIGH: 加班 > 50 小时
         if (overtimeHours.compareTo(new BigDecimal("50")) > 0) {
             anomalyFlags.add("OVERTIME_HIGH");
         }
-        // SALARY_CHANGE_HIGH: 环比波动 > 30%
         BigDecimal prevNetSalary = BigDecimal.ZERO;
         PayrollDetail prevDetail = prevDetailMap.get(employee.getId());
         if (prevDetail != null && prevDetail.getNetSalary() != null
@@ -404,13 +464,22 @@ public class CalculateService {
         return detail;
     }
 
-    // ==================== 分段计薪 ====================
+    // ========================================================================
+    //  分段计薪
+    // ========================================================================
 
     /**
      * 根据员工入职日期、转正日期构建分段区间
-     * <p>支持：全月在职(1段)、月中入职(2段)、月中转正(2段)、入职+转正同月(3段)</p>
      *
-     * @param period          账期 如 "2026-07"
+     * 支持场景：
+     *   - 全月在职：1 段（比例=1）
+     *   - 月中入职：2 段 [入职前=0, 入职后=1]
+     *   - 月中转正：2 段 [试用期=probationRatio, 转正后=1]
+     *   - 入职+转正同月：3 段 [入职前=0, 试用期=probationRatio, 转正后=1]
+     *
+     * 按日历天数比例计算（dailySalary × 天数 × 该段比例）。
+     *
+     * @param period          账期（如 "2026-07"）
      * @param hireDate        入职日期
      * @param probationEndDate 转正日期
      * @param probationRatio  试用期待遇比例
@@ -422,7 +491,6 @@ public class CalculateService {
         LocalDate periodStart = ym.atDay(1);
         LocalDate periodEnd = ym.atEndOfMonth();
 
-        // 无入职日期 → 全月在职 1 段
         if (hireDate == null) {
             return List.of(new PaySegment(periodStart, periodEnd, BigDecimal.ONE, "全月在职"));
         }
@@ -456,15 +524,12 @@ public class CalculateService {
             String reason;
 
             if (segEnd.isBefore(hireDate)) {
-                // 入职前：不计薪
                 ratio = BigDecimal.ZERO;
                 reason = "入职前";
             } else if (probationEndDate != null && !segEnd.isAfter(probationEndDate)) {
-                // 试用期
                 ratio = probationRatio;
                 reason = "试用期";
             } else {
-                // 转正后 / 入职后无试用
                 ratio = BigDecimal.ONE;
                 if (hireDate != null && segStart.equals(hireDate)) {
                     reason = "入职后";
@@ -484,6 +549,9 @@ public class CalculateService {
 
     /**
      * 基于分段计算基本工资
+     *
+     * 全月在职且比例=1 → 直接返回 baseSalary（免分段计算）
+     * 其他情况：dailySalary = baseSalary / 当月天数，按段累加
      */
     private BigDecimal calcBasePayWithSegments(BigDecimal baseSalary,
                                                 List<PaySegment> segments, String period) {
@@ -519,9 +587,31 @@ public class CalculateService {
         return total;
     }
 
-    // ==================== 薪资项目计算 ====================
+    // ========================================================================
+    //  薪资项目计算（按 item_type 分发）
+    // ========================================================================
 
-    private DetailItem calcItem(PayrollSchemeItem item,
+    /**
+     * 计算单个工资项目
+     *
+     * 根据 item_type 分发到不同计算逻辑：
+     *
+     * FIXED:
+     *   BASE_PAY → 分段计薪
+     *   POSITION_ALLOWANCE → 从 allowanceBaseJson 解析
+     *
+     * VARIABLE:
+     *   PERFORMANCE_BONUS → performanceBase × ratio
+     *   OVERTIME_PAY → hourlyRate × 倍率 × 加班小时（从台账按 rateType 分组）
+     *
+     * ATTENDANCE_DEDUCT:
+     *   LATE_DEDUCT → 支持 FIXED/RATIO/STEP 三种扣款模式（从账套配置读取）
+     *   LEAVE_DEDUCT → -(baseSalary/21.75) × leaveDays
+     *
+     * SS_DEDUCT / HF_DEDUCT:
+     *   -基数 × ratio
+     */
+    private DetailItem calcItem(Long employeeId, PayrollSchemeItem item,
                                 BigDecimal baseSalary, BigDecimal ssBase, BigDecimal hfBase,
                                 BigDecimal performanceBase, Map<String, BigDecimal> allowanceMap,
                                 int lateCount, BigDecimal leaveDays, BigDecimal overtimeHours,
@@ -535,11 +625,9 @@ public class CalculateService {
                 if ("BASE_PAY".equals(item.getItemCode())) {
                     amount = calcBasePayWithSegments(baseSalary, segments, period);
                 } else if ("POSITION_ALLOWANCE".equals(item.getItemCode())) {
-                    // 从 allowanceBaseJson 解析
                     amount = allowanceMap.getOrDefault(item.getItemCode(),
                             allowanceMap.getOrDefault("POSITION_ALLOWANCE", BigDecimal.ZERO));
                 } else {
-                    // 其他固定项目尝试从津贴 JSON 获取
                     amount = allowanceMap.getOrDefault(item.getItemCode(), BigDecimal.ZERO);
                 }
                 break;
@@ -550,12 +638,36 @@ public class CalculateService {
                     if (ratio.compareTo(BigDecimal.ZERO) <= 0) ratio = BigDecimal.ONE;
                     amount = performanceBase.multiply(ratio);
                 } else if ("OVERTIME_PAY".equals(item.getItemCode())) {
-                    // (baseSalary / 21.75 / 8) * 1.5 * overtimeHours
+                    // 加班费 = (baseSalary/21.75/8) × 倍率 × 加班小时
+                    // 倍率：工作日1.5、休息日2.0、节假日3.0
                     BigDecimal dailyRate = baseSalary.divide(new BigDecimal("21.75"), 10, RoundingMode.HALF_UP);
                     BigDecimal hourlyRate = dailyRate.divide(new BigDecimal("8"), 10, RoundingMode.HALF_UP);
-                    amount = hourlyRate.multiply(new BigDecimal("1.5")).multiply(overtimeHours);
+                    Map<Integer, BigDecimal> otByRate = new HashMap<>();
+                    try {
+                        List<com.company.hrms.attendance.entity.OvertimeLedger> ledgers =
+                                overtimeLedgerMapper.selectByEmployeeAndPeriod(employeeId, period);
+                        for (com.company.hrms.attendance.entity.OvertimeLedger l : ledgers) {
+                            Integer rt = l.getRateType();
+                            otByRate.merge(rt, l.getTotalHours(), BigDecimal::add);
+                        }
+                    } catch (Exception e) {
+                        log.warn("读取加班台账失败，使用汇总加班时长", e);
+                        otByRate.put(15, overtimeHours);
+                    }
+                    if (otByRate.isEmpty()) {
+                        otByRate.put(15, overtimeHours);
+                    }
+                    amount = BigDecimal.ZERO;
+                    for (Map.Entry<Integer, BigDecimal> entry : otByRate.entrySet()) {
+                        BigDecimal multiplier;
+                        switch (entry.getKey()) {
+                            case 30: multiplier = new BigDecimal("3.0"); break;
+                            case 20: multiplier = new BigDecimal("2.0"); break;
+                            default: multiplier = new BigDecimal("1.5");
+                        }
+                        amount = amount.add(hourlyRate.multiply(multiplier).multiply(entry.getValue()));
+                    }
                 } else {
-                    // 通用变动项目：performanceBase × ratio
                     BigDecimal ratio = opt(item.getRatio());
                     amount = performanceBase.multiply(ratio);
                 }
@@ -564,9 +676,49 @@ public class CalculateService {
             case "ATTENDANCE_DEDUCT": {
                 type = "DEDUCTION";
                 if ("LATE_DEDUCT".equals(item.getItemCode())) {
-                    amount = new BigDecimal("-50").multiply(BigDecimal.valueOf(lateCount));
+                    // 从账套读取迟到扣款配置（FIXED/RATIO/STEP）
+                    BigDecimal deductAmount = BigDecimal.ZERO;
+                    try {
+                        PayrollScheme scheme = schemeMapper.selectById(item.getSchemeId());
+                        if (scheme != null && scheme.getLateDeductionType() != null) {
+                            String dedType = scheme.getLateDeductionType();
+                            BigDecimal dedVal = scheme.getLateDeductionValue();
+                            if ("FIXED".equals(dedType) && dedVal != null) {
+                                deductAmount = dedVal;
+                            } else if ("RATIO".equals(dedType) && dedVal != null) {
+                                BigDecimal dailyRate = baseSalary.divide(new BigDecimal("21.75"), 10, RoundingMode.HALF_UP);
+                                deductAmount = dailyRate.multiply(dedVal);
+                            } else if ("STEP".equals(dedType)) {
+                                String config = scheme.getLateDeductionConfig();
+                                if (config != null) {
+                                    ObjectMapper om = new ObjectMapper();
+                                    List<Map<String, Object>> steps = om.readValue(config, List.class);
+                                    long count = lateCount;
+                                    for (Map<String, Object> step : steps) {
+                                        String range = (String) step.get("range");
+                                        Object amt = step.get("amount");
+                                        if (range != null && amt != null) {
+                                            if (range.endsWith("+")) {
+                                                int min = Integer.parseInt(range.replace("+", ""));
+                                                if (count >= min) deductAmount = new BigDecimal(amt.toString());
+                                            } else {
+                                                String[] parts = range.split("-");
+                                                int lo = Integer.parseInt(parts[0]);
+                                                int hi = Integer.parseInt(parts[1]);
+                                                if (count >= lo && count <= hi) deductAmount = new BigDecimal(amt.toString());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("读取迟到扣款配置失败，使用默认值", e);
+                        deductAmount = new BigDecimal("50");
+                    }
+                    amount = deductAmount.negate().multiply(BigDecimal.valueOf(lateCount));
                 } else if ("LEAVE_DEDUCT".equals(item.getItemCode())) {
-                    // -(baseSalary / 21.75) * leaveDays
+                    // 请假扣款 = -(baseSalary/21.75) × leaveDays
                     BigDecimal dailyRate = baseSalary.divide(new BigDecimal("21.75"), 10, RoundingMode.HALF_UP);
                     amount = dailyRate.multiply(leaveDays).negate();
                 } else {
@@ -576,14 +728,12 @@ public class CalculateService {
             }
             case "SS_DEDUCT": {
                 type = "DEDUCTION";
-                // -ssBase × ratio
                 BigDecimal ratio = opt(item.getRatio());
                 amount = ssBase.multiply(ratio).negate();
                 break;
             }
             case "HF_DEDUCT": {
                 type = "DEDUCTION";
-                // -hfBase × ratio
                 BigDecimal ratio = opt(item.getRatio());
                 amount = hfBase.multiply(ratio).negate();
                 break;
@@ -597,15 +747,33 @@ public class CalculateService {
         di.setItemName(item.getItemName());
         di.setAmount(amount.setScale(2, RoundingMode.HALF_UP));
         di.setType(type);
-        // 基本工资项目记录分段快照
         if ("BASE_PAY".equals(item.getItemCode())) {
             di.setSegments(segments);
         }
         return di;
     }
 
-    // ==================== 累计预扣法个税 ====================
+    // ========================================================================
+    //  个税计算（累计预扣法）
+    // ========================================================================
 
+    /**
+     * 累计预扣法计算个人所得税
+     *
+     * 计算公式：
+     *   累计预扣应纳税所得额 = 累计收入 - 累计免税收入(5000×月数) - 累计社保公积金
+     *   本期预扣税额 = 累计应纳税额 - 累计已预扣税额
+     *
+     * 每期计算结果存入 PayTaxYtdRecord 供下期使用。
+     * 跨年自动重置（年初重新累计）。
+     *
+     * 税率表（2026 年）：
+     *   0 ~ 36,000       → 3%
+     *   36,000 ~ 144,000 → 10% (速算扣除 2,520)
+     *   144,000 ~ 300,000 → 20% (速算扣除 16,920)
+     *   300,000 ~ 420,000 → 25% (速算扣除 31,920)
+     *   ...（最高 45%）
+     */
     private DetailItem calcTax(List<DetailItem> detailItems, Long employeeId, String period,
                                BigDecimal baseSalary, BigDecimal ssBase, BigDecimal hfBase,
                                List<PayTaxBracket> taxBrackets, int taxYear) {
@@ -628,22 +796,20 @@ public class CalculateService {
 
         BigDecimal prevCumulativeTax = BigDecimal.ZERO;
 
-        // 当月月份数（从 period 解析，如 "2026-07" -> 7）
         int monthNum = Integer.parseInt(period.substring(5));
         BigDecimal taxFreeBase = new BigDecimal("5000").multiply(BigDecimal.valueOf(monthNum));
 
         BigDecimal cumulativeTaxable;
 
         if (prevYtd != null && prevYtd.getTaxableIncome() != null) {
-            // 累计预扣应纳税所得额 = 上月累计 + 本月收入 - 5000 - 本月社保公积金
+            // 有上月累计 → 正常累计
             cumulativeTaxable = prevYtd.getTaxableIncome()
                     .add(currentGross)
                     .subtract(new BigDecimal("5000"))
                     .subtract(currentSsHf);
             prevCumulativeTax = opt(prevYtd.getCumulativeTax());
         } else {
-            // 本年为首次核算
-            // 累计预扣应纳税所得额 = 累计收入 - 5000×月数 - 累计社保公积金
+            // 首次核算或跨年重置 → 从本月开始累计
             cumulativeTaxable = currentGross
                     .subtract(taxFreeBase)
                     .subtract(currentSsHf);
@@ -686,8 +852,12 @@ public class CalculateService {
         return di;
     }
 
-    // ==================== 个税税率查找 ====================
-
+    /**
+     * 查找个税税率档位
+     *
+     * 在税率表中查找累计应纳税所得额对应的档位。
+     * 使用各档位的 min_taxable / max_taxable 区间判断。
+     */
     private PayTaxBracket findTaxBracket(BigDecimal cumulativeTaxable, List<PayTaxBracket> brackets) {
         if (brackets == null || brackets.isEmpty()) return null;
         for (PayTaxBracket bracket : brackets) {
@@ -703,12 +873,22 @@ public class CalculateService {
                 }
             }
         }
-        // 如果没找到（小于最低档），返回最低档
         return brackets.isEmpty() ? null : brackets.get(0);
     }
 
-    // ==================== 账套匹配 ====================
+    // ========================================================================
+    //  账套匹配
+    // ========================================================================
 
+    /**
+     * 为员工匹配薪资账套
+     *
+     * 匹配策略（优先级递减）：
+     *   1. 员工薪资档案中直接指定的 schemeId
+     *   2. 按 Scope 匹配（DEPARTMENT / POSITION / JOB_LEVEL）
+     *   3. 无范围限制的账套（适用于所有人）
+     *   4. 兜底：第一个启用的账套
+     */
     private PayrollScheme matchScheme(Employee employee, EmployeeSalaryProfile profile,
                                       List<PayrollScheme> schemes,
                                       Map<Long, List<PayrollSchemeScope>> schemeScopeMap) {
@@ -724,8 +904,7 @@ public class CalculateService {
         for (PayrollScheme scheme : schemes) {
             List<PayrollSchemeScope> scopes = schemeScopeMap.get(scheme.getId());
             if (scopes == null || scopes.isEmpty()) {
-                // 无范围限制的账套适用于所有人
-                return scheme;
+                return scheme; // 无范围限制的账套适用于所有人
             }
             if (matchesAnyScope(employee, scopes)) {
                 return scheme;
@@ -738,6 +917,7 @@ public class CalculateService {
         return null;
     }
 
+    /** 检查员工是否匹配账套的任一范围规则 */
     private boolean matchesAnyScope(Employee employee, List<PayrollSchemeScope> scopes) {
         for (PayrollSchemeScope scope : scopes) {
             if (employee == null) continue;
@@ -761,14 +941,16 @@ public class CalculateService {
                     }
                     break;
                 default:
-                    // 未知范围类型，跳过
             }
         }
         return false;
     }
 
-    // ==================== 考勤安全查询 ====================
+    // ========================================================================
+    //  辅助方法
+    // ========================================================================
 
+    /** 安全查询考勤数据（失败时返回 null，不阻断核算） */
     private AttendanceMonthlySummary safeGetAttendance(Long employeeId, String period) {
         try {
             return attendanceSummaryMapper.selectByEmployeeAndPeriod(employeeId, period);
@@ -779,8 +961,7 @@ public class CalculateService {
         }
     }
 
-    // ==================== 异常明细构造 ====================
-
+    /** 构建核算失败的明细记录（包含异常标记） */
     private PayrollDetail buildFailedDetail(Long batchId, Long employeeId, String flag, String reason) {
         PayrollDetail detail = new PayrollDetail();
         detail.setBatchId(batchId);
@@ -798,8 +979,6 @@ public class CalculateService {
         }
         return detail;
     }
-
-    // ==================== 辅助工具方法 ====================
 
     /** 获取前序账期：2026-07 → 2026-06，2026-01 → 2025-12 */
     private String getPrevPeriod(String period) {
@@ -834,8 +1013,11 @@ public class CalculateService {
         return result;
     }
 
-    // ==================== 核算明细查询 ====================
+    // ========================================================================
+    //  核算明细查询
+    // ========================================================================
 
+    /** 查询批次核算明细（分页，自动填充员工姓名） */
     public PageResult<PayrollDetailVO> getDetails(Long batchId, PageParam pageParam) {
         LambdaQueryWrapper<PayrollDetail> wrapper = new LambdaQueryWrapper<PayrollDetail>()
                 .eq(PayrollDetail::getBatchId, batchId);
@@ -880,20 +1062,26 @@ public class CalculateService {
         return PageResult.of(voList, page.getTotal(), pageParam);
     }
 
-    // ==================== 图表数据聚合 ====================
+    // ========================================================================
+    //  图表数据聚合（薪资趋势、部门分布）
+    // ========================================================================
 
+    /**
+     * 获取图表数据（批次详情页展示）
+     *
+     * - costTrend: 当前批次成本趋势
+     * - deptDistribution: 按部门聚合薪资总额
+     */
     public ChartDataVO getChartData(Long batchId) {
         ChartDataVO vo = new ChartDataVO();
 
-        // 查询批次
         PayrollBatch batch = batchMapper.selectById(batchId);
         if (batch == null) return vo;
 
-        // 查询该批次所有明细
         List<PayrollDetail> details = detailMapper.selectByBatchId(batchId);
         if (details.isEmpty()) return vo;
 
-        // ------- costTrend: 当前批次统计 -------
+        // ------- costTrend -------
         ChartDataVO.CostTrendItem trendItem = new ChartDataVO.CostTrendItem();
         trendItem.setPeriod(batch.getPeriod());
         double totalGross = details.stream()
@@ -903,13 +1091,12 @@ public class CalculateService {
         trendItem.setGrossTotal(totalGross);
         vo.getCostTrend().add(trendItem);
 
-        // ------- deptDistribution: 按部门聚合 -------
-        // 收集所有员工部门信息
+        // ------- deptDistribution -------
         Set<Long> empIds = details.stream()
                 .map(PayrollDetail::getEmployeeId)
                 .collect(Collectors.toSet());
 
-        Map<Long, Long> empDeptMap = new HashMap<>(); // employeeId -> departmentId
+        Map<Long, Long> empDeptMap = new HashMap<>();
         for (Long eid : empIds) {
             try {
                 Employee emp = employeeMapper.selectById(eid);
@@ -921,7 +1108,6 @@ public class CalculateService {
             }
         }
 
-        // 按部门聚合 grossTotal
         Map<Long, Double> deptGrossMap = new HashMap<>();
         for (PayrollDetail d : details) {
             Long deptId = empDeptMap.get(d.getEmployeeId());
@@ -930,7 +1116,6 @@ public class CalculateService {
             }
         }
 
-        // 查询部门名称
         for (Map.Entry<Long, Double> entry : deptGrossMap.entrySet()) {
             String deptName = "部门" + entry.getKey();
             try {
@@ -950,8 +1135,16 @@ public class CalculateService {
         return vo;
     }
 
-    // ==================== 手工调整 ====================
+    // ========================================================================
+    //  手工调整 / 审批 / 发放
+    // ========================================================================
 
+    /**
+     * 手工调整核算明细
+     *
+     * HR 在 PENDING_CONFIRM 阶段可对单个员工薪资项进行调整。
+     * 调整记录写入 PayrollAdjustment 表，明细标记 manual_adjusted=1。
+     */
     @Transactional(rollbackFor = Exception.class)
     public void adjust(Long batchId, Long detailId, AdjustmentDTO dto, Long operatorId) {
         PayrollDetail detail = detailMapper.selectById(detailId);
@@ -971,8 +1164,7 @@ public class CalculateService {
         log.info("手工调整: batchId={}, detailId={}, amount={}", batchId, detailId, dto.getAdjustAmount());
     }
 
-    // ==================== 提交审批 ====================
-
+    /** 提交审批：PENDING_CONFIRM → APPROVING */
     @Transactional(rollbackFor = Exception.class)
     public void submit(Long id) {
         PayrollBatch batch = batchMapper.selectById(id);
@@ -985,8 +1177,7 @@ public class CalculateService {
         log.info("提交审批: batchId={}", id);
     }
 
-    // ==================== 审批通过 ====================
-
+    /** 审批通过：APPROVING → APPROVED */
     @Transactional(rollbackFor = Exception.class)
     public void approve(Long id) {
         PayrollBatch batch = batchMapper.selectById(id);
@@ -999,8 +1190,7 @@ public class CalculateService {
         log.info("审批通过: batchId={}", id);
     }
 
-    // ==================== 发放确认 ====================
-
+    /** 发放确认：APPROVED → DISTRIBUTED */
     @Transactional(rollbackFor = Exception.class)
     public void distribute(Long id) {
         PayrollBatch batch = batchMapper.selectById(id);

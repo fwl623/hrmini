@@ -505,7 +505,7 @@ public class ApprovalEventListener {
                         if (lb.getExpireDate() == null || newExpire.isAfter(lb.getExpireDate())) {
                             lb.setExpireDate(newExpire);
                         }
-                        lb.setVersion(lb.getVersion() != null ? lb.getVersion() + 1 : 1);
+                        // @Version 乐观锁自动管理 version 递增
                         leaveBalanceMapper.updateById(lb);
                     }
 

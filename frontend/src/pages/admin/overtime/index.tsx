@@ -1,37 +1,32 @@
 /**
  * 加班管理（管理端）
  *
- * 功能：ProTable + SearchBar（关键字、日期范围）
- *       + ActionBar（新建）+ Drawer 表单申请
- *       + 当日加班 ≥4 小时黄色 Alert 提示「将触发 HR 二审」
+ * 功能：ProTable + 搜索（员工姓名下拉）
+ *       + 加班台账查看
  *       + 管理员可查看所有员工的加班记录
  *
- * 与门户端共享 statusLabelMap / statusColorMap / submitOvertime 逻辑
+ * 与门户端共享 statusLabelMap / statusColorMap
  */
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Card,
   Button,
   Tag,
   message,
-  Drawer,
-  Form,
-  DatePicker,
-  TimePicker,
-  Input,
+  Select,
   Space,
-  Alert,
   Typography,
   Modal,
   Table,
-  InputNumber,
+  Input,
 } from 'antd';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
-import { PlusOutlined, OrderedListOutlined } from '@ant-design/icons';
+import { OrderedListOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
-import { getOvertimeApplications, submitOvertime, getOvertimeLedger } from '@/services/attendance';
+import { getOvertimeApplications, getOvertimeLedger } from '@/services/attendance';
+import { getEmployeeList } from '@/services/employee';
 
 // ========== 共享常量 ==========
 
@@ -53,10 +48,9 @@ const statusColorMap: Record<string, string> = {
 
 const AdminOvertimePage: React.FC = () => {
   const actionRef = useRef<ActionType>();
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [form] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
-  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchEmpId, setSearchEmpId] = useState<number | undefined>();
+  const [empOptions, setEmpOptions] = useState<{ label: string; value: number }[]>([]);
+  const [empLoading, setEmpLoading] = useState(false);
 
   // 加班台账
   const [ledgerOpen, setLedgerOpen] = useState(false);
@@ -66,6 +60,24 @@ const AdminOvertimePage: React.FC = () => {
   const [ledgerTotal, setLedgerTotal] = useState(0);
 
   const rateTypeLabel: Record<number, string> = { 15: '1.5倍(工作日)', 20: '2.0倍(休息日)', 30: '3.0倍(节假日)' };
+
+  // ---------- 搜索员工 ----------
+
+  const searchEmployees = async (keyword: string) => {
+    if (!keyword || keyword.length < 1) { setEmpOptions([]); return; }
+    setEmpLoading(true);
+    try {
+      const res = await getEmployeeList({ keyword, page: 1, pageSize: 20 });
+      const list = res.data?.list ?? [];
+      setEmpOptions(list.map((e) => ({
+        label: `${e.name} (${e.empNo}) - ${e.department || ''}`,
+        value: e.employeeId,
+      })));
+    } catch { setEmpOptions([]); }
+    finally { setEmpLoading(false); }
+  };
+
+  // ---------- 加班台账 ----------
 
   const loadLedger = async (page = 1, pageSize = 20) => {
     setLedgerLoading(true);
@@ -90,48 +102,6 @@ const AdminOvertimePage: React.FC = () => {
     { title: '创建时间', dataIndex: 'createdAt', width: 160 },
   ];
 
-  // ---------- 时长计算 ----------
-
-  const [computedHours, setComputedHours] = useState(0);
-  const triggerSecondReview = computedHours >= 4;
-
-  const recalcHours = useCallback(() => {
-    const values = form.getFieldsValue();
-    if (values.startTime && values.endTime) {
-      const start = dayjs(values.startTime.format('HH:mm'), 'HH:mm');
-      const end = dayjs(values.endTime.format('HH:mm'), 'HH:mm');
-      if (end.isAfter(start)) {
-        setComputedHours(Math.round(end.diff(start, 'hour', true) * 100) / 100);
-      } else {
-        setComputedHours(0);
-      }
-    } else {
-      setComputedHours(0);
-    }
-  }, [form]);
-
-  // ---------- 新建加班提交 ----------
-
-  const handleSubmit = async () => {
-    try {
-      const values = await form.validateFields();
-      setSubmitting(true);
-      const overtimeDate = values.overtimeDate.format('YYYY-MM-DD');
-      const startTime = values.startTime.format('HH:mm');
-      const endTime = values.endTime.format('HH:mm');
-
-      await submitOvertime({ overtimeDate, startTime, endTime, reason: values.reason });
-      message.success('加班申请已提交');
-      setDrawerOpen(false);
-      form.resetFields();
-      actionRef.current?.reload();
-    } catch (err: any) {
-      if (err?.message) message.error(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   // ---------- 表格列定义 ----------
 
   const columns: any[] = [
@@ -152,68 +122,34 @@ const AdminOvertimePage: React.FC = () => {
     },
   ];
 
-  // 合成日期范围列（仅在搜索表单中展示）
-  const dateRangeColumn: any = {
-    title: '加班日期',
-    dataIndex: 'overtimeDateRange',
-    valueType: 'dateRange',
-    hideInTable: true,
-    search: {
-      transform: (value: any[]) => {
-        if (value?.length === 2) {
-          return {
-            dateFrom: value[0]?.format('YYYY-MM-DD'),
-            dateTo: value[1]?.format('YYYY-MM-DD'),
-          };
-        }
-        return {};
-      },
-    },
-  };
-
   // ---------- 渲染 ----------
 
   return (
     <Card
       title="加班管理"
       extra={
-        <Space>
-          <Button
-            icon={<OrderedListOutlined />}
-            onClick={() => {
-              setLedgerPeriod(dayjs().format('YYYY-MM'));
-              setLedgerOpen(true);
-              loadLedger();
-            }}
-          >
-            加班台账
-          </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              setDrawerOpen(true);
-              form.resetFields();
-            }}
-          >
-            新建加班
-          </Button>
-        </Space>
+        <Button
+          icon={<OrderedListOutlined />}
+          onClick={() => {
+            setLedgerPeriod(dayjs().format('YYYY-MM'));
+            setLedgerOpen(true);
+            loadLedger();
+          }}
+        >
+          加班台账
+        </Button>
       }
     >
       <ProTable<any>
         rowKey="id"
-        columns={[...columns, dateRangeColumn]}
+        columns={columns}
         actionRef={actionRef}
         request={async (params) => {
-          const { current, pageSize, overtimeDateRange, dateFrom, dateTo, ...rest } = params;
+          const { current, pageSize, ...rest } = params;
           try {
             const res = await getOvertimeApplications({
               page: current,
-              employeeId: 0,
-              keyword: searchKeyword || undefined,
-              dateFrom,
-              dateTo,
+              employeeId: searchEmpId ?? 0,
             });
             return {
               data: res.data?.list || [],
@@ -225,91 +161,31 @@ const AdminOvertimePage: React.FC = () => {
           }
         }}
         pagination={{ showSizeChanger: true, defaultPageSize: 20 }}
-        search={{
-          labelWidth: 'auto',
-          defaultCollapsed: false,
-          optionRender: (searchConfig, formProps, dom) => [...dom.reverse()],
-        }}
+        search={false}
         toolBarRender={() => [
-          <Input.Search
-            key="search"
-            placeholder="员工姓名 / 工号"
+          <Select
+            key="empSearch"
+            showSearch
+            placeholder="搜索员工姓名"
             allowClear
-            onSearch={(value) => {
-              setSearchKeyword(value);
+            filterOption={false}
+            notFoundContent={null}
+            loading={empLoading}
+            onSearch={searchEmployees}
+            onChange={(val) => {
+              setSearchEmpId(val as number | undefined);
               actionRef.current?.reload();
             }}
-            style={{ width: 260 }}
+            onClear={() => {
+              setSearchEmpId(undefined);
+              actionRef.current?.reload();
+            }}
+            value={searchEmpId}
+            options={empOptions}
+            style={{ width: 240 }}
           />,
         ]}
       />
-
-      <Drawer
-        title="新建加班申请"
-        open={drawerOpen}
-        onClose={() => {
-          setDrawerOpen(false);
-          form.resetFields();
-        }}
-        width={520}
-        footer={
-          <Space style={{ float: 'right' }}>
-            <Button
-              onClick={() => {
-                setDrawerOpen(false);
-                form.resetFields();
-              }}
-            >
-              取消
-            </Button>
-            <Button type="primary" loading={submitting} onClick={handleSubmit}>
-              提交
-            </Button>
-          </Space>
-        }
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="overtimeDate" label="加班日期" rules={[{ required: true, message: '请选择加班日期' }]}>
-            <DatePicker
-              style={{ width: '100%' }}
-              disabledDate={(d) => d && d.isBefore(dayjs(), 'day')}
-            />
-          </Form.Item>
-
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="startTime" label="开始时间" rules={[{ required: true, message: '请选择开始时间' }]}>
-              <TimePicker format="HH:mm" onChange={recalcHours} />
-            </Form.Item>
-            <Form.Item name="endTime" label="结束时间" rules={[{ required: true, message: '请选择结束时间' }]}>
-              <TimePicker format="HH:mm" onChange={recalcHours} />
-            </Form.Item>
-          </Space>
-
-          <Form.Item label="时长（系统计算）">
-            <Typography.Text strong style={{ fontSize: 16 }}>
-              {computedHours > 0 ? `${computedHours} 小时` : '请选择开始和结束时间'}
-            </Typography.Text>
-          </Form.Item>
-
-          {triggerSecondReview && (
-            <Alert
-              type="warning"
-              showIcon
-              message="将触发 HR 二审"
-              description="当日加班时长 ≥ 4 小时，将进入 HR 二级审批流程。"
-              style={{ marginBottom: 16 }}
-            />
-          )}
-
-          <Form.Item
-            name="reason"
-            label="加班原因"
-            rules={[{ required: true }, { max: 256, message: '原因不超过 256 个字符' }]}
-          >
-            <Input.TextArea rows={3} maxLength={256} showCount placeholder="请说明加班原因" />
-          </Form.Item>
-        </Form>
-      </Drawer>
 
       {/* 加班台账 Modal */}
       <Modal

@@ -1,3 +1,20 @@
+/**
+ * 【模块说明 · 调岗管理】路由 /admin/transfers
+ *
+ * 干什么：调岗申请列表、发起调岗（选员工/新部门/职位/生效日等）、详情 Drawer 展示三节点 Steps。
+ *         审批操作在 admin/approval 处理；支持 ?employeeId=&open=1 从花名册「更多-调岗」深链。
+ *
+ * 主要状态：
+ * - list / loading：调岗列表
+ * - open / form / empOptions：发起 Modal 与员工搜索
+ * - detailOpen / detail / detailLoading：详情 Drawer（fetchTransferDetail 拉三节点）
+ * - deptTreeOptions / deptNameMap / positions：部门树与职位级联
+ *
+ * 调哪些 API：
+ * - @/services/lifecycle：fetchTransfers、fetchTransferDetail、createTransfer
+ * - @/services/employee：getEmployeeList、getEmployeeDetail
+ * - @/services/org：getDeptTree、listPositions
+ */
 import {
   Button,
   Card,
@@ -70,10 +87,6 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: '已撤销',
 };
 
-/**
- * 调岗管理：列表 + 发起 + 详情（原部门→新部门→[财务]→HR）
- * 支持 ?employeeId=&open=1 从花名册「更多-调岗」带入
- */
 export default function TransfersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [list, setList] = useState<TransferItem[]>([]);

@@ -14,8 +14,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 审批催办 / 离职生效 / 审批完成 MQ 发布。
- * {@code hrms.rabbitmq.enabled=false} 时降级为日志；启用后走 RabbitTemplate（含 48h 延迟催办）。
+ * 【技术评审锚点 · MQ 发布】审批催办 / 入职欢迎 / 离职生效等事件。
+ * <p>
+ * {@code hrms.rabbitmq.enabled=false} 时降级为日志，不拖死主事务。
+ * 发送失败 warn；消费侧应按 eventType + businessId 幂等。
+ * <b>诚实说明</b>：欢迎邮件当前是「事件 + 日志占位」，未接真实 SMTP 时邮箱收不到属预期。
+ * <p>
+ * 建档不放在异步消费者里做唯一入口，避免重复消费导致重复建档——建档在 confirm 同步事务内完成。
  */
 @Component
 public class ApprovalNotifyPublisher {

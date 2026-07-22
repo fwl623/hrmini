@@ -1,3 +1,21 @@
+/**
+ * 【模块说明 · HR 离职管理】路由 /admin/resignation（双通道第二阶段入口）
+ *
+ * 干什么：HR 查看员工门户登记的离职意向，并发起正式离职审批；管理正式离职单列表与统计。
+ *         工作交接人由部门负责人在 admin/approval 第一岗同意时确认（本页不选手）。
+ *
+ * 主要状态：
+ * - tab：员工申请 / 正式离职
+ * - requests / resignations / stats：两 Tab 列表 + 顶部 Statistic
+ * - open / form / linkRequest：发起正式离职 Modal（可关联 requestId，支持 ?requestId= 深链）
+ * - empOptions：员工搜索 Select
+ *
+ * 调哪些 API：
+ * - @/services/lifecycle：fetchResignationRequests、fetchResignations、fetchResignationStats、createResignation
+ * - @/services/employee：getEmployeeList、getEmployeeDetail
+ *
+ * 权限 canManageResignation；部门主管不进本页，只在审批中心处理离职审批。
+ */
 import {
   Button,
   Card,
@@ -32,14 +50,6 @@ import {
 } from '@/services/lifecycle';
 import { getEmployeeDetail, getEmployeeList } from '@/services/employee';
 
-/**
- * HR/管理员离职管理（双通道）
- * - Tab「员工申请」：员工登记的意向；HR 可直接发起正式离职
- * - Tab「正式离职」：正式单列表（部门负责人确认交接 → HR）；也可直提
- * - 支持 ?requestId= 从列表跳转
- * - 支持 ?employeeId=&name=&open=1 从花名册「更多-离职」带入
- * 工作交接人由部门负责人在审批中心确认。
- */
 export default function AdminResignationPage() {
   const access = useAccess();
   const location = useLocation();

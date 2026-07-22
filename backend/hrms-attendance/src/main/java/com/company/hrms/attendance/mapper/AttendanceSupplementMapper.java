@@ -15,6 +15,6 @@ public interface AttendanceSupplementMapper extends BaseMapper<AttendanceSupplem
     /**
      * 统计员工某月补卡次数
      */
-    @Select("SELECT COUNT(*) FROM attendance_supplement WHERE employee_id = #{employeeId} AND DATE_FORMAT(created_at, '%Y-%m') = #{ym}")
+    @Select("SELECT COUNT(*) FROM attendance_supplement WHERE employee_id = #{employeeId} AND DATE_FORMAT(created_at, '%Y-%m') = #{ym} AND status = 'APPROVED'")
     int countByEmployeeAndMonth(@Param("employeeId") Long employeeId, @Param("ym") String ym);
 }

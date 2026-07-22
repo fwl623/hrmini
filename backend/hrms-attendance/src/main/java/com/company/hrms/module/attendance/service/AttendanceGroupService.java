@@ -93,6 +93,7 @@ public class AttendanceGroupService {
         if (attendanceGroupMapper.countByName(dto.getName()) > 0) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "考勤组名称已存在");
         }
+        validateByShiftType(dto);
 
         AttendanceGroup group = toEntity(dto);
         attendanceGroupMapper.insert(group);
@@ -116,6 +117,7 @@ public class AttendanceGroupService {
         if (existing == null || existing.getDeleted() == 1) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "考勤组不存在");
         }
+        validateByShiftType(dto);
 
         // 校验名称唯一性（排除自身）
         if (!dto.getName().equals(existing.getName()) && attendanceGroupMapper.countByName(dto.getName()) > 0) {
@@ -233,6 +235,32 @@ public class AttendanceGroupService {
     }
 
     // ========== 私有方法 ==========
+
+    /**
+     * 按班次类型校验必填字段
+     */
+    private void validateByShiftType(AttendanceGroupCreateDTO dto) {
+        String type = dto.getShiftType() != null ? dto.getShiftType().toUpperCase() : "";
+        switch (type) {
+            case "FIXED" -> {
+                if (dto.getOnDuty() == null) throw new BusinessException(ErrorCode.PARAM_INVALID, "固定班次需设置上班时间");
+                if (dto.getOffDuty() == null) throw new BusinessException(ErrorCode.PARAM_INVALID, "固定班次需设置下班时间");
+            }
+            case "FLEXIBLE" -> {
+                if (dto.getFlexibleRange() == null || dto.getFlexibleRange().getEarliest() == null)
+                    throw new BusinessException(ErrorCode.PARAM_INVALID, "弹性班次需设置弹性最早打卡时间");
+                if (dto.getFlexibleRange() == null || dto.getFlexibleRange().getLatest() == null)
+                    throw new BusinessException(ErrorCode.PARAM_INVALID, "弹性班次需设置弹性最晚打卡时间");
+                if (dto.getOffDuty() == null) throw new BusinessException(ErrorCode.PARAM_INVALID, "弹性班次需设置下班时间");
+            }
+            case "SCHEDULE" -> {
+                // 排班制当前等价于固定班次处理
+                if (dto.getOnDuty() == null) throw new BusinessException(ErrorCode.PARAM_INVALID, "排班制需设置上班时间");
+                if (dto.getOffDuty() == null) throw new BusinessException(ErrorCode.PARAM_INVALID, "排班制需设置下班时间");
+            }
+            default -> throw new BusinessException(ErrorCode.PARAM_INVALID, "无效的班次类型: " + type);
+        }
+    }
 
     /**
      * 物化员工-考勤组映射

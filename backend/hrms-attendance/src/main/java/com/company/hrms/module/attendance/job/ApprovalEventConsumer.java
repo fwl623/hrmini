@@ -6,17 +6,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitHandler;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
 /**
- * 审批事件消费者（MQ）
- * 监听 hrms.approval.attendance 队列，处理请假/加班/补卡审批结果
+ * 审批事件消费者（MQ）。仅 {@code hrms.rabbitmq.enabled=true} 时装配，避免本地无 Broker 刷屏。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "hrms.rabbitmq", name = "enabled", havingValue = "true")
 @RabbitListener(queues = "hrms.approval.attendance")
 public class ApprovalEventConsumer {
 

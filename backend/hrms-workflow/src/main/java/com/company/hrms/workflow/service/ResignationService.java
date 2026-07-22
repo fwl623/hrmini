@@ -33,6 +33,13 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 【离职业务 Service】两套表：
+ * {@code employee_resignation_request}（员工申请登记）与 {@code resignation_application}（正式离职审批单）。
+ * <p>
+ * 申请登记不创建审批实例；正式离职才走部门负责人→HR。审批通过后进入待生效，
+ * Job / {@code effect-due} 到期改员工状态并禁账号，再发考勤等 MQ 事件。
+ */
 @Service
 public class ResignationService {
 
@@ -61,15 +68,19 @@ public class ResignationService {
     }
 
     /**
-     * 门户员工发起离职申请（双通道第一阶段）。
-     * 仅登记意向，不走审批中心；由 HR 在离职管理中「发起正式离职」后，
-     * 才进入部门负责人确认交接 → HR 审批。
+     * 门户员工发起离职申请（双通道第一阶段）：登记离职意向，不创建审批实例。
+     * HR 受理后在管理端「发起正式离职」才进入审批链。
+     * 【调用】{@code ResignationController.createMyRequest}
      */
     @Transactional
     public LifecycleDtos.ResignationRequestVO createMyRequest(LifecycleDtos.ResignationRequestCreate req) {
         return createRequest(requireSelfEmployeeId(), req);
     }
 
+    /**
+     *  门户分页查询本人离职申请记录（SELF 数据范围）。
+     * 【调用】{@code ResignationController.listMyRequests}
+     */
     public PageResult<LifecycleDtos.ResignationRequestVO> listMyRequests(int page, int pageSize) {
         Long employeeId = requireSelfEmployeeId();
         LambdaQueryWrapper<EmployeeResignationRequest> q = new LambdaQueryWrapper<EmployeeResignationRequest>()
@@ -78,6 +89,10 @@ public class ResignationService {
         return pageRequests(requestMapper.selectList(q), page, pageSize);
     }
 
+    /**
+     *  员工撤销本人 PENDING 状态的离职申请；若有关联审批实例则一并撤回。
+     * 【调用】{@code ResignationController.cancelMyRequest}
+     */
     @Transactional
     public void cancelMyRequest(Long id) {
         Long employeeId = requireSelfEmployeeId();
@@ -97,6 +112,10 @@ public class ResignationService {
         }
     }
 
+    /**
+     *  管理端分页查询待受理的员工离职申请（排除已关联正式离职单的记录）。
+     * 【调用】{@code ResignationController.listRequests}
+     */
     public PageResult<LifecycleDtos.ResignationRequestVO> listRequests(int page, int pageSize, String status) {
         // 排除已转入正式离职的申请，以及 HR 直提时落库的占位单（二者均已有 resignation_application）
         Set<Long> linkedRequestIds = resignationMapper.selectList(new LambdaQueryWrapper<ResignationApplication>()
@@ -116,6 +135,22 @@ public class ResignationService {
         return pageRequests(requestMapper.selectList(q), page, pageSize);
     }
 
+    /**
+     * 【干什么】HR 发起正式离职（双通道第二阶段）：落 resignation_application 并创建审批实例。
+     * 可关联员工申请 requestId；无 requestId 时自动落占位 request 单。
+     * <p>
+     * 【谁调用】{@code ResignationController.createResignation}
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>{@code requireHrOrAdmin}；校验员工状态、离职日、无重复 APPROVING 单</li>
+     *   <li>关联 requestId：校验 PENDING/APPROVED，撤回历史 instance，标记 request=APPROVED</li>
+     *   <li>无 requestId：insert 占位 {@code EmployeeResignationRequest}（无 instanceId）</li>
+     *   <li>insert {@code ResignationApplication} status=APPROVING</li>
+     *   <li>{@code buildResignationNodes}（部门负责人→HR）→ {@code DbApprovalService.createInstance}（RESIGNATION）</li>
+     *   <li>回写 instanceId 到正式离职单</li>
+     * </ol>
+     */
     @Transactional
     public LifecycleDtos.ResignationVO createResignation(LifecycleDtos.ResignationCreateRequest req) {
         requireHrOrAdmin();
@@ -233,8 +268,9 @@ public class ResignationService {
     }
 
     /**
-     * 部门负责人审批同意时可选确认工作交接人。
-     * handoverEmployeeId 为空表示暂不指定交接人。
+     * 部门负责人在正式离职审批第 1 岗同意时，可选确认工作交接人并写入正式离职单。
+     * handoverEmployeeId 为空表示暂不指定。
+     * 【调用】{@code DbApprovalService.action}（RESIGNATION 第 1 岗 APPROVE 且 body 带 handoverEmployeeId）
      */
     @Transactional
     public void confirmHandover(Long appId, Long handoverEmployeeId) {
@@ -253,6 +289,18 @@ public class ResignationService {
         resignationMapper.updateById(app);
     }
 
+    /**
+     * 【干什么】组装审批中心展示用的正式离职业务详情 Map（含交接人、离职日等）。
+     * <p>
+     * 【谁调用】{@code DbApprovalService.buildBusinessDetail}（processType=RESIGNATION）
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>{@code ResignationApplicationMapper.selectById} 加载正式离职单</li>
+     *   <li>{@code EmployeeLifecycleService.requireEmployee} 补员工/交接人姓名工号</li>
+     *   <li>填充 resignationDate、reasonCategory、handoverEmployeeId 等字段</li>
+     * </ol>
+     */
     public Map<String, Object> resignationBusinessDetail(Long appId) {
         Map<String, Object> biz = new java.util.HashMap<>();
         if (appId == null) {
@@ -289,7 +337,18 @@ public class ResignationService {
         return biz;
     }
 
-    /** 员工离职申请详情（审批中心展示） */
+    /**
+     * 【干什么】组装审批中心展示用的员工离职申请业务详情 Map。
+     * <p>
+     * 【谁调用】{@code DbApprovalService.buildBusinessDetail}（processType=RESIGNATION_REQUEST）
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>{@code EmployeeResignationRequestMapper.selectById} 加载申请</li>
+     *   <li>{@code EmployeeLifecycleService} 补员工姓名工号</li>
+     *   <li>填充 expectedResignDate、reasonCategory、status 等字段</li>
+     * </ol>
+     */
     public Map<String, Object> requestBusinessDetail(Long requestId) {
         Map<String, Object> biz = new java.util.HashMap<>();
         if (requestId == null) {
@@ -354,6 +413,17 @@ public class ResignationService {
         return nodes;
     }
 
+    /**
+     * 【干什么】HR 管理端分页查询正式离职单列表，可选按 status 筛选。
+     * <p>
+     * 【谁调用】{@code ResignationController.listResignations}
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>{@code ResignationApplicationMapper.selectList} 按 id 倒序，可选 status 等值条件</li>
+     *   <li>内存分页，{@code toResignVo} 转 VO（含员工姓名、instanceId）</li>
+     * </ol>
+     */
     public PageResult<LifecycleDtos.ResignationVO> listResignations(int page, int pageSize, String status) {
         LambdaQueryWrapper<ResignationApplication> q = new LambdaQueryWrapper<ResignationApplication>()
                 .orderByDesc(ResignationApplication::getId);
@@ -371,6 +441,10 @@ public class ResignationService {
         return PageResult.of(list, all.size(), p, size);
     }
 
+    /**
+     *  按 id 返回单条正式离职单详情。
+     * 【调用】{@code ResignationController.resignationDetail}
+     */
     public LifecycleDtos.ResignationVO resignationDetail(Long id) {
         ResignationApplication app = resignationMapper.selectById(id);
         if (app == null) {
@@ -379,6 +453,10 @@ public class ResignationService {
         return toResignVo(app);
     }
 
+    /**
+     *  统计离职管理看板各维度数量：待受理申请、审批中、待生效、本月已离职。
+     * 【调用】{@code ResignationController.stats}
+     */
     public LifecycleDtos.ResignationStatsVO stats() {
         LifecycleDtos.ResignationStatsVO vo = new LifecycleDtos.ResignationStatsVO();
         vo.setPendingRequest(requestMapper.selectCount(new LambdaQueryWrapper<EmployeeResignationRequest>()
@@ -395,6 +473,10 @@ public class ResignationService {
         return vo;
     }
 
+    /**
+     *  员工离职申请审批通过回调：request 状态 PENDING/APPROVING → APPROVED。
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onApproved}（processType=RESIGNATION_REQUEST）
+     */
     @Transactional
     public void onRequestApproved(Long requestId) {
         EmployeeResignationRequest app = requestMapper.selectById(requestId);
@@ -407,6 +489,11 @@ public class ResignationService {
         requestMapper.updateById(app);
     }
 
+    /**
+     *  员工离职申请被驳回或撤回回调：request → REJECTED 或 CANCELLED。
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onRejected} / {@code LifecycleApprovalHandlerImpl.onWithdrawn}
+     * （processType=RESIGNATION_REQUEST）
+     */
     @Transactional
     public void onRequestRejectedOrWithdrawn(Long requestId, boolean withdrawn) {
         EmployeeResignationRequest app = requestMapper.selectById(requestId);
@@ -419,6 +506,19 @@ public class ResignationService {
         requestMapper.updateById(app);
     }
 
+    /**
+     * 【干什么】正式离职审批全部通过：员工进入待离职(30)；离职日已到则立即生效并禁账号、发 MQ。
+     * <p>
+     * 【谁调用】{@code LifecycleApprovalHandlerImpl.onApproved}（processType=RESIGNATION）
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>加载正式离职单，{@code requireStatus} 校验 APPROVING/PENDING</li>
+     *   <li>员工已离职(40)：同步单为 RESIGNED，{@code EmployeeLifecycleService.effectResign} 补禁账号</li>
+     *   <li>否则 {@code EmployeeLifecycleService.markPendingResign} → 单 status=PENDING_RESIGN</li>
+     *   <li>离职日 ≤ 今天：{@code effectResign} → RESIGNED + {@code ApprovalNotifyPublisher.publishResignationEffected}（MQ）</li>
+     * </ol>
+     */
     @Transactional
     public void onResignationApproved(Long appId) {
         ResignationApplication app = resignationMapper.selectById(appId);
@@ -458,6 +558,11 @@ public class ResignationService {
         }
     }
 
+    /**
+     *  正式离职审批被驳回或撤回：正式单 → REJECTED 或 CANCELLED（不回滚员工状态）。
+     * 【调用】{@code LifecycleApprovalHandlerImpl.onRejected} / {@code LifecycleApprovalHandlerImpl.onWithdrawn}
+     * （processType=RESIGNATION）
+     */
     @Transactional
     public void onResignationRejectedOrWithdrawn(Long appId, boolean withdrawn) {
         ResignationApplication app = resignationMapper.selectById(appId);
@@ -469,7 +574,19 @@ public class ResignationService {
         resignationMapper.updateById(app);
     }
 
-    /** Job：到期生效；并补齐「员工已离职但账号未禁」的脏数据 */
+    /**
+     * 【干什么】定时 Job / 联调手动触发：到期正式离职单生效，并补齐「已离职但账号未禁」脏数据。
+     * <p>
+     * 【谁调用】{@code ResignationEffectJob}；{@code ResignationController.effectDue}（联调）
+     * <p>
+     * 【怎么实现】
+     * <ol>
+     *   <li>查 status=PENDING_RESIGN 且 resignationDate ≤ today 的单据</li>
+     *   <li>逐条 {@code EmployeeLifecycleService.effectResign} → status=RESIGNED</li>
+     *   <li>{@code ApprovalNotifyPublisher.publishResignationEffected} 通知考勤等下游（MQ）</li>
+     *   <li>二次扫描 status=RESIGNED 补禁账号（幂等）</li>
+     * </ol>
+     */
     @Transactional
     public int effectDueResignations(LocalDate today) {
         List<ResignationApplication> due = resignationMapper.selectList(new LambdaQueryWrapper<ResignationApplication>()

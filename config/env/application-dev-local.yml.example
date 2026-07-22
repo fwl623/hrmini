@@ -17,8 +17,24 @@ spring:
   flyway:
     enabled: true
     validate-on-migrate: false
+  # 本地默认不配 rabbitmq；需要 MQ 时见下方「启用 RabbitMQ」
 
 # 本地联调：关闭 Feign Mock，入职 confirm 走真实建档/建号
 hrms:
   feign:
     mock-enabled: false
+  # rabbitmq.enabled 默认 false（application.yml）；本机无 Broker 时保持关闭即可
+
+# —— 启用 RabbitMQ（可选）——
+# 1) application.yml 中注释掉 RabbitAutoConfiguration 的 exclude
+# 2) 取消下面注释：
+# spring:
+#   rabbitmq:
+#     host: localhost
+#     port: 5672
+#     username: hrms
+#     password: hrms123
+# hrms:
+#   rabbitmq:
+#     enabled: true
+# 3) docker compose up -d rabbitmq（config/docker）

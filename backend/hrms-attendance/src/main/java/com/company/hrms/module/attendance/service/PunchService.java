@@ -8,6 +8,8 @@ import com.company.hrms.attendance.entity.AttendanceGroupMember;
 import com.company.hrms.attendance.entity.AttendanceMonthLock;
 import com.company.hrms.attendance.entity.AttendanceRecord;
 import com.company.hrms.attendance.entity.AttendanceSupplement;
+import com.company.hrms.attendance.entity.HolidayCalendar;
+import com.company.hrms.attendance.entity.WorkdayConfig;
 import com.company.hrms.attendance.mapper.AttendanceGroupMapper;
 import com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper;
 import com.company.hrms.attendance.mapper.AttendanceMonthLockMapper;
@@ -46,12 +48,22 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
  * 打卡管理 Service
- * 涵盖打卡判定、Redis 幂等、GPS 校验、补卡申请与配额管理
+ *
+ * 核心功能：
+ * 1. 员工打卡（含 Redis 幂等、打卡状态判定）
+ * 2. 今日/本月打卡状态查询
+ * 3. 补卡申请（月配额 2 次，Redis + DB 双重控制）
+ * 4. 打卡记录分页查询
+ * 5. 日汇总实时更新（v2.1 双槽位判定）
+ *
+ * 打卡状态判定支持固定班次（FIXED）和弹性班次（FLEXIBLE）两种考勤模式。
+ * 判定以服务器 CST 时间为准，确保与考勤组配置的时间基准一致。
  */
 @Slf4j
 @Service
@@ -79,16 +91,30 @@ public class PunchService {
     private static final String PUNCH_IDEMP_KEY = "hrms:punch:";
     /** Redis key 前缀：补卡计数 */
     private static final String SUPPLEMENT_KEY = "supplement:";
-    /** 补卡月配额 */
+    /** 补卡月配额：每人每月最多补卡 2 次 */
     private static final int MAX_SUPPLEMENT_QUOTA = 2;
 
-    // ========== 打卡核心 ==========
+    // ========================================================================
+    //  打卡核心
+    // ========================================================================
 
     /**
      * 员工打卡
      *
+     * 完整流程：
+     *   1. Redis 幂等校验（key 含 employeeId + serverDate + type，当天有效）
+     *   2. DB 层二次防重（同员工同日期同类型只允许一条）
+     *   3. 查询员工所属考勤组配置
+     *   4. 判定打卡状态（judgePunchStatus，分固定班/弹性班）
+     *   5. 写入打卡流水记录
+     *   6. 实时更新日汇总双槽位状态
+     *
+     * 打卡判定的所有时间比较基于服务器 CST 时间，
+     * 前端传入的 punchTime 仅作为存储值保留，不影响判定结果。
+     * 打卡失败时自动删除 Redis 幂等键，允许重试。
+     *
      * @param employeeId 员工 ID
-     * @param dto        打卡请求
+     * @param dto        打卡请求（包含打卡类型、时间、GPS 信息等）
      * @return 打卡状态: NORMAL / LATE / EARLY_LEAVE / ABSENT_HALF
      */
     @Transactional(rollbackFor = Exception.class)
@@ -98,7 +124,9 @@ public class PunchService {
         LocalTime serverTime = LocalDateTime.now(CST).toLocalTime();
         String type = dto.getType() != null ? dto.getType().toUpperCase() : "IN";
 
-        // Redis 幂等校验（基于服务端日期，不受前端时间影响）
+        // ====== 第一层防重：Redis 幂等校验 ======
+        // Key 格式: hrms:punch:{empId}:{yyyy-MM-dd}:{IN/OUT}
+        // TTL 到当天结束（至少保留 60 秒，防止跨天精度问题）
         String idempKey = PUNCH_IDEMP_KEY + employeeId + ":" + serverDate.toString() + ":" + type;
         Boolean success = stringRedisTemplate.opsForValue()
                 .setIfAbsent(idempKey, "1", getSecondsUntilEndOfDay(serverDate), TimeUnit.SECONDS);
@@ -106,15 +134,16 @@ public class PunchService {
             throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
         }
 
-        // DB 层防重：即使 Redis key 被误删也不会重复打卡
+        // ====== 第二层防重：DB 查询 ======
+        // 即使 Redis key 被误删也不会重复打卡（防击穿）
         boolean alreadyPunched = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, serverDate)
                 .stream().anyMatch(r -> type.equals(r.getPunchType()));
         if (alreadyPunched) {
             throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
         }
 
-        // 存储时间优先用前端传的值，否则用服务端时间
-        // 前端传的是 ISO 8601 UTC 时间（如 "2026-07-20T11:47:00.000Z"），需转成 CST
+        // 存储时间优先用前端传的值（保留客户端感知的实际时间），否则用服务端时间
+        // 前端传的是 ISO 8601 UTC 时间（如 "2026-07-20T11:47:00.000Z"），转成 CST
         LocalDateTime storeTime = LocalDateTime.now(CST);
         LocalDate storeDate = serverDate;
         if (dto.getPunchTime() != null) {
@@ -129,23 +158,24 @@ public class PunchService {
         }
 
         try {
-            // 2. 查询员工所属考勤组
+            // 查询员工所属考勤组
             AttendanceGroup group = getEmployeeGroup(employeeId);
 
-            // 3. GPS 校验
-            if (group != null && group.getGpsRangeJson() != null && dto.getLatitude() != null && dto.getLongitude() != null) {
+            // GPS 校验（Haversine 公式计算距离）
+            if (group != null && group.getGpsRangeJson() != null
+                    && dto.getLatitude() != null && dto.getLongitude() != null) {
                 validateGps(group.getGpsRangeJson(), dto.getLatitude(), dto.getLongitude());
             }
 
-            // 3b. IP 白名单校验
+            // IP 白名单校验（支持精确 IP 和 CIDR 网段）
             if (group != null && group.getIpWhitelistJson() != null && dto.getClientIp() != null) {
                 validateIpWhitelist(group.getIpWhitelistJson(), dto.getClientIp());
             }
 
-            // 4. 判定打卡状态（用服务端 CST 时间，确保与考勤组工作时间比较正确）
+            // 判定打卡状态（用服务端 CST 时间，确保与考勤组工作时间比较正确）
             String punchStatus = judgePunchStatus(group, serverTime, type);
 
-            // 5. 写入打卡记录（存储时间用 storeTime/storeDate，保留前端传入值）
+            // 写入打卡记录
             AttendanceRecord record = new AttendanceRecord();
             record.setEmployeeId(employeeId);
             record.setPunchDate(storeDate);
@@ -154,7 +184,7 @@ public class PunchService {
             record.setPunchStatus(punchStatus);
             record.setSource("WEB");
 
-            // GPS 信息
+            // 记录 GPS 信息
             if (dto.getLatitude() != null && dto.getLongitude() != null) {
                 Map<String, Object> gps = new HashMap<>();
                 gps.put("lat", dto.getLatitude());
@@ -168,7 +198,8 @@ public class PunchService {
 
             attendanceRecordMapper.insert(record);
 
-            // v2.1: 实时更新日汇总（双槽位判定）
+            // 实时更新日汇总（v2.1 双槽位判定）
+            // 打卡后立即刷新日汇总，无需等待凌晨批处理作业
             try {
                 updateDailySummaryInMemory(employeeId, storeDate);
             } catch (Exception e) {
@@ -180,16 +211,24 @@ public class PunchService {
             return punchStatus;
 
         } catch (Exception e) {
-            // 打卡失败时删除幂等键（允许重试）
+            // 打卡失败时删除幂等键，允许用户重试
             stringRedisTemplate.delete(idempKey);
             throw e;
         }
     }
 
-    // ========== 今日状态 ==========
+    // ========================================================================
+    //  今日/本月打卡状态
+    // ========================================================================
 
     /**
-     * 获取今日打卡状态（含记录明细）
+     * 获取今日打卡状态（含打卡记录明细列表）
+     *
+     * 返回当天已打卡次数、迟到/早退/缺卡统计，
+     * 以及 IN/OUT 各最新一条记录的明细。
+     *
+     * @param employeeId 员工 ID
+     * @return 今日打卡状态视图
      */
     public TodayPunchVO getTodayStatus(Long employeeId) {
         LocalDate today = LocalDate.now(CST);
@@ -227,17 +266,23 @@ public class PunchService {
         return vo;
     }
 
-    // ========== 本月打卡统计 ==========
-
     /**
      * 获取本月打卡统计
-     * 动态计算当月工作日天数，逐日检查打卡记录，不依赖日汇总表
+     *
+     * 动态计算当月工作日天数（排除周末、节假日），
+     * 逐日检查打卡记录并从原始时间重算迟到/早退，
+     * 不依赖日汇总表（避免汇总数据未生成导致的统计偏差）。
+     *
+     * 已审批请假日期不计入未打卡统计。
+     *
+     * @param employeeId 员工 ID
+     * @return 本月打卡统计视图
      */
     public TodayPunchVO getMonthlyStatus(Long employeeId) {
         LocalDate today = LocalDate.now(CST);
         LocalDate monthStart = today.withDayOfMonth(1);
 
-        // 1. 工作日配置
+        // 1. 加载工作日配置和节假日
         List<com.company.hrms.attendance.entity.WorkdayConfig> wkConfigs = workdayConfigMapper.selectList(null);
         java.util.Set<Integer> workdaySet = wkConfigs.stream()
                 .filter(w -> w.getIsWorkday() == 1)
@@ -248,25 +293,69 @@ public class PunchService {
                 .map(com.company.hrms.attendance.entity.HolidayCalendar::getHolidayDate)
                 .collect(java.util.stream.Collectors.toSet());
 
-        // 2. 本月打卡记录（去重：同天同类型只算一次）
+        // 2. 读取员工考勤组，用于从原始打卡时间重算状态
+        //    不依赖存储的 punch_status，防止种子数据伪状态影响统计
+        java.time.LocalTime gWorkStart = java.time.LocalTime.of(9, 0);
+        java.time.LocalTime gWorkEnd = java.time.LocalTime.of(18, 0);
+        int gLateThreshold = 15;
+        int gEarlyThreshold = 15;
+        try {
+            AttendanceGroupMember agm = attendanceGroupMemberMapper.selectById(employeeId);
+            if (agm != null) {
+                AttendanceGroup grp = attendanceGroupMapper.selectById(agm.getGroupId());
+                if (grp != null) {
+                    if (grp.getWorkStartTime() != null) gWorkStart = grp.getWorkStartTime();
+                    if (grp.getWorkEndTime() != null) gWorkEnd = grp.getWorkEndTime();
+                    if (grp.getLateThresholdMinutes() != null) gLateThreshold = grp.getLateThresholdMinutes();
+                    if (grp.getEarlyLeaveThresholdMinutes() != null) gEarlyThreshold = grp.getEarlyLeaveThresholdMinutes();
+                }
+            }
+        } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
+
+        // 收集本月打卡记录，按日期+类型去重
         List<AttendanceRecord> allRecords = attendanceRecordMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AttendanceRecord>()
                         .eq(AttendanceRecord::getEmployeeId, employeeId)
                         .ge(AttendanceRecord::getPunchDate, monthStart)
                         .le(AttendanceRecord::getPunchDate, today));
         java.util.Map<java.time.LocalDate, java.util.Set<String>> dateTypeMap = new java.util.HashMap<>();
+        java.util.Map<java.time.LocalDate, java.time.LocalTime> earliestIn = new java.util.HashMap<>();
+        java.util.Map<java.time.LocalDate, java.time.LocalTime> latestOut = new java.util.HashMap<>();
         java.util.Set<String> dedupKeys = new java.util.HashSet<>();
-        long lateCount = 0, earlyLeaveCount = 0;
         for (AttendanceRecord r : allRecords) {
             String key = r.getEmployeeId() + "_" + r.getPunchDate() + "_" + r.getPunchType();
             if (dedupKeys.add(key)) {
                 dateTypeMap.computeIfAbsent(r.getPunchDate(), k -> new java.util.HashSet<>()).add(r.getPunchType());
-                if ("LATE".equals(r.getPunchStatus())) lateCount++;
-                if ("EARLY_LEAVE".equals(r.getPunchStatus())) earlyLeaveCount++;
+                if ("IN".equals(r.getPunchType())) {
+                    java.time.LocalTime t = r.getPunchTime().toLocalTime();
+                    if (!earliestIn.containsKey(r.getPunchDate()) || t.isBefore(earliestIn.get(r.getPunchDate()))) {
+                        earliestIn.put(r.getPunchDate(), t);
+                    }
+                } else if ("OUT".equals(r.getPunchType())) {
+                    java.time.LocalTime t = r.getPunchTime().toLocalTime();
+                    if (!latestOut.containsKey(r.getPunchDate()) || t.isAfter(latestOut.get(r.getPunchDate()))) {
+                        latestOut.put(r.getPunchDate(), t);
+                    }
+                }
             }
         }
 
-        // 3. 已审批请假日期集合（仅工作日、已过去）
+        // 按考勤组时间重算迟到/早退（不依赖存储的 punch_status）
+        long lateCount = 0, earlyLeaveCount = 0;
+        for (java.util.Map.Entry<java.time.LocalDate, java.time.LocalTime> e : earliestIn.entrySet()) {
+            java.time.LocalTime inTime = e.getValue();
+            if (inTime.isAfter(gWorkStart) && !inTime.isAfter(gWorkStart.plusMinutes(gLateThreshold))) {
+                lateCount++;
+            }
+        }
+        for (java.util.Map.Entry<java.time.LocalDate, java.time.LocalTime> e : latestOut.entrySet()) {
+            java.time.LocalTime outTime = e.getValue();
+            if (outTime.isBefore(gWorkEnd) && !outTime.isBefore(gWorkEnd.minusMinutes(gEarlyThreshold))) {
+                earlyLeaveCount++;
+            }
+        }
+
+        // 3. 收集已审批请假日期（仅工作日、已过去）
         java.util.Set<java.time.LocalDate> approvedLeaveDates = new java.util.HashSet<>();
         List<com.company.hrms.attendance.entity.LeaveApplication> approvedLeaves =
                 leaveApplicationMapper.selectList(
@@ -302,13 +391,12 @@ public class PunchService {
                 continue;
             }
             shouldDays++;
-            // 已审批请假：仅当天无打卡记录时才不计打卡、不计缺卡
-            // （如果员工请假但实际来打了卡，应正常统计）
+            // 已审批请假且无打卡记录 → 不计为未打卡
+            // 如果员工请假但实际来打了卡，应正常统计打卡
             if (approvedLeaveDates.contains(current) && dateTypeMap.get(current) == null) {
                 current = current.plusDays(1);
                 continue;
             }
-            // 检查当天打卡
             java.util.Set<String> types = dateTypeMap.get(current);
             if (types == null) {
                 missingInCount++;
@@ -331,6 +419,9 @@ public class PunchService {
 
     /**
      * 昨日打卡概览（全员工聚合，管理端使用）
+     *
+     * 统计所有在职员工昨日的打卡情况：
+     * 已打卡人数、迟到/早退/缺勤人数。
      */
     public TodayPunchVO getYesterdayOverview() {
         LocalDate yesterday = LocalDate.now(CST).minusDays(1);
@@ -363,7 +454,6 @@ public class PunchService {
                     if (am == 4 || pm == 4) continue; // 请假不计入统计
                     boolean hasIn = (am != 5);
                     boolean hasOut = (pm != 5);
-                    if (am == 3 || pm == 3) { /* 旷工也算有打卡记录 */ }
                     if (hasIn || hasOut) clocked++;
                     if (am == 1) late++;
                     if (pm == 2) early++;
@@ -371,7 +461,7 @@ public class PunchService {
                     else if (am == 5 && pm == 5) absent++;
                 } catch (Exception e) {}
             } else {
-                // 旧格式：有打卡记录的都算已打卡
+                // 旧格式兼容
                 boolean hasRecord = ("NORMAL".equals(raw) || "LATE".equals(raw) || "EARLY_LEAVE".equals(raw)
                         || "ABSENT_HALF".equals(raw) || "MISSING_IN".equals(raw) || "MISSING_OUT".equals(raw));
                 if (hasRecord) clocked++;
@@ -383,10 +473,18 @@ public class PunchService {
         return new TodayPunchVO(clocked, total, late, early, absent);
     }
 
-    // ========== 打卡记录分页 ==========
+    // ========================================================================
+    //  打卡记录分页
+    // ========================================================================
 
     /**
      * 打卡记录分页查询
+     *
+     * 按日期范围搜索打卡记录，按 employee_id + punch_date 分组展示。
+     * 支持关键字按员工姓名/工号过滤。
+     *
+     * 注意：先全量查询再手动分页，适合记录量可控的场景。
+     * 数据量大的情况下需改为 SQL 层分页。
      *
      * @param pageParam 分页参数
      * @param keyword   搜索关键字（员工姓名/工号）
@@ -396,8 +494,6 @@ public class PunchService {
      */
     public PageResult<PunchRecordVO> pageRecords(PageParam pageParam, String keyword,
                                                   String dateFrom, String dateTo) {
-        // 由于需要跨表关联，使用 MyBatis-Plus 查询后组装
-        // 查询打卡记录 + 按 employee_id + punch_date 分组
         LambdaQueryWrapper<AttendanceRecord> wrapper = new LambdaQueryWrapper<AttendanceRecord>()
                 .orderByDesc(AttendanceRecord::getPunchDate)
                 .orderByAsc(AttendanceRecord::getEmployeeId);
@@ -412,7 +508,7 @@ public class PunchService {
         // 先查所有匹配记录（不分页），分组合并后再手动分页
         List<AttendanceRecord> allRecords = attendanceRecordMapper.selectList(wrapper);
 
-        // 按 employeeId + punchDate 分组，合并 IN/OUT（LinkedHashMap 保留 SQL 排序）
+        // 按 employeeId + punchDate 分组，合并 IN/OUT
         Map<String, List<AttendanceRecord>> grouped = allRecords.stream()
                 .collect(Collectors.groupingBy(
                         r -> r.getEmployeeId() + "_" + r.getPunchDate(),
@@ -430,7 +526,7 @@ public class PunchService {
             vo.setPunchDate(first.getPunchDate() != null ? first.getPunchDate().toString() : null);
             vo.setSource(first.getSource());
 
-            // 从 employee 表查询员工姓名和部门（用 search 获取 JOIN 的部门名称）
+            // 查询员工姓名和部门
             try {
                 List<com.company.hrms.employee.entity.Employee> empList = employeeMapper.search(
                         null, null, null, null, null, null, null,
@@ -452,7 +548,6 @@ public class PunchService {
             for (AttendanceRecord r : recs) {
                 String timeStr = null;
                 if (r.getPunchTime() != null) {
-                    // 数据库已存 CST 时间，直接格式化
                     timeStr = r.getPunchTime()
                             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
                 }
@@ -465,7 +560,7 @@ public class PunchService {
                 }
             }
 
-            // 关键字过滤（简单实现，完整需员工服务）
+            // 关键字过滤
             if (keyword != null && !keyword.isEmpty()) {
                 if (!vo.getEmployeeName().contains(keyword)) {
                     continue;
@@ -475,7 +570,7 @@ public class PunchService {
             allVoList.add(vo);
         }
 
-        // 手动分页：按 page 和 pageSize 截取
+        // 手动分页
         int page = Math.max(pageParam.getPage(), 1);
         int pageSize = pageParam.getPageSize() > 0 ? pageParam.getPageSize() : 20;
         int from = (page - 1) * pageSize;
@@ -487,17 +582,32 @@ public class PunchService {
         return PageResult.of(voList, allVoList.size(), pageParam);
     }
 
-    // ========== 补卡管理 ==========
+    // ========================================================================
+    //  补卡管理
+    // ========================================================================
 
     /**
      * 补卡申请
+     *
+     * 员工因漏打卡等异常情况申请补正。
+     * 需经过审批流程，每月最多 2 次，月锁定后不可补卡。
+     *
+     * 流程：
+     *   1. 校验月是否锁定（AttendanceMonthLock）
+     *   2. 校验补卡配额（Redis + DB 双读，每月上限 2 次）
+     *   3. 创建补卡申请并提交审批
+     *   4. 审批通过后由 ApprovalEventListener 自动修正打卡记录
+     *
+     * @param employeeId 员工 ID
+     * @param dto        补卡参数
+     * @return 补卡申请结果（含 id、状态、审批实例 ID）
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> applyFix(Long employeeId, PunchFixDTO dto) {
         LocalDate fixDate = LocalDate.parse(dto.getPunchDate());
         String ym = fixDate.format(DateTimeFormatter.ofPattern("yyyy-MM"));
 
-        // 1. 校验月锁定
+        // 1. 校验月锁定（锁定后考勤数据冻结，不可修改）
         AttendanceMonthLock lock = attendanceMonthLockMapper.selectOne(
                 new LambdaQueryWrapper<AttendanceMonthLock>()
                         .eq(AttendanceMonthLock::getYearMonth, ym));
@@ -505,28 +615,43 @@ public class PunchService {
             throw new BusinessException(ErrorCode.ATTENDANCE_MONTH_LOCKED, "考勤月已锁定，请联系 HR 解锁");
         }
 
-        // 2. 校验补卡配额（Redis 不可用时回落 DB）
-        int usedQuota = resolveUsedQuota(employeeId, ym, fixDate);
+        // 2. 校验日期是否为工作日（依赖考勤日历/假期配置）
+        if (!isWorkday(fixDate)) {
+            throw new BusinessException(ErrorCode.SUPPLEMENT_NOT_WORKDAY, "选择的日期不是工作日，不可补卡");
+        }
 
+        // 3. 校验该日期是否已有完整打卡记录（IN + OUT 均存在则不可补卡）
+        List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, fixDate);
+        boolean hasIn = dayRecords.stream().anyMatch(r -> "IN".equals(r.getPunchType()));
+        boolean hasOut = dayRecords.stream().anyMatch(r -> "OUT".equals(r.getPunchType()));
+        if (hasIn && hasOut) {
+            throw new BusinessException(ErrorCode.SUPPLEMENT_ALREADY_PUNCHED, "该日期已有完整打卡记录，不可补卡");
+        }
+
+        // 4. 禁止补未来日期的卡
+        if (fixDate.isAfter(LocalDate.now(CST))) {
+            throw new BusinessException(ErrorCode.SUPPLEMENT_FUTURE_DATE, "不允许补未来日期的卡");
+        }
+
+        // 5. 校验补卡配额（Redis 不可用时回落 DB）
+        int usedQuota = resolveUsedQuota(employeeId, ym, fixDate);
         if (usedQuota >= MAX_SUPPLEMENT_QUOTA) {
             throw new BusinessException(ErrorCode.MAKEUP_LIMIT_EXCEEDED, "每月最多补卡 " + MAX_SUPPLEMENT_QUOTA + " 次");
         }
 
-        // 3. 补卡类型转换
         String punchType = dto.getType() != null ? dto.getType().toUpperCase() : "IN";
 
-        // 4. 解析补卡时间（兼容 HH:mm 和 ISO 格式）
+        // 解析补卡时间（兼容 HH:mm 和 ISO 格式）
         String punchTimeStr = dto.getPunchTime();
         LocalDateTime makeupTime;
         try {
             makeupTime = LocalDateTime.parse(punchTimeStr, DateTimeFormatter.ISO_DATE_TIME);
         } catch (DateTimeParseException e) {
-            // 前端可能只传 HH:mm，拼上 punchDate 转成 LocalDateTime
             LocalTime time = LocalTime.parse(punchTimeStr, DateTimeFormatter.ofPattern("HH:mm"));
             makeupTime = LocalDateTime.of(LocalDate.parse(dto.getPunchDate()), time);
         }
 
-        // 5. 插入补卡申请
+        // 插入补卡申请
         AttendanceSupplement supplement = new AttendanceSupplement();
         supplement.setEmployeeId(employeeId);
         supplement.setMakeupDate(dto.getPunchDate());
@@ -536,6 +661,7 @@ public class PunchService {
         supplement.setStatus("PENDING");
         attendanceSupplementMapper.insert(supplement);
 
+        // 发起审批流程
         CreateApprovalRequest req = new CreateApprovalRequest();
         req.setProcessType("MAKEUP");
         req.setBusinessId(supplement.getId());
@@ -550,7 +676,7 @@ public class PunchService {
         supplement.setInstanceId(approval.getInstanceId());
         attendanceSupplementMapper.updateById(supplement);
 
-        // 5. Redis 原子自增（失败仅记日志，以 DB 计数为准）
+        // Redis 原子自增补卡计数
         String quotaKey = SUPPLEMENT_KEY + employeeId + ":" + ym;
         try {
             stringRedisTemplate.opsForValue().increment(quotaKey);
@@ -570,7 +696,10 @@ public class PunchService {
     }
 
     /**
-     * 补卡剩余次数
+     * 补卡剩余次数查询
+     *
+     * @param employeeId 员工 ID
+     * @return 含总配额、已使用、剩余可用次数的 VO
      */
     public QuotaVO getFixQuota(Long employeeId) {
         if (employeeId == null) {
@@ -582,7 +711,16 @@ public class PunchService {
     }
 
     /**
-     * 读配额：Redis 优先，失败或未命中则回落 DB，避免 Redis 不可用直接 90001。
+     * 解析已使用的补卡次数
+     *
+     * 策略：Redis 优先（速度快、跨请求共享），
+     * 未命中或 Redis 不可用时回退 DB 查询，
+     * 并回填 Redis（带月截止 TTL），避免下次 DB 查询。
+     *
+     * @param employeeId 员工 ID
+     * @param ym        年份-月份（如 "2026-07"）
+     * @param refDate   参考日期（用于计算 TTL 截止到月末）
+     * @return 已使用的补卡次数
      */
     private int resolveUsedQuota(Long employeeId, String ym, LocalDate refDate) {
         String quotaKey = SUPPLEMENT_KEY + employeeId + ":" + ym;
@@ -601,11 +739,51 @@ public class PunchService {
         }
     }
 
-    // ========== 日汇总实时更新（v2.1） ==========
+    // ========================================================================
+    //  工作日判定（考勤日历 + 节假日配置）
+    // ========================================================================
 
+    /**
+     * 判断指定日期是否为工作日
+     *
+     * 规则（与 getMonthlyStatus 一致）：
+     *   1. 取 workday_config 配置的每周工作日集合
+     *   2. 若当天在 holiday_calendar 中 → 非工作日（法定节假日）
+     *   3. 同时满足「是配置的工作日」且「非法定节假日」才视为工作日
+     *
+     * @param date 待判断日期
+     * @return true = 工作日，false = 休息日/节假日
+     */
+    private boolean isWorkday(LocalDate date) {
+        List<WorkdayConfig> configs = workdayConfigMapper.selectList(null);
+        Set<Integer> workdaySet = configs.stream()
+                .filter(w -> w.getIsWorkday() == 1)
+                .map(WorkdayConfig::getDayOfWeek)
+                .collect(Collectors.toSet());
+        List<HolidayCalendar> holidays = holidayCalendarMapper.selectList(null);
+        Set<LocalDate> holidayDates = holidays.stream()
+                .map(HolidayCalendar::getHolidayDate)
+                .collect(Collectors.toSet());
+        int dayOfWeek = date.getDayOfWeek().getValue(); // 1=周一 … 7=周日，与 workday_config 一致
+        return workdaySet.contains(dayOfWeek) && !holidayDates.contains(date);
+    }
+
+    // ========================================================================
+    //  日汇总实时更新（v2.1 双槽位）
+    // ========================================================================
+
+    /**
+     * 实时更新日汇总（v2.1 双槽位模式）
+     *
+     * 每次打卡后立即执行，无需等待凌晨批处理。
+     * 根据当天全部打卡记录和已审批请假记录，重新判定双槽位状态：
+     *   am:code,pm:code
+     *   code: 0=正常, 1=迟到, 2=早退, 3=旷工, 4=请假, 5=缺卡
+     */
     private void updateDailySummaryInMemory(Long employeeId, LocalDate date) {
         List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, date);
         boolean amLeave = false, pmLeave = false;
+        // 查询当天已审批的请假，判断是否覆盖 AM/PM 槽位
         try {
             List<com.company.hrms.attendance.entity.LeaveApplication> leaves = leaveApplicationMapper.selectList(
                     new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.company.hrms.attendance.entity.LeaveApplication>()
@@ -621,7 +799,7 @@ public class PunchService {
             }
         } catch (Exception e) { log.warn("查询请假覆盖失败", e); }
 
-        // 读取员工考勤组配置（支持弹性班）
+        // 读取员工考勤组配置
         java.time.LocalTime workStart = java.time.LocalTime.of(9, 0);
         java.time.LocalTime workEnd = java.time.LocalTime.of(18, 0);
         int threshold = 15;
@@ -644,6 +822,8 @@ public class PunchService {
                 }
             }
         } catch (Exception e) { log.warn("读取考勤组配置失败", e); }
+
+        // AM 槽位判定
         int amCode = 5, pmCode = 5;
         if (amLeave) amCode = 4;
         else {
@@ -660,6 +840,7 @@ public class PunchService {
                 }
             }
         }
+        // PM 槽位判定
         if (pmLeave) pmCode = 4;
         else {
             AttendanceRecord outRec = dayRecords.stream().filter(r -> "OUT".equals(r.getPunchType()))
@@ -671,7 +852,10 @@ public class PunchService {
                 else pmCode = 3;
             }
         }
-        com.company.hrms.attendance.entity.AttendanceDailySummary existing = attendanceDailySummaryMapper.selectByEmployeeAndDate(employeeId, date);
+
+        // 写入/更新日汇总
+        com.company.hrms.attendance.entity.AttendanceDailySummary existing =
+                attendanceDailySummaryMapper.selectByEmployeeAndDate(employeeId, date);
         com.company.hrms.attendance.entity.AttendanceDailySummary ds;
         if (existing == null) {
             ds = new com.company.hrms.attendance.entity.AttendanceDailySummary();
@@ -691,40 +875,39 @@ public class PunchService {
         else attendanceDailySummaryMapper.updateById(ds);
     }
 
-    // ========== 私有方法 ==========
+    // ========================================================================
+    //  打卡判定逻辑
+    // ========================================================================
 
     /**
-     * 打卡判定逻辑
+     * 打卡判定逻辑入口
      *
-     * 上班判定：
-     *   punchTime ≤ onDuty             → NORMAL
-     *   punchTime ≤ onDuty+lateThreshold → LATE
-     *   else                            → ABSENT_HALF
+     * 根据考勤组班次类型（FIXED/FLEXIBLE）分发到对应的判定方法。
+     * 未分配考勤组的员工无法打卡。
      *
-     * 下班判定：
-     *   punchTime ≥ offDuty                      → NORMAL
-     *   punchTime ≥ offDuty-earlyLeaveThreshold  → EARLY_LEAVE
-     *   else                                      → ABSENT_HALF
+     * 判定规则：
+     *   上班卡：准时或早到 → NORMAL，迟到阈值内 → LATE，超过 → ABSENT_HALF
+     *   下班卡：准时或加班 → NORMAL，早退阈值内 → EARLY_LEAVE，超过 → ABSENT_HALF
      */
     private String judgePunchStatus(AttendanceGroup group, LocalTime punchTime, String type) {
         if (group == null || group.getWorkStartTime() == null || group.getWorkEndTime() == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "您未分配考勤组，请联系HR配置后再打卡");
         }
 
-        // 根据班次类型分发
         String shiftType = group.getShiftType();
         if ("FLEXIBLE".equals(shiftType)) {
             return judgeFlexiblePunch(group, punchTime, type);
         }
 
         // SCHEDULE（排班制）暂等同于 FIXED 处理
-        // FIXED：固定班次判定逻辑
         return judgeFixedPunch(group, punchTime, type);
     }
 
     /**
      * 弹性班次（FLEXIBLE）打卡判定
-     * 上班：在弹性范围内打卡即 NORMAL，早于 earliest 或晚于 latest 标记异常
+     *
+     * 上班：在弹性范围 [flexStartEarliest, flexStartLatest] 内打卡即 NORMAL，
+     *       早于 earliest 或晚于 latest 标记 LATE
      * 下班：沿用固定班次的下班判定逻辑
      */
     private String judgeFlexiblePunch(AttendanceGroup group, LocalTime punchTime, String type) {
@@ -732,17 +915,14 @@ public class PunchService {
             LocalTime earliest = group.getFlexStartEarliest();
             LocalTime latest = group.getFlexStartLatest();
             if (earliest != null && latest != null) {
-                // 在弹性范围内打卡即 NORMAL
                 if (!punchTime.isBefore(earliest) && !punchTime.isAfter(latest)) {
                     return "NORMAL";
                 }
-                // 早于 earliest 或晚于 latest 标记异常
                 return "LATE";
             }
             // 未配置弹性范围，按固定班次逻辑
             return judgeFixedPunch(group, punchTime, type);
         } else if ("OUT".equals(type)) {
-            // 下班沿用固定班次逻辑
             return judgeFixedPunch(group, punchTime, type);
         }
         return "NORMAL";
@@ -750,9 +930,16 @@ public class PunchService {
 
     /**
      * 固定班次（FIXED）打卡判定
-     * punchTime 已是 CST（调用前已转换），直接与考勤组时间比较
-     * 上班：准时或早到 NORMAL，迟到阈值内 LATE，超过 ABSENT_HALF
-     * 下班：准时或加班 NORMAL，早退阈值内 EARLY_LEAVE，超过 ABSENT_HALF
+     *
+     * 上班判定：
+     *   punchTime <= onDuty             → NORMAL
+     *   punchTime <= onDuty+threshold   → LATE
+     *   else                            → ABSENT_HALF
+     *
+     * 下班判定：
+     *   punchTime >= offDuty                     → NORMAL
+     *   punchTime >= offDuty-earlyThreshold      → EARLY_LEAVE
+     *   else                                     → ABSENT_HALF
      */
     private String judgeFixedPunch(AttendanceGroup group, LocalTime punchTime, String type) {
         if ("IN".equals(type)) {
@@ -783,8 +970,16 @@ public class PunchService {
         return "NORMAL";
     }
 
+    // ========================================================================
+    //  私有工具方法
+    // ========================================================================
+
     /**
      * 查询员工所属考勤组
+     *
+     * 先查 attendance_group_member（employee_id → group_id），
+     * 再查 attendance_group 获取完整配置。
+     * 考勤组成员关系的主键是 employee_id（一对一）。
      */
     private AttendanceGroup getEmployeeGroup(Long employeeId) {
         AttendanceGroupMember member = attendanceGroupMemberMapper.selectById(employeeId);
@@ -796,6 +991,9 @@ public class PunchService {
 
     /**
      * GPS 距离校验（Haversine 公式）
+     *
+     * 计算员工打卡位置与考勤组配置的中心点之间的距离，
+     * 超过 radiusM 则拒绝打卡。
      */
     private void validateGps(String gpsRangeJson, Double latitude, Double longitude) {
         try {
@@ -818,6 +1016,8 @@ public class PunchService {
 
     /**
      * IP 白名单校验（支持精确 IP 和 CIDR 网段）
+     *
+     * 配置示例：["192.168.1.100", "10.0.0.0/8"]
      */
     private void validateIpWhitelist(String whitelistJson, String clientIp) {
         if (clientIp == null || clientIp.isBlank()) {
@@ -847,6 +1047,7 @@ public class PunchService {
         } catch (Exception e) { log.warn("IP 白名单校验失败: {}", whitelistJson, e); }
     }
 
+    /** CIDR 网段匹配 */
     private boolean isIpInCidr(String ip, String network, int prefix) {
         try {
             long ipLong = ipToLong(ip);
@@ -855,6 +1056,7 @@ public class PunchService {
         } catch (Exception e) { return false; }
     }
 
+    /** IPv4 地址转 long */
     private long ipToLong(String ip) {
         String[] octets = ip.split("\\.");
         long result = 0;
@@ -864,6 +1066,9 @@ public class PunchService {
 
     /**
      * Haversine 距离计算（单位：米）
+     *
+     * 用于 GPS 打卡范围校验。
+     * 地球半径取 6371km，返回球面两点之间的弧线距离。
      */
     private double haversine(double lat1, double lng1, double lat2, double lng2) {
         double R = 6371000; // 地球半径（米）
@@ -876,24 +1081,20 @@ public class PunchService {
         return R * c;
     }
 
-    /**
-     * 获取到当天结束的秒数
-     */
+    /** 获取到当天结束的秒数，最少保留 60 秒 */
     private long getSecondsUntilEndOfDay(LocalDate date) {
         LocalDateTime now = LocalDateTime.now(CST);
         LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
         long seconds = Duration.between(now, endOfDay).getSeconds();
-        return Math.max(seconds, 60); // 至少保留 60 秒，避免跨天或午夜后精度问题
+        return Math.max(seconds, 60);
     }
 
-    /**
-     * 获取到月末的秒数
-     */
+    /** 获取到月末的秒数，最少保留 60 秒 */
     private long getSecondsUntilEndOfMonth(LocalDate date) {
         LocalDateTime now = LocalDateTime.now(CST);
         LocalDate lastDay = date.withDayOfMonth(date.lengthOfMonth());
         LocalDateTime endOfMonth = lastDay.atTime(LocalTime.MAX);
         long seconds = Duration.between(now, endOfMonth).getSeconds();
-        return Math.max(seconds, 60); // 至少保留 60 秒，避免跨天或午夜后精度问题
+        return Math.max(seconds, 60);
     }
 }

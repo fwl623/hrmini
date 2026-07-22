@@ -66,7 +66,7 @@ VALUES
     (102, '202610001', 1002, '王五', 'MALE',   '13800001002', 'wangwu.mgr@example.com',  10, 23, 'M2', NULL, '北京', '2023-06-01', 'fulltime', 20, 1.00, 0),
     (103, '202611002', 1003, '赵六', 'FEMALE', '13800001003', 'zhaoliu.hr@example.com',  11, 22, 'S2', 101,  '北京', '2024-08-01', 'fulltime', 20, 1.00, 0),
     (104, '202610002', 1004, '孙七', 'MALE',   '13800001004', 'sunqi.dev@example.com',   10, 20, 'P4', 102,  '北京', '2025-01-15', 'fulltime', 20, 1.00, 0),
-    (105, '202600001', 1005, '管理员', 'MALE', '13800001005', 'admin@example.com',       1,  23, 'M3', NULL, '北京', '2022-01-01', 'fulltime', 20, 1.00, 0),
+    (105, '202600001', 1005, '张一', 'MALE', '13800001005', 'admin@example.com',       1,  23, 'M3', NULL, '北京', '2022-01-01', 'fulltime', 20, 1.00, 0),
     (106, '202612001', 1008, '钱八', 'FEMALE', '13800001006', 'finance@example.com',     12, 24, 'S3', NULL, '北京', '2024-05-01', 'fulltime', 20, 1.00, 0)
 ON DUPLICATE KEY UPDATE name=VALUES(name), department_id=VALUES(department_id), position_id=VALUES(position_id);
 

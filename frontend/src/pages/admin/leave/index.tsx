@@ -1,8 +1,7 @@
 /**
  * 请假管理（管理端）
  *
- * 功能：ProTable + SearchBar（关键字、请假类型、状态、日期范围）
- *       + ActionBar（新建）+ Drawer 表单申请
+ * 功能：ProTable + 搜索（员工姓名下拉、请假类型）
  *       + 管理员可查看所有员工的请假记录并执行撤销操作
  *
  * 与门户端共享 LEAVE_TYPE_OPTIONS / statusLabelMap / statusColorMap / calcLeaveDays 逻辑
@@ -10,35 +9,19 @@
 import React, { useRef, useState } from 'react';
 import {
   Card,
-  Button,
   Tag,
-  message,
-  Drawer,
-  Form,
   Select,
-  DatePicker,
-  Input,
   Space,
   Typography,
-  Popconfirm,
-  InputNumber,
 } from 'antd';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
-import { PlusOutlined } from '@ant-design/icons';
 
-import { getLeaveApplications, submitLeave, calcLeaveDays, cancelLeave } from '@/services/attendance';
+import { getLeaveApplications } from '@/services/attendance';
+import { getEmployeeList } from '@/services/employee';
 import { LEAVE_TYPE_OPTIONS, leaveTypeLabel } from '@/constants/leave';
 
 // ========== 共享常量 ==========
-
-/** 状态筛选选项 */
-const STATUS_FILTER_OPTIONS = [
-  { label: '待审批', value: 'PENDING' },
-  { label: '已通过', value: 'APPROVED' },
-  { label: '已驳回', value: 'REJECTED' },
-  { label: '已撤销', value: 'CANCELLED' },
-];
 
 /** 状态 → 中文标签映射 */
 const statusLabelMap: Record<string, string> = {
@@ -60,81 +43,31 @@ const statusColorMap: Record<string, string> = {
 
 const AdminLeavePage: React.FC = () => {
   const actionRef = useRef<ActionType>();
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [form] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
-  const [previewDays, setPreviewDays] = useState<number | null>(null);
-  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchEmpId, setSearchEmpId] = useState<number | undefined>();
+  const [empOptions, setEmpOptions] = useState<{ label: string; value: number }[]>([]);
+  const [empLoading, setEmpLoading] = useState(false);
 
-  // ---------- 天数预览 ----------
+  // ---------- 搜索员工 ----------
 
-  const handleDateChange = async () => {
-    const values = form.getFieldsValue();
-    if (values.startTime && values.endTime) {
-      try {
-        const res = await calcLeaveDays({
-          startTime: values.startTime.toISOString(),
-          endTime: values.endTime.toISOString(),
-        });
-        setPreviewDays(res.data?.days ?? null);
-      } catch {
-        setPreviewDays(null);
-      }
-    }
-  };
-
-  // ---------- 新建请假提交 ----------
-
-  const handleSubmit = async () => {
+  const searchEmployees = async (keyword: string) => {
+    if (!keyword || keyword.length < 1) { setEmpOptions([]); return; }
+    setEmpLoading(true);
     try {
-      const values = await form.validateFields();
-      setSubmitting(true);
-      await submitLeave({
-        leaveType: values.leaveType,
-        startTime: values.startTime.toISOString(),
-        endTime: values.endTime.toISOString(),
-        days: previewDays || values.days || 1,
-        reason: values.reason,
-        handoverEmployeeId: values.handoverEmployeeId,
-        attachment: values.attachment,
-      });
-      message.success('请假申请已提交');
-      setDrawerOpen(false);
-      form.resetFields();
-      setPreviewDays(null);
-      actionRef.current?.reload();
-    } catch (err: any) {
-      if (err?.message) message.error(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // ---------- 撤销请假 ----------
-
-  const handleCancelLeave = async (id: number) => {
-    try {
-      const res = await cancelLeave(id);
-      // 全局 errorHandler 吞掉 BizError 时可能落到此处且无有效 body，禁止误报成功（BUG-025）
-      if (!res || res.code !== 0) {
-        message.error(res?.message || '撤销失败');
-        return;
-      }
-      message.success('已撤销');
-      actionRef.current?.reload();
-    } catch (err: any) {
-      // BizError 已由全局 handler 提示，避免重复 toast
-      if (err?.name !== 'BizError') {
-        message.error(err?.message || '撤销失败');
-      }
-    }
+      const res = await getEmployeeList({ keyword, page: 1, pageSize: 20 });
+      const list = res.data?.list ?? [];
+      setEmpOptions(list.map((e) => ({
+        label: `${e.name} (${e.empNo}) - ${e.department || ''}`,
+        value: e.employeeId,
+      })));
+    } catch { setEmpOptions([]); }
+    finally { setEmpLoading(false); }
   };
 
   // ---------- 表格列定义 ----------
 
   const columns: any[] = [
-    { title: '员工姓名', dataIndex: 'employeeName', width: 100 },
-    { title: '部门', dataIndex: 'department', width: 120 },
+    { title: '员工姓名', dataIndex: 'employeeName', width: 100, hideInSearch: true },
+    { title: '部门', dataIndex: 'department', width: 120, hideInSearch: true },
     {
       title: '请假类型',
       dataIndex: 'leaveType',
@@ -143,90 +76,37 @@ const AdminLeavePage: React.FC = () => {
       valueEnum: Object.fromEntries(LEAVE_TYPE_OPTIONS.map((o) => [o.value, { text: o.label }])),
       render: (_: unknown, record: { leaveType?: string }) => leaveTypeLabel(record.leaveType),
     },
-    { title: '开始时间', dataIndex: 'startTime', width: 160 },
-    { title: '结束时间', dataIndex: 'endTime', width: 160 },
-    { title: '天数', dataIndex: 'leaveDays', width: 60 },
-    { title: '原因', dataIndex: 'reason', ellipsis: true },
+    { title: '开始时间', dataIndex: 'startTime', width: 160, hideInSearch: true },
+    { title: '结束时间', dataIndex: 'endTime', width: 160, hideInSearch: true },
+    { title: '天数', dataIndex: 'leaveDays', width: 60, hideInSearch: true },
+    { title: '原因', dataIndex: 'reason', ellipsis: true, hideInSearch: true },
     {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      valueType: 'select',
-      valueEnum: Object.fromEntries(STATUS_FILTER_OPTIONS.map((o) => [o.value, o.label])),
+      hideInSearch: true,
       render: (_: unknown, record: { status?: string }) => {
         const v = record.status || '';
         return <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>;
       },
     },
-    {
-      title: '操作',
-      width: 80,
-      render: (_: any, record: any) =>
-        record.status === 'PENDING' ? (
-          <Popconfirm title="确认撤销该请假申请？" onConfirm={() => handleCancelLeave(record.id)}>
-            <Button type="link" danger size="small">
-              撤销
-            </Button>
-          </Popconfirm>
-        ) : (
-          <Typography.Text type="secondary">-</Typography.Text>
-        ),
-    },
   ];
-
-  // 合成日期范围列（仅在搜索表单中展示，表格中隐藏）
-  const dateRangeColumn: any = {
-    title: '申请日期',
-    dataIndex: 'applyDateRange',
-    valueType: 'dateRange',
-    hideInTable: true,
-    search: {
-      transform: (value: any[]) => {
-        if (value?.length === 2) {
-          return {
-            dateFrom: value[0]?.format('YYYY-MM-DD'),
-            dateTo: value[1]?.format('YYYY-MM-DD'),
-          };
-        }
-        return {};
-      },
-    },
-  };
 
   // ---------- 渲染 ----------
 
   return (
-    <Card
-      title="请假管理"
-      extra={
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => {
-            setDrawerOpen(true);
-            form.resetFields();
-            setPreviewDays(null);
-          }}
-        >
-          新建请假
-        </Button>
-      }
-    >
+    <Card title="请假管理">
       <ProTable<any>
         rowKey="id"
-        columns={[...columns, dateRangeColumn]}
+        columns={columns}
         actionRef={actionRef}
         request={async (params) => {
-          const { current, pageSize, leaveType, status, dateFrom, dateTo, applyDateRange, ...rest } = params;
+          const { current, pageSize, leaveType, ...rest } = params;
           try {
             const res = await getLeaveApplications({
               page: current,
               leaveType,
-              status,
-              employeeId: 0,
-              keyword: searchKeyword || undefined,
-              dateFrom,
-              dateTo,
+              employeeId: searchEmpId ?? 0,
             });
             return {
               data: res.data?.list || [],
@@ -244,89 +124,29 @@ const AdminLeavePage: React.FC = () => {
           optionRender: (searchConfig, formProps, dom) => [...dom.reverse()],
         }}
         toolBarRender={() => [
-          <Input.Search
-            key="search"
-            placeholder="员工姓名 / 工号"
+          <Select
+            key="empSearch"
+            showSearch
+            placeholder="搜索员工姓名"
             allowClear
-            onSearch={(value) => {
-              setSearchKeyword(value);
+            filterOption={false}
+            notFoundContent={null}
+            loading={empLoading}
+            onSearch={searchEmployees}
+            onChange={(val) => {
+              setSearchEmpId(val as number | undefined);
               actionRef.current?.reload();
             }}
-            style={{ width: 260 }}
+            onClear={() => {
+              setSearchEmpId(undefined);
+              actionRef.current?.reload();
+            }}
+            value={searchEmpId}
+            options={empOptions}
+            style={{ width: 240 }}
           />,
         ]}
       />
-
-      <Drawer
-        title="新建请假申请"
-        open={drawerOpen}
-        onClose={() => {
-          setDrawerOpen(false);
-          form.resetFields();
-          setPreviewDays(null);
-        }}
-        width={520}
-        footer={
-          <Space style={{ float: 'right' }}>
-            <Button
-              onClick={() => {
-                setDrawerOpen(false);
-                form.resetFields();
-                setPreviewDays(null);
-              }}
-            >
-              取消
-            </Button>
-            <Button type="primary" loading={submitting} onClick={handleSubmit}>
-              提交
-            </Button>
-          </Space>
-        }
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="leaveType" label="请假类型" rules={[{ required: true }]}>
-            <Select options={LEAVE_TYPE_OPTIONS} placeholder="请选择请假类型" />
-          </Form.Item>
-
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="startTime" label="开始时间" rules={[{ required: true }]}>
-              <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange} />
-            </Form.Item>
-            <Form.Item name="endTime" label="结束时间" rules={[{ required: true }]}>
-              <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange} />
-            </Form.Item>
-          </Space>
-
-          {previewDays !== null && (
-            <Typography.Text type="success" style={{ display: 'block', marginBottom: 16 }}>
-              预览天数：{previewDays} 天
-            </Typography.Text>
-          )}
-
-          <Form.Item name="days" label="天数（系统计算）">
-            <InputNumber disabled value={previewDays ?? undefined} style={{ width: '100%' }} />
-          </Form.Item>
-
-          <Form.Item name="reason" label="请假原因" rules={[{ required: true, max: 512 }]}>
-            <Input.TextArea rows={3} maxLength={512} showCount />
-          </Form.Item>
-
-          <Form.Item name="handoverEmployeeId" label="交接人">
-            <Select<{ label: string; value: number }>
-              placeholder="请选择交接人（搜索员工姓名）"
-              showSearch
-              allowClear
-              optionFilterProp="label"
-              // TODO: 对接员工搜索接口，替换为远程搜索
-              options={[]}
-            />
-          </Form.Item>
-
-          <Form.Item name="attachment" label="附件">
-            <Input placeholder="附件链接或留空" />
-          </Form.Item>
-        </Form>
-      </Drawer>
     </Card>
   );
 };

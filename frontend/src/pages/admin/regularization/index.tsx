@@ -1,3 +1,17 @@
+/**
+ * 【模块说明 · 转正管理】路由 /admin/regularization
+ *
+ * 干什么：展示待转正员工（试用结束≤今天+7）与转正历史；HR 发起 PASS/EXTEND/FAIL 三分支转正。
+ *         审批进度在 admin/approval 处理，本页不重复造审批按钮；FAIL 后可引导发起正式离职。
+ *
+ * 主要状态：
+ * - pending / records：待转正列表 + 转正记录 Table
+ * - open / current / form：发起转正 Modal（approvalResult 联动 extendMonths 等字段）
+ * - 支持 ?employeeId= 深链，从入职页「去转正」带入
+ *
+ * 调哪些 API（@/services/lifecycle）：
+ * - fetchPendingRegularization、fetchRegularizationList、createRegularization
+ */
 import {
   Button,
   Card,
@@ -25,10 +39,6 @@ import {
   type RegularizationItem,
 } from '@/services/lifecycle';
 
-/**
- * 转正管理：待转正（含逾期）+ 发起转正（PASS / EXTEND / FAIL）
- * 支持 ?employeeId= 深链；FAIL 完成后引导发起正式离职
- */
 export default function RegularizationPage() {
   const [searchParams] = useSearchParams();
   const deepLinkEmployeeId = Number(searchParams.get('employeeId') || 0) || null;

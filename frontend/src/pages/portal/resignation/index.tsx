@@ -1,3 +1,16 @@
+/**
+ * 【模块说明 · 门户离职申请】路由 /portal/resignation（双通道第一阶段）
+ *
+ * 干什么：员工本人登记离职意向（期望离职日、类型、原因）；查看与撤销本人记录。
+ *         仅落库 PENDING，不创建审批实例；HR 在 admin/resignation 看到后发起正式离职。
+ *
+ * 主要状态：
+ * - list / loading：本人申请记录 Table
+ * - form：登记表单（有 PENDING/APPROVED 进行中申请时禁用重复提交）
+ *
+ * 调哪些 API（@/services/lifecycle）：
+ * - fetchMyResignationRequests、createMyResignationRequest、cancelMyResignationRequest
+ */
 import {
   Button,
   Card,
@@ -25,10 +38,6 @@ import {
   type ResignationRequestItem,
 } from '@/services/lifecycle';
 
-/**
- * 门户：离职申请表单 + 本人记录
- * 员工申请仅登记意向；已有进行中申请时不可重复提交。
- */
 export default function PortalResignationPage() {
   const [list, setList] = useState<ResignationRequestItem[]>([]);
   const [loading, setLoading] = useState(false);

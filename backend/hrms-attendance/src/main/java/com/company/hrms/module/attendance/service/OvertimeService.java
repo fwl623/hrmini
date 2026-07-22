@@ -42,7 +42,15 @@ import java.util.stream.Collectors;
 
 /**
  * 加班管理 Service
- * 涵盖加班申请、倍率计算
+ *
+ * 涵盖三大块：
+ * 1. 加班申请（提交、列表分页）
+ * 2. 加班倍率计算（工作日 1.5 / 休息日 2.0 / 法定节假日 3.0）
+ * 3. 加班台账查询（审批通过后生成，供薪资核算使用）
+ *
+ * 加班审批通过后由 ApprovalEventListener 自动创建 OvertimeLedger 台账，
+ * 并折算为调休余额（COMP_OFF）存入 leave_balance 表。
+ * 加班 >=4 小时触发 HR 二审流程（needsSecondReview）。
  */
 @Slf4j
 @Service
@@ -58,6 +66,13 @@ public class OvertimeService {
 
     /**
      * 加班列表（分页）
+     *
+     * 管理端查看所有员工加班记录，门户端查看本人记录。
+     * 自动关联员工姓名和部门名称用于展示。
+     *
+     * @param pageParam  分页参数
+     * @param employeeId 员工 ID（null=查全部）
+     * @return 分页结果
      */
     public PageResult<OvertimeApplicationVO> pageApplications(PageParam pageParam, Long employeeId) {
         LambdaQueryWrapper<OvertimeApplication> wrapper = new LambdaQueryWrapper<OvertimeApplication>()
@@ -69,7 +84,8 @@ public class OvertimeService {
         IPage<OvertimeApplication> page = overtimeApplicationMapper.selectPage(
                 new Page<>(pageParam.getPage(), pageParam.getPageSize()), wrapper);
 
-        // 收集所有员工ID，用 search() 批量查询（含部门 JOIN）
+        // 收集所有员工 ID，用 search() 批量查询（含部门 JOIN）
+        // 批量查询避免 N+1 问题
         java.util.Set<Long> empIds = page.getRecords().stream()
                 .map(OvertimeApplication::getEmployeeId)
                 .collect(java.util.stream.Collectors.toSet());
@@ -112,29 +128,46 @@ public class OvertimeService {
 
     /**
      * 提交加班申请
+     *
+     * 流程：
+     *   1. 校验加班日期不能是过去日期
+     *   2. 校验结束时间须晚于开始时间
+     *   3. 计算加班时长（分钟→小时，保留 2 位小数）
+     *   4. 计算加班倍率类型（工作日/休息日/节假日）
+     *   5. 判断是否触发二审（>=4 小时需额外审批节点）
+     *   6. 插入申请记录
+     *   7. 触发审批流程
+     *
+     * 加班时长的倍数判定由 @see #calculateRateType(LocalDate, String, String) 实现，
+     * 最终加班费计算在薪资核算模块中进行。
+     *
+     * @param employeeId 员工 ID
+     * @param dto        加班申请参数
+     * @return 创建的加班申请实体
      */
     @Transactional(rollbackFor = Exception.class)
     public OvertimeApplication submit(Long employeeId, OvertimeApplicationDTO dto) {
-        // 校验：加班日期不能是过去日期（PRD要求：加班需提前申请）
+        // 校验：加班日期不能是过去日期（PRD 要求：加班需提前申请）
         LocalDate overtimeDate = LocalDate.parse(dto.getOvertimeDate());
         if (overtimeDate.isBefore(LocalDate.now())) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "加班日期不能是过去日期，请选择今天或未来的日期");
         }
 
-        // 解析起止时间
+        // 解析起止时间（HH:mm 格式）
         LocalTime startTime = LocalTime.parse(dto.getStartTime(), DateTimeFormatter.ofPattern("HH:mm"));
         LocalTime endTime = LocalTime.parse(dto.getEndTime(), DateTimeFormatter.ofPattern("HH:mm"));
         if (!endTime.isAfter(startTime)) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "结束时间须晚于开始时间");
         }
 
-        // 计算时长（小时）
+        // 计算时长（小时）：分钟差值 / 60，保留 2 位小数
         BigDecimal hours = BigDecimal.valueOf(java.time.Duration.between(startTime, endTime).toMinutes())
                 .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
 
-        // 计算倍率
+        // 计算倍率：工作日 1.5 / 休息日 2.0 / 法定节假日 3.0
         int rateType = calculateRateType(overtimeDate, dto.getStartTime(), dto.getEndTime());
-        // 是否触发二审
+
+        // 是否触发二审（>=4 小时需 HR 二审确认）
         boolean needsSecondReview = hours.compareTo(BigDecimal.valueOf(4)) >= 0;
 
         OvertimeApplication app = new OvertimeApplication();
@@ -147,6 +180,7 @@ public class OvertimeService {
         app.setStatus("PENDING");
         overtimeApplicationMapper.insert(app);
 
+        // 创建审批实例，二审标记通过 formData 传递给审批引擎
         CreateApprovalRequest req = new CreateApprovalRequest();
         req.setProcessType("OVERTIME");
         req.setBusinessId(app.getId());
@@ -174,9 +208,19 @@ public class OvertimeService {
 
     /**
      * 加班倍率计算
-     * 工作日 1.5 / 休息日 2.0 / 法定节假日 3.0
      *
-     * @return rateType: 15=1.5倍, 20=2.0倍, 30=3.0倍
+     * 判定优先级：
+     *   1. 法定节假日 → 3.0 倍（rateType=30）
+     *   2. 工作日     → 1.5 倍（rateType=15）
+     *   3. 休息日     → 2.0 倍（rateType=20）
+     *
+     * 工作日/休息日判定依据 WorkdayConfig 配置表（支持调休上班等特殊场景），
+     * 而非简单按周几判断。法定节假日从 HolidayCalendar 表读取。
+     *
+     * @param overtimeDate 加班日期
+     * @param startTime    开始时间（HH:mm，未使用，保留参数兼容性）
+     * @param endTime      结束时间（HH:mm，未使用，保留参数兼容性）
+     * @return 倍率类型：15=1.5倍, 20=2.0倍, 30=3.0倍
      */
     private int calculateRateType(LocalDate overtimeDate, String startTime, String endTime) {
         DayOfWeek dow = overtimeDate.getDayOfWeek();
@@ -194,7 +238,7 @@ public class OvertimeService {
                 .map(HolidayCalendar::getHolidayDate)
                 .collect(Collectors.toSet());
 
-        // 法定节假日 → 3.0 倍
+        // 法定节假日 → 3.0 倍（最高优先级）
         if (holidayDates.contains(overtimeDate)) {
             return 30;
         }
@@ -208,18 +252,26 @@ public class OvertimeService {
         return 20;
     }
 
-    // ========== 加班台账查询 ==========
-
-    // ========== 加班台账查询 ==========
+    // ========================================================================
+    //  加班台账查询
+    // ========================================================================
 
     /**
      * 加班台账分页查询
+     *
+     * 台账由 ApprovalEventListener 在加班审批通过后自动生成。
+     * 台账记录包含：员工、账期、总时长、倍率类型，供薪资核算模块（CalculateService）使用。
+     * 薪资核算时按 rateType 分组计算加班费（1.5倍/2.0倍/3.0倍）。
+     *
+     * @param pageParam 分页参数
+     * @param period    账期（格式 YYYY-MM）
+     * @return 分页后的台账列表
      */
     public PageResult<com.company.hrms.module.attendance.dto.OvertimeLedgerVO> pageLedger(
             PageParam pageParam, String period) {
         List<OvertimeLedger> allRecords = overtimeLedgerMapper.selectByPeriod(period);
 
-        // 查询员工姓名和部门
+        // 查询员工姓名和部门（台账只存 employee_id，需关联 employee 表）
         Map<Long, String> nameMap = new HashMap<>();
         Map<Long, String> deptMap = new HashMap<>();
         for (OvertimeLedger l : allRecords) {
@@ -257,7 +309,7 @@ public class OvertimeService {
                 })
                 .collect(Collectors.toList());
 
-        // 手动分页
+        // 手动分页（台账数据量通常不大，直接全量查询后截取）
         int page = Math.max(pageParam.getPage(), 1);
         int pageSize = pageParam.getPageSize() > 0 ? pageParam.getPageSize() : 20;
         int from = (page - 1) * pageSize;
