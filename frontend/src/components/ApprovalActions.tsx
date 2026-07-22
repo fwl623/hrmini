@@ -15,7 +15,16 @@ export interface ApprovalActionsProps {
 }
 
 /**
- * 审批操作：同意 / 驳回 / 转交 / 催办 / 撤回
+ * 【审批操作通用组件】
+ *
+ * 提供同意 / 驳回 / 转交 / 催办 / 撤回按钮组；驳回与转交弹 Modal 收集 comment / targetUserId。
+ * 通过 props（canAct / canWithdraw / canRemind）控制显隐，loading 防重复提交。
+ *
+ * 复用方：
+ * - pages/admin/approval/index.tsx（待办/已办详情 Drawer 底部主入口）
+ *
+ * 未复用处（刻意留在页面内）：admin/onboarding 的 confirm/abandon 等行级操作，
+ * 因与业务状态矩阵强耦合，避免本组件 props 膨胀。
  */
 export default function ApprovalActions({
   canWithdraw = false,

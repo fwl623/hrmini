@@ -4,17 +4,18 @@ import com.company.hrms.module.payroll.service.CalculateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
 /**
- * 核算异步消费者
- * 监听核算消息，异步执行薪资计算
+ * 核算异步消费者。仅 {@code hrms.rabbitmq.enabled=true} 时装配。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "hrms.rabbitmq", name = "enabled", havingValue = "true")
 public class PayrollCalculateConsumer {
 
     private final CalculateService calculateService;

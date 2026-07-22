@@ -30,7 +30,17 @@ const colorMap: Record<TimelineNodeStatus, string> = {
 };
 
 /**
- * 审批进度时间线
+ * 【审批时间线通用组件】
+ *
+ * 将审批实例节点 + 日志渲染为 Ant Design Timeline；节点含审批人、状态 Tag、意见、时间、代审文案。
+ * 文案中文化走 @/constants/workflow（timelineStatusLabel / localizeTimelineText）。
+ *
+ * 复用方：
+ * - pages/admin/approval/index.tsx（详情 Drawer 中部）
+ *
+ * 类似但未直接引用本组件的页面（内联 Steps/Timeline + fetchInstanceDetail）：
+ * - pages/admin/onboarding/index.tsx（审批进度 Drawer）
+ * - pages/portal/leave/index.tsx、pages/portal/overtime/index.tsx（查看申请审批进度）
  */
 export default function ApprovalTimeline({ nodes }: ApprovalTimelineProps) {
   const items: TimelineItemProps[] = nodes.map((n) => ({

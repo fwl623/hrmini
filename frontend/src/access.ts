@@ -5,9 +5,13 @@ function roleIn(role: string | undefined, list: readonly RoleCode[]): boolean {
 }
 
 /**
- * Umi access 权限（对齐 PRD §2.1 / §2.2）
- * 菜单门控优先认权限码（角色管理可分配）；角色作兼容兜底。
- * 数据权限仍由后端 DataScope 保证。
+ * 【技术评审锚点 · 菜单/按钮权限】Umi access（对齐 PRD）。
+ * 入转调离相关：
+ * - canManageWorkflow：入职/转正/调岗管理台（HR/管理员）
+ * - canManageResignation：离职管理台（主管不可见）
+ * - canApprove：审批中心（HR / 部门主管 / 财务经理等）
+ * 部门主管：只进审批中心批待办，不进入转调离管理台——把「发起」和「审批」拆开。
+ * 菜单显隐只是体验；数据权限仍由后端 DataScope / 角色校验兜底。
  *
  * DEPT_MANAGER：本部门花名册 + 审批中心 + 组织管理只读；无手机号变更 / 入转调离管理台
  * FINANCE（专员）：薪资全量 + 本人档案；无审批中心

@@ -1,3 +1,8 @@
+/**
+ * 【技术评审锚点 · 文案中文化】用工类型、离职原因、流程类型、节点状态等标签集中在此。
+ * 页面只拼布局，避免散落魔法字符串；与后端小写业务码 / 大写 processType 对齐展示。
+ */
+
 /** 审批流程类型 → 中文 */
 export const PROCESS_TYPE_LABEL: Record<string, string> = {
   ONBOARDING: '入职',

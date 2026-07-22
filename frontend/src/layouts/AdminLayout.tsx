@@ -72,6 +72,8 @@ const AdminLayout: React.FC = () => {
     ? `你好！${identity} ${employeeName}`
     : `你好！${identity}`;
 
+  // 【菜单分组】入转调离一组（lifecycle）与审批中心一组（approval）拆开：
+  // 主管 canApprove=true 能进审批中心，但 canManageWorkflow/Resignation=false 看不到管理台。
   // 对齐 PRD：财务专员仅工作台+薪资；财务经理另可见审批中心
   // 系统管理员是功能账号，管理端不展示「个人中心」菜单（权限逻辑不变）
   const menuAccess: Record<string, boolean> = {

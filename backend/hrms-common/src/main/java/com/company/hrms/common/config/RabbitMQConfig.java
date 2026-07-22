@@ -7,22 +7,24 @@ import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * RabbitMQ 队列、交换机及消息转换器配置。
  * <p>
- * 启用步骤见 {@code application-dev.yml} / {@code application.yml} 注释：
+ * 本地默认 {@code hrms.rabbitmq.enabled=false}，本类不装配，避免无 Broker 时刷屏。
+ * 启用步骤（{@code application.yml}）：
  * <ol>
- *   <li>取消 {@code spring.rabbitmq.*} 注释</li>
- *   <li>去掉 {@code RabbitAutoConfiguration} exclude</li>
- *   <li>取消 {@code hrms-app/pom.xml} 中 {@code spring-boot-starter-amqp} 注释</li>
- *   <li>本类已配置 {@link Jackson2JsonMessageConverter} Bean</li>
+ *   <li>去掉 {@code RabbitAutoConfiguration} 的 exclude</li>
+ *   <li>{@code hrms.rabbitmq.enabled=true}</li>
+ *   <li>配置 {@code spring.rabbitmq.host/port/username/password}</li>
  * </ol>
  */
 @Configuration
 @EnableRabbit
+@ConditionalOnProperty(prefix = "hrms.rabbitmq", name = "enabled", havingValue = "true")
 public class RabbitMQConfig {
 
     // ==================== 薪资核算 (Direct Exchange) ====================

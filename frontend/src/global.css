@@ -393,12 +393,18 @@ body {
   border-color: var(--hrms-primary) !important;
 }
 
-.ant-btn-link {
+.ant-btn-link:not(:disabled):not(.ant-btn-disabled) {
   color: var(--hrms-primary) !important;
 }
 
-.ant-btn-link:hover {
+.ant-btn-link:not(:disabled):not(.ant-btn-disabled):hover {
   color: var(--hrms-primary-light) !important;
+}
+
+.ant-btn-link:disabled,
+.ant-btn-link.ant-btn-disabled {
+  color: rgba(0, 0, 0, 0.25) !important;
+  cursor: not-allowed !important;
 }
 
 .ant-btn-dashed {
