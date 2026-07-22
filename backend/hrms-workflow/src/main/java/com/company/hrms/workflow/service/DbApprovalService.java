@@ -498,6 +498,7 @@ public class DbApprovalService implements ApprovalEngineService {
         }
         writeLog(instanceId, null, userId, "WITHDRAW", null, "PENDING", "CANCELLED", "撤回申请");
         lifecycleApprovalHandler.onWithdrawn(instance.getProcessType(), instance.getBusinessKey());
+        publishCompleted(instance, "CANCELLED", "撤回申请");
     }
 
     public PageResult<ApprovalDtos.InstanceListItemVO> listMyInstances(long userId, int page, int pageSize) {
