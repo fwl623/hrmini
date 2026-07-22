@@ -8,6 +8,8 @@ import com.company.hrms.attendance.entity.AttendanceGroupMember;
 import com.company.hrms.attendance.entity.AttendanceMonthLock;
 import com.company.hrms.attendance.entity.AttendanceRecord;
 import com.company.hrms.attendance.entity.AttendanceSupplement;
+import com.company.hrms.attendance.entity.HolidayCalendar;
+import com.company.hrms.attendance.entity.WorkdayConfig;
 import com.company.hrms.attendance.mapper.AttendanceGroupMapper;
 import com.company.hrms.attendance.mapper.AttendanceGroupMemberMapper;
 import com.company.hrms.attendance.mapper.AttendanceMonthLockMapper;
@@ -46,6 +48,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -612,7 +615,25 @@ public class PunchService {
             throw new BusinessException(ErrorCode.ATTENDANCE_MONTH_LOCKED, "考勤月已锁定，请联系 HR 解锁");
         }
 
-        // 2. 校验补卡配额（Redis 不可用时回落 DB）
+        // 2. 校验日期是否为工作日（依赖考勤日历/假期配置）
+        if (!isWorkday(fixDate)) {
+            throw new BusinessException(ErrorCode.SUPPLEMENT_NOT_WORKDAY, "选择的日期不是工作日，不可补卡");
+        }
+
+        // 3. 校验该日期是否已有完整打卡记录（IN + OUT 均存在则不可补卡）
+        List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, fixDate);
+        boolean hasIn = dayRecords.stream().anyMatch(r -> "IN".equals(r.getPunchType()));
+        boolean hasOut = dayRecords.stream().anyMatch(r -> "OUT".equals(r.getPunchType()));
+        if (hasIn && hasOut) {
+            throw new BusinessException(ErrorCode.SUPPLEMENT_ALREADY_PUNCHED, "该日期已有完整打卡记录，不可补卡");
+        }
+
+        // 4. 禁止补未来日期的卡
+        if (fixDate.isAfter(LocalDate.now(CST))) {
+            throw new BusinessException(ErrorCode.SUPPLEMENT_FUTURE_DATE, "不允许补未来日期的卡");
+        }
+
+        // 5. 校验补卡配额（Redis 不可用时回落 DB）
         int usedQuota = resolveUsedQuota(employeeId, ym, fixDate);
         if (usedQuota >= MAX_SUPPLEMENT_QUOTA) {
             throw new BusinessException(ErrorCode.MAKEUP_LIMIT_EXCEEDED, "每月最多补卡 " + MAX_SUPPLEMENT_QUOTA + " 次");
@@ -716,6 +737,35 @@ public class PunchService {
             log.warn("补卡配额 Redis 不可用，回落 DB: empId={}, ym={}, err={}", employeeId, ym, e.getMessage());
             return attendanceSupplementMapper.countByEmployeeAndMonth(employeeId, ym);
         }
+    }
+
+    // ========================================================================
+    //  工作日判定（考勤日历 + 节假日配置）
+    // ========================================================================
+
+    /**
+     * 判断指定日期是否为工作日
+     *
+     * 规则（与 getMonthlyStatus 一致）：
+     *   1. 取 workday_config 配置的每周工作日集合
+     *   2. 若当天在 holiday_calendar 中 → 非工作日（法定节假日）
+     *   3. 同时满足「是配置的工作日」且「非法定节假日」才视为工作日
+     *
+     * @param date 待判断日期
+     * @return true = 工作日，false = 休息日/节假日
+     */
+    private boolean isWorkday(LocalDate date) {
+        List<WorkdayConfig> configs = workdayConfigMapper.selectList(null);
+        Set<Integer> workdaySet = configs.stream()
+                .filter(w -> w.getIsWorkday() == 1)
+                .map(WorkdayConfig::getDayOfWeek)
+                .collect(Collectors.toSet());
+        List<HolidayCalendar> holidays = holidayCalendarMapper.selectList(null);
+        Set<LocalDate> holidayDates = holidays.stream()
+                .map(HolidayCalendar::getHolidayDate)
+                .collect(Collectors.toSet());
+        int dayOfWeek = date.getDayOfWeek().getValue(); // 1=周一 … 7=周日，与 workday_config 一致
+        return workdaySet.contains(dayOfWeek) && !holidayDates.contains(date);
     }
 
     // ========================================================================

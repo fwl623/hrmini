@@ -127,18 +127,20 @@ const PunchAdminPage: React.FC = () => {
       setPunchSubmitting(true);
       const empId = values.employeeId;
       const empLabel = empOptions.find((o) => o.value === empId)?.label || `ID:${empId}`;
-      await punch({
+      const res = await punch({
         type: values.type,
         punchTime: values.punchTime?.toISOString(),
         employeeId: empId,
       });
-      message.success(`代打卡成功：${empLabel} ${values.type === 'in' ? '上班' : '下班'}`);
-      setPunchModalOpen(false);
-      punchForm.resetFields();
-
-      setEmpOptions([]);
-      await loadOverview();
-      actionRef.current?.reload();
+      // 全局 errorHandler 已处理业务错误提示，此处只处理成功
+      if (res && res.code === 0) {
+        message.success(`代打卡成功：${empLabel} ${values.type === 'in' ? '上班' : '下班'}`);
+        setPunchModalOpen(false);
+        punchForm.resetFields();
+        setEmpOptions([]);
+        await loadOverview();
+        actionRef.current?.reload();
+      }
     } catch (err: any) {
       if (err?.message) message.error(err.message);
     } finally {
@@ -153,20 +155,22 @@ const PunchAdminPage: React.FC = () => {
       setFixSubmitting(true);
       const empId = values.employeeId;
       const empLabel = empOptions.find((o) => o.value === empId)?.label || `ID:${empId}`;
-      await applyPunchFix({
+      const res = await applyPunchFix({
         punchDate: values.punchDate.format('YYYY-MM-DD'),
         type: values.type,
         punchTime: values.punchTime.format('HH:mm'),
         reason: values.reason,
         employeeId: empId,
       });
-      message.success(`补卡申请已提交：${empLabel}`);
-      setFixModalOpen(false);
-      fixForm.resetFields();
-
-      setEmpOptions([]);
-      await loadOverview();
-      actionRef.current?.reload();
+      // 全局 errorHandler 已处理业务错误提示，此处只处理成功
+      if (res && res.code === 0) {
+        message.success(`补卡申请已提交：${empLabel}`);
+        setFixModalOpen(false);
+        fixForm.resetFields();
+        setEmpOptions([]);
+        await loadOverview();
+        actionRef.current?.reload();
+      }
     } catch (err: any) {
       if (err?.message) message.error(err.message);
     } finally {
@@ -311,7 +315,15 @@ const PunchAdminPage: React.FC = () => {
           <Form.Item name="punchDate" label="补卡日期" rules={[{ required: true, message: '请选择日期' }]}>
             <DatePicker
               style={{ width: '100%' }}
-              disabledDate={(d) => d && d.isAfter(dayjs())}
+              disabledDate={(d) => {
+                if (!d) return false;
+                // 禁止选择未来日期
+                if (d.isAfter(dayjs(), 'day')) return true;
+                // 禁止选择周末（0=周日 6=周六）
+                const day = d.day();
+                if (day === 0 || day === 6) return true;
+                return false;
+              }}
             />
           </Form.Item>
           <Form.Item name="type" label="补卡类型" rules={[{ required: true, message: '请选择类型' }]}>
