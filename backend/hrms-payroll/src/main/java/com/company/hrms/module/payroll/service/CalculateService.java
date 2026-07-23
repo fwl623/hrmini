@@ -178,6 +178,32 @@ public class CalculateService {
         return batch;
     }
 
+    /** 核算前置校验（异步前同步执行） */
+    public void validateBeforeCalculate(PayrollBatch batch) {
+        String period = batch.getPeriod();
+        YearMonth targetMonth = YearMonth.parse(period);
+        YearMonth currentMonth = YearMonth.now();
+
+        if (targetMonth.isAfter(currentMonth)) {
+            throw new BusinessException(ErrorCode.PAYROLL_FUTURE_PERIOD, "未来月份的批次不允许计算");
+        }
+        if (targetMonth.equals(currentMonth)) {
+            com.company.hrms.attendance.entity.AttendanceMonthLock lock =
+                    attendanceMonthLockMapper.selectOne(
+                            new LambdaQueryWrapper<com.company.hrms.attendance.entity.AttendanceMonthLock>()
+                                    .eq(com.company.hrms.attendance.entity.AttendanceMonthLock::getYearMonth, period));
+            if (lock == null || lock.getStatus() != 20) {
+                throw new BusinessException(ErrorCode.ATTENDANCE_NOT_LOCKED,
+                        "当前月考勤数据未锁定，请先完成考勤月结");
+            }
+        }
+    }
+
+    /** 更新批次状态 */
+    public void updateBatchStatus(PayrollBatch batch) {
+        batchMapper.updateById(batch);
+    }
+
     // ========================================================================
     //  核心核算
     // ========================================================================
@@ -201,39 +227,16 @@ public class CalculateService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void calculate(Long id) {
-        // 1. 校验批次存在且状态为 DRAFT
+        // 1. 校验批次存在且状态为 CALCULATING（异步消费时状态已由 Controller 更新）
         PayrollBatch batch = batchMapper.selectById(id);
         if (batch == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "批次不存在");
         }
-        if (!"DRAFT".equals(batch.getStatus())) {
-            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "仅草稿状态可开始计算");
+        if (!"CALCULATING".equals(batch.getStatus())) {
+            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "批次状态异常，需为计算中");
         }
 
-        // 2a. 校验账期不能是未来月份（防御：老数据可能绕过 createBatch 校验）
         String period = batch.getPeriod();
-        YearMonth targetMonth = YearMonth.parse(period);
-        YearMonth currentMonth = YearMonth.now();
-        if (targetMonth.isAfter(currentMonth)) {
-            throw new BusinessException(ErrorCode.PAYROLL_FUTURE_PERIOD, "未来月份的批次不允许计算");
-        }
-
-        // 2b. 如果是当前月份，校验考勤月是否已锁定
-        if (targetMonth.equals(currentMonth)) {
-            com.company.hrms.attendance.entity.AttendanceMonthLock lock =
-                    attendanceMonthLockMapper.selectOne(
-                            new LambdaQueryWrapper<com.company.hrms.attendance.entity.AttendanceMonthLock>()
-                                    .eq(com.company.hrms.attendance.entity.AttendanceMonthLock::getYearMonth, period));
-            if (lock == null || lock.getStatus() != 20) {
-                throw new BusinessException(ErrorCode.ATTENDANCE_NOT_LOCKED,
-                        "当前月考勤数据未锁定，请先完成考勤月结");
-            }
-        }
-
-        // 3. 状态 → CALCULATING
-        batch.setStatus("CALCULATING");
-        batchMapper.updateById(batch);
-
         log.info("开始核算: batchId={}, period={}", id, period);
 
         // 清理该账期已有的个税YTD记录和核算明细（防止重算时唯一键冲突）

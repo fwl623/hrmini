@@ -52,9 +52,18 @@ public class BatchController {
 
     @PostMapping("/{id}/calculate")
     public Result<Map<String, String>> calculate(@PathVariable Long id) {
-        // 同步核算，直接调用计算结果，不依赖 MQ
-        calculateService.calculate(id);
-        return Result.success(Map.of("message", "计算完成"));
+        // 异步核算：通过 MQ 发送消息，消费者异步执行核算
+        PayrollBatch batch = calculateService.getBatch(id);
+        if (!"DRAFT".equals(batch.getStatus())) {
+            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "仅草稿状态可开始计算");
+        }
+        // 前置校验（同步执行）
+        calculateService.validateBeforeCalculate(batch);
+        // 状态改为 CALCULATING 后异步算
+        batch.setStatus("CALCULATING");
+        calculateService.updateBatchStatus(batch);
+        payrollEventPublisher.sendCalculate(id, batch.getPeriod());
+        return Result.success(Map.of("message", "计算任务已提交"));
     }
 
     @GetMapping("/{id}/details")
