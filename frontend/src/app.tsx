@@ -197,16 +197,26 @@ export const request: RequestConfig = {
         return;
       }
 
-      // 重复打卡检测：匹配错误码 40005 或错误消息含"重复操作"（"您已打卡，请勿重复操作"）
       const msg = getRequestErrorMessage(error);
-      const isDupPunch = error.info?.code === 40005
-        || (error.response?.data?.code as number) === 40005
-        || msg?.includes('重复操作');
+      const errCode = error.info?.code || (error.response?.data?.code as number);
+
+      // 重复打卡检测：匹配错误码 40005 或错误消息含"重复操作"
+      const isDupPunch = errCode === 40005 || msg?.includes('重复操作');
 
       if (isDupPunch) {
         Modal.warning({
           title: '打卡提示',
           content: '您已打卡，请勿重复操作',
+          okText: '知道了',
+        });
+        return;
+      }
+
+      // 考勤未锁定检测：错误码 50004，弹窗提示
+      if (errCode === 50004) {
+        Modal.warning({
+          title: '核算提示',
+          content: '当前月考勤数据未锁定，请先完成考勤月结',
           okText: '知道了',
         });
         return;

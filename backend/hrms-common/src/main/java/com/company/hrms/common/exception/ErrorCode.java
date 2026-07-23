@@ -52,8 +52,9 @@ public enum ErrorCode {
     PAYROLL_BATCH_EXISTS(50001, "算薪批次已存在", HttpStatus.CONFLICT),
     PAYROLL_IN_PROGRESS(50002, "算薪进行中，请勿重复操作", HttpStatus.CONFLICT),
     SALARY_PROFILE_MISSING(50003, "员工无薪资档案", HttpStatus.UNPROCESSABLE_ENTITY),
-    ATTENDANCE_NOT_LOCKED(50004, "考勤数据未锁定", HttpStatus.UNPROCESSABLE_ENTITY),
+    ATTENDANCE_NOT_LOCKED(50004, "考勤数据未锁定", HttpStatus.OK),
     PAYSLIP_NOT_AVAILABLE(50005, "工资条尚未发放或当前不可查看", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYROLL_FUTURE_PERIOD(50006, "不允许创建未来月份的核算批次", HttpStatus.OK),
 
     APPROVAL_ALREADY_HANDLED(60001, "审批已处理", HttpStatus.CONFLICT),
     APPROVAL_STATE_INVALID(60002, "审批已超时 / 状态不允许撤销", HttpStatus.UNPROCESSABLE_ENTITY),

@@ -80,6 +80,7 @@ public class CalculateService {
     private final AttendanceMonthlySummaryMapper attendanceSummaryMapper;
     private final com.company.hrms.attendance.mapper.OvertimeLedgerMapper overtimeLedgerMapper;
     private final com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper attendanceDailySummaryMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceMonthLockMapper attendanceMonthLockMapper;
 
     // 组织架构 Mapper（用于图表部门聚合）
     private final DepartmentMapper departmentMapper;
@@ -129,6 +130,14 @@ public class CalculateService {
      * @return 创建的批次
      */
     public PayrollBatch createBatch(String period, Long operatorId) {
+        // 1. 校验账期不能是未来月份
+        YearMonth currentMonth = YearMonth.now();
+        YearMonth targetMonth = YearMonth.parse(period);
+        if (targetMonth.isAfter(currentMonth)) {
+            throw new BusinessException(ErrorCode.PAYROLL_FUTURE_PERIOD, "不允许创建未来月份的核算批次");
+        }
+
+        // 2. 校验批次是否已存在
         PayrollBatch exist = batchMapper.selectOne(new LambdaQueryWrapper<PayrollBatch>()
                 .eq(PayrollBatch::getPeriod, period));
         if (exist != null) {
@@ -201,11 +210,30 @@ public class CalculateService {
             throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "仅草稿状态可开始计算");
         }
 
-        // 2. 状态 → CALCULATING
+        // 2a. 校验账期不能是未来月份（防御：老数据可能绕过 createBatch 校验）
+        String period = batch.getPeriod();
+        YearMonth targetMonth = YearMonth.parse(period);
+        YearMonth currentMonth = YearMonth.now();
+        if (targetMonth.isAfter(currentMonth)) {
+            throw new BusinessException(ErrorCode.PAYROLL_FUTURE_PERIOD, "未来月份的批次不允许计算");
+        }
+
+        // 2b. 如果是当前月份，校验考勤月是否已锁定
+        if (targetMonth.equals(currentMonth)) {
+            com.company.hrms.attendance.entity.AttendanceMonthLock lock =
+                    attendanceMonthLockMapper.selectOne(
+                            new LambdaQueryWrapper<com.company.hrms.attendance.entity.AttendanceMonthLock>()
+                                    .eq(com.company.hrms.attendance.entity.AttendanceMonthLock::getYearMonth, period));
+            if (lock == null || lock.getStatus() != 20) {
+                throw new BusinessException(ErrorCode.ATTENDANCE_NOT_LOCKED,
+                        "当前月考勤数据未锁定，请先完成考勤月结");
+            }
+        }
+
+        // 3. 状态 → CALCULATING
         batch.setStatus("CALCULATING");
         batchMapper.updateById(batch);
 
-        String period = batch.getPeriod();
         log.info("开始核算: batchId={}, period={}", id, period);
 
         // 清理该账期已有的个税YTD记录和核算明细（防止重算时唯一键冲突）

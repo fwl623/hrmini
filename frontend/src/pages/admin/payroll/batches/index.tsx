@@ -169,11 +169,14 @@ const BatchPage: React.FC = () => {
   };
   const handleCalculate = async (id: number) => {
     try {
-      await startCalculate(id);
-      message.success('计算任务已提交');
-      actionRef.current?.reload();
-    } catch (err: any) {
-      message.error(err?.message);
+      const res = await startCalculate(id);
+      // 全局 errorHandler 已处理业务错误提示（如考勤未锁定弹窗），此处只处理成功
+      if (res && res.code === 0) {
+        message.success('计算任务已提交');
+        actionRef.current?.reload();
+      }
+    } catch {
+      // 错误已由全局 errorHandler 处理，此处无需重复提示
     }
   };
   const handleSubmit = async (id: number) => {
@@ -333,16 +336,18 @@ const BatchPage: React.FC = () => {
         onCancel={() => { setCreateOpen(false); setYear(dayjs().year()); setMonth(dayjs().month() + 1); }}
       >
         <Space>
-          <Select value={year} onChange={setYear} style={{ width: 100 }}
+          <Select value={year} onChange={(y) => { setYear(y); if (y === dayjs().year() && month > dayjs().month() + 1) setMonth(dayjs().month() + 1); }} style={{ width: 100 }}
             options={Array.from({ length: 5 }, (_, i) => {
               const y = dayjs().year() - i;
               return { label: `${y}年`, value: y };
             })}
           />
           <Select value={month} onChange={setMonth} style={{ width: 100 }}
-            options={Array.from({ length: 12 }, (_, i) => ({
-              label: `${i + 1}月`, value: i + 1,
-            }))}
+            options={Array.from({ length: 12 }, (_, i) => {
+              const m = i + 1;
+              const isFuture = year === dayjs().year() && m > dayjs().month() + 1;
+              return { label: `${m}月`, value: m, disabled: isFuture };
+            })}
           />
           <span style={{ color: '#999' }}>→ {year}-{String(month).padStart(2, '0')}</span>
         </Space>
