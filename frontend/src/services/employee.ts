@@ -79,6 +79,24 @@ export interface EmployeeEditParams {
   emergencyPhone?: string;
 }
 
+/** 导出员工花名册 */
+export async function exportEmployeeList(params: Record<string, any>): Promise<void> {
+  return request('/api/v1/employees/export-excel', {
+    method: 'GET',
+    params,
+    responseType: 'blob',
+  }).then((blob: any) => {
+    const url = window.URL.createObjectURL(blob as Blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '员工花名册.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  });
+}
+
 /** 花名册分页+高级搜索 */
 export async function getEmployeeList(params: {
   keyword?: string;

@@ -6,6 +6,7 @@ import {
   CheckCircleOutlined,
   SendOutlined,
   EyeOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
@@ -19,6 +20,7 @@ import {
   approveBatch,
   distributeBatch,
   getBatchDetails,
+  exportBatchDetails,
 } from '@/services/payroll';
 
 const statusColor: Record<string, string> = {
@@ -169,11 +171,14 @@ const BatchPage: React.FC = () => {
   };
   const handleCalculate = async (id: number) => {
     try {
-      await startCalculate(id);
-      message.success('计算任务已提交');
-      actionRef.current?.reload();
-    } catch (err: any) {
-      message.error(err?.message);
+      const res = await startCalculate(id);
+      // 全局 errorHandler 已处理业务错误提示（如考勤未锁定弹窗），此处只处理成功
+      if (res && res.code === 0) {
+        message.success('计算任务已提交');
+        actionRef.current?.reload();
+      }
+    } catch {
+      // 错误已由全局 errorHandler 处理，此处无需重复提示
     }
   };
   const handleSubmit = async (id: number) => {
@@ -210,6 +215,14 @@ const BatchPage: React.FC = () => {
     setDetailOpen(true);
     setDetailPage(1);
     await fetchDetailData(id, 1, detailPageSize);
+  };
+
+  const handleExportDetail = async () => {
+    if (!detailBatchId) return;
+    try {
+      await exportBatchDetails(detailBatchId);
+      message.success('导出成功');
+    } catch (err: any) { message.error(err?.message || '导出失败'); }
   };
 
   const fetchDetailData = async (id: number, page: number, pageSize: number) => {
@@ -333,16 +346,18 @@ const BatchPage: React.FC = () => {
         onCancel={() => { setCreateOpen(false); setYear(dayjs().year()); setMonth(dayjs().month() + 1); }}
       >
         <Space>
-          <Select value={year} onChange={setYear} style={{ width: 100 }}
+          <Select value={year} onChange={(y) => { setYear(y); if (y === dayjs().year() && month > dayjs().month() + 1) setMonth(dayjs().month() + 1); }} style={{ width: 100 }}
             options={Array.from({ length: 5 }, (_, i) => {
               const y = dayjs().year() - i;
               return { label: `${y}年`, value: y };
             })}
           />
           <Select value={month} onChange={setMonth} style={{ width: 100 }}
-            options={Array.from({ length: 12 }, (_, i) => ({
-              label: `${i + 1}月`, value: i + 1,
-            }))}
+            options={Array.from({ length: 12 }, (_, i) => {
+              const m = i + 1;
+              const isFuture = year === dayjs().year() && m > dayjs().month() + 1;
+              return { label: `${m}月`, value: m, disabled: isFuture };
+            })}
           />
           <span style={{ color: '#999' }}>→ {year}-{String(month).padStart(2, '0')}</span>
         </Space>
@@ -350,7 +365,7 @@ const BatchPage: React.FC = () => {
 
       {/* Detail modal with anomaly highlighting */}
       <Modal
-        title={`批次明细 - #${detailBatchId}`}
+        title={<Space>批次明细 - #{detailBatchId}<Button size="small" icon={<DownloadOutlined />} onClick={handleExportDetail}>导出 Excel</Button></Space>}
         open={detailOpen}
         onCancel={() => setDetailOpen(false)}
         footer={null}

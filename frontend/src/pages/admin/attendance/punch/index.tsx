@@ -141,8 +141,8 @@ const PunchAdminPage: React.FC = () => {
         await loadOverview();
         actionRef.current?.reload();
       }
-    } catch (err: any) {
-      if (err?.message) message.error(err.message);
+    } catch {
+      // 错误已由全局 errorHandler 处理，此处无需重复提示
     } finally {
       setPunchSubmitting(false);
     }
@@ -171,8 +171,8 @@ const PunchAdminPage: React.FC = () => {
         await loadOverview();
         actionRef.current?.reload();
       }
-    } catch (err: any) {
-      if (err?.message) message.error(err.message);
+    } catch {
+      // 错误已由全局 errorHandler 处理，此处无需重复提示
     } finally {
       setFixSubmitting(false);
     }

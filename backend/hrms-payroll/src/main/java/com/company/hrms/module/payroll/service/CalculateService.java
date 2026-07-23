@@ -80,6 +80,7 @@ public class CalculateService {
     private final AttendanceMonthlySummaryMapper attendanceSummaryMapper;
     private final com.company.hrms.attendance.mapper.OvertimeLedgerMapper overtimeLedgerMapper;
     private final com.company.hrms.attendance.mapper.AttendanceDailySummaryMapper attendanceDailySummaryMapper;
+    private final com.company.hrms.attendance.mapper.AttendanceMonthLockMapper attendanceMonthLockMapper;
 
     // 组织架构 Mapper（用于图表部门聚合）
     private final DepartmentMapper departmentMapper;
@@ -129,6 +130,14 @@ public class CalculateService {
      * @return 创建的批次
      */
     public PayrollBatch createBatch(String period, Long operatorId) {
+        // 1. 校验账期不能是未来月份
+        YearMonth currentMonth = YearMonth.now();
+        YearMonth targetMonth = YearMonth.parse(period);
+        if (targetMonth.isAfter(currentMonth)) {
+            throw new BusinessException(ErrorCode.PAYROLL_FUTURE_PERIOD, "不允许创建未来月份的核算批次");
+        }
+
+        // 2. 校验批次是否已存在
         PayrollBatch exist = batchMapper.selectOne(new LambdaQueryWrapper<PayrollBatch>()
                 .eq(PayrollBatch::getPeriod, period));
         if (exist != null) {
@@ -169,6 +178,32 @@ public class CalculateService {
         return batch;
     }
 
+    /** 核算前置校验（异步前同步执行） */
+    public void validateBeforeCalculate(PayrollBatch batch) {
+        String period = batch.getPeriod();
+        YearMonth targetMonth = YearMonth.parse(period);
+        YearMonth currentMonth = YearMonth.now();
+
+        if (targetMonth.isAfter(currentMonth)) {
+            throw new BusinessException(ErrorCode.PAYROLL_FUTURE_PERIOD, "未来月份的批次不允许计算");
+        }
+        if (targetMonth.equals(currentMonth)) {
+            com.company.hrms.attendance.entity.AttendanceMonthLock lock =
+                    attendanceMonthLockMapper.selectOne(
+                            new LambdaQueryWrapper<com.company.hrms.attendance.entity.AttendanceMonthLock>()
+                                    .eq(com.company.hrms.attendance.entity.AttendanceMonthLock::getYearMonth, period));
+            if (lock == null || lock.getStatus() != 20) {
+                throw new BusinessException(ErrorCode.ATTENDANCE_NOT_LOCKED,
+                        "当前月考勤数据未锁定，请先完成考勤月结");
+            }
+        }
+    }
+
+    /** 更新批次状态 */
+    public void updateBatchStatus(PayrollBatch batch) {
+        batchMapper.updateById(batch);
+    }
+
     // ========================================================================
     //  核心核算
     // ========================================================================
@@ -192,18 +227,14 @@ public class CalculateService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void calculate(Long id) {
-        // 1. 校验批次存在且状态为 DRAFT
+        // 1. 校验批次存在且状态为 CALCULATING（异步消费时状态已由 Controller 更新）
         PayrollBatch batch = batchMapper.selectById(id);
         if (batch == null) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "批次不存在");
         }
-        if (!"DRAFT".equals(batch.getStatus())) {
-            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "仅草稿状态可开始计算");
+        if (!"CALCULATING".equals(batch.getStatus())) {
+            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "批次状态异常，需为计算中");
         }
-
-        // 2. 状态 → CALCULATING
-        batch.setStatus("CALCULATING");
-        batchMapper.updateById(batch);
 
         String period = batch.getPeriod();
         log.info("开始核算: batchId={}, period={}", id, period);
@@ -1016,6 +1047,61 @@ public class CalculateService {
     // ========================================================================
     //  核算明细查询
     // ========================================================================
+
+    /** 查询批次核算明细（不分页，用于导出） */
+    public List<PayrollDetailExportVO> exportDetails(Long batchId) {
+        List<PayrollDetail> records = detailMapper.selectList(
+                new LambdaQueryWrapper<PayrollDetail>()
+                        .eq(PayrollDetail::getBatchId, batchId));
+
+        // 批量查询员工姓名
+        Set<Long> empIds = records.stream()
+                .map(PayrollDetail::getEmployeeId)
+                .collect(Collectors.toSet());
+        Map<Long, String> nameMap = new HashMap<>();
+        for (Long empId : empIds) {
+            try {
+                Employee emp = employeeMapper.selectById(empId);
+                if (emp != null) nameMap.put(empId, emp.getName());
+            } catch (Exception e) {
+                log.warn("查询员工姓名失败: employeeId={}", empId);
+            }
+        }
+
+        List<PayrollDetailExportVO> voList = records.stream().map(d -> {
+            PayrollDetailExportVO vo = new PayrollDetailExportVO();
+            vo.setEmployeeId(d.getEmployeeId());
+            vo.setEmployeeName(nameMap.getOrDefault(d.getEmployeeId(), String.valueOf(d.getEmployeeId())));
+            vo.setGrossSalary(d.getGrossSalary());
+            vo.setNetSalary(d.getNetSalary());
+            vo.setCalcStatus("SUCCESS".equals(d.getCalcStatus()) ? "成功" :
+                             "FAILED".equals(d.getCalcStatus()) ? "失败" : d.getCalcStatus());
+            // 异常标记转为可读字符串
+            String flags = "";
+            if (d.getAnomalyFlags() != null && !"[]".equals(d.getAnomalyFlags())) {
+                try {
+                    List<String> flagList = objectMapper.readValue(d.getAnomalyFlags(), List.class);
+                    Map<String, String> labelMap = Map.of(
+                            "LEAVE_HIGH", "请假过多",
+                            "OVERTIME_HIGH", "加班过多",
+                            "SALARY_CHANGE_HIGH", "变动大",
+                            "NO_PROFILE", "无档案",
+                            "NO_SCHEME", "无账套",
+                            "NO_ITEMS", "无工资项目");
+                    flags = flagList.stream()
+                            .map(f -> labelMap.getOrDefault(f, f))
+                            .collect(Collectors.joining(", "));
+                } catch (Exception e) {
+                    flags = d.getAnomalyFlags();
+                }
+            }
+            vo.setAnomalyFlags(flags.isEmpty() ? "-" : flags);
+            vo.setManualAdjusted(d.getManualAdjusted() == 1 ? "是" : "否");
+            return vo;
+        }).collect(Collectors.toList());
+
+        return voList;
+    }
 
     /** 查询批次核算明细（分页，自动填充员工姓名） */
     public PageResult<PayrollDetailVO> getDetails(Long batchId, PageParam pageParam) {

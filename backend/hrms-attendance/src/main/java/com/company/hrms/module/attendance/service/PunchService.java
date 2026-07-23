@@ -7,6 +7,7 @@ import com.company.hrms.attendance.entity.AttendanceGroup;
 import com.company.hrms.attendance.entity.AttendanceGroupMember;
 import com.company.hrms.attendance.entity.AttendanceMonthLock;
 import com.company.hrms.attendance.entity.AttendanceRecord;
+import com.company.hrms.attendance.entity.AttendanceDailySummary;
 import com.company.hrms.attendance.entity.AttendanceSupplement;
 import com.company.hrms.attendance.entity.HolidayCalendar;
 import com.company.hrms.attendance.entity.WorkdayConfig;
@@ -124,22 +125,31 @@ public class PunchService {
         LocalTime serverTime = LocalDateTime.now(CST).toLocalTime();
         String type = dto.getType() != null ? dto.getType().toUpperCase() : "IN";
 
-        // ====== 第一层防重：Redis 幂等校验 ======
-        // Key 格式: hrms:punch:{empId}:{yyyy-MM-dd}:{IN/OUT}
-        // TTL 到当天结束（至少保留 60 秒，防止跨天精度问题）
-        String idempKey = PUNCH_IDEMP_KEY + employeeId + ":" + serverDate.toString() + ":" + type;
-        Boolean success = stringRedisTemplate.opsForValue()
-                .setIfAbsent(idempKey, "1", getSecondsUntilEndOfDay(serverDate), TimeUnit.SECONDS);
-        if (Boolean.FALSE.equals(success)) {
-            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
-        }
+        // ====== 防重校验 ======
+        // 上班卡(IN)：Redis 幂等 + DB 双防重，只允许第一次
+        // 下班卡(OUT)：跳过防重，允许重复打卡覆盖，以最后一次为准
+        if ("IN".equals(type)) {
+            // 第一层防重：Redis 幂等校验
+            String idempKey = PUNCH_IDEMP_KEY + employeeId + ":" + serverDate.toString() + ":" + type;
+            Boolean success = stringRedisTemplate.opsForValue()
+                    .setIfAbsent(idempKey, "1", getSecondsUntilEndOfDay(serverDate), TimeUnit.SECONDS);
+            if (Boolean.FALSE.equals(success)) {
+                throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
+            }
 
-        // ====== 第二层防重：DB 查询 ======
-        // 即使 Redis key 被误删也不会重复打卡（防击穿）
-        boolean alreadyPunched = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, serverDate)
-                .stream().anyMatch(r -> type.equals(r.getPunchType()));
-        if (alreadyPunched) {
-            throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
+            // 第二层防重：DB 查询（防 Redis key 误删击穿）
+            boolean alreadyPunched = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, serverDate)
+                    .stream().anyMatch(r -> type.equals(r.getPunchType()));
+            if (alreadyPunched) {
+                throw new BusinessException(ErrorCode.PUNCH_DUPLICATE, "您已打卡，请勿重复操作");
+            }
+        } else if ("OUT".equals(type)) {
+            // 下班卡可重复打卡，删除当天旧 OUT 记录，以最后一次为准
+            attendanceRecordMapper.delete(
+                    new LambdaQueryWrapper<AttendanceRecord>()
+                            .eq(AttendanceRecord::getEmployeeId, employeeId)
+                            .eq(AttendanceRecord::getPunchDate, serverDate)
+                            .eq(AttendanceRecord::getPunchType, "OUT"));
         }
 
         // 存储时间优先用前端传的值（保留客户端感知的实际时间），否则用服务端时间
@@ -211,8 +221,10 @@ public class PunchService {
             return punchStatus;
 
         } catch (Exception e) {
-            // 打卡失败时删除幂等键，允许用户重试
-            stringRedisTemplate.delete(idempKey);
+            // 上班卡失败时删除 Redis 幂等键，允许用户重试；下班卡无需处理
+            if ("IN".equals(type)) {
+                stringRedisTemplate.delete(PUNCH_IDEMP_KEY + employeeId + ":" + serverDate.toString() + ":" + type);
+            }
             throw e;
         }
     }
@@ -620,12 +632,10 @@ public class PunchService {
             throw new BusinessException(ErrorCode.SUPPLEMENT_NOT_WORKDAY, "选择的日期不是工作日，不可补卡");
         }
 
-        // 3. 校验该日期是否已有完整打卡记录（IN + OUT 均存在则不可补卡）
-        List<AttendanceRecord> dayRecords = attendanceRecordMapper.selectByEmployeeAndDate(employeeId, fixDate);
-        boolean hasIn = dayRecords.stream().anyMatch(r -> "IN".equals(r.getPunchType()));
-        boolean hasOut = dayRecords.stream().anyMatch(r -> "OUT".equals(r.getPunchType()));
-        if (hasIn && hasOut) {
-            throw new BusinessException(ErrorCode.SUPPLEMENT_ALREADY_PUNCHED, "该日期已有完整打卡记录，不可补卡");
+        // 3. 校验该日考勤是否已正常（日汇总 double-status = "am:0,pm:0" 表示双槽位正常，不可补卡）
+        AttendanceDailySummary summary = attendanceDailySummaryMapper.selectByEmployeeAndDate(employeeId, fixDate);
+        if (summary != null && "am:0,pm:0".equals(summary.getDayStatus())) {
+            throw new BusinessException(ErrorCode.SUPPLEMENT_ALREADY_PUNCHED, "该日期考勤已正常，不可补卡");
         }
 
         // 4. 禁止补未来日期的卡

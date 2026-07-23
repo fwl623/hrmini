@@ -3,6 +3,7 @@ package com.company.hrms.module.payroll.controller;
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.security.SecurityUtils;
+import com.company.hrms.common.util.ExcelExportUtil;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
 import com.company.hrms.common.web.Result;
@@ -11,8 +12,14 @@ import com.company.hrms.module.payroll.job.PayrollEventPublisher;
 import com.company.hrms.module.payroll.service.CalculateService;
 import com.company.hrms.payroll.entity.PayrollBatch;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -52,14 +59,34 @@ public class BatchController {
 
     @PostMapping("/{id}/calculate")
     public Result<Map<String, String>> calculate(@PathVariable Long id) {
-        // 同步核算，直接调用计算结果，不依赖 MQ
-        calculateService.calculate(id);
-        return Result.success(Map.of("message", "计算完成"));
+        // 异步核算：通过 MQ 发送消息，消费者异步执行核算
+        PayrollBatch batch = calculateService.getBatch(id);
+        if (!"DRAFT".equals(batch.getStatus())) {
+            throw new BusinessException(ErrorCode.PAYROLL_IN_PROGRESS, "仅草稿状态可开始计算");
+        }
+        // 前置校验（同步执行）
+        calculateService.validateBeforeCalculate(batch);
+        // 状态改为 CALCULATING 后异步算
+        batch.setStatus("CALCULATING");
+        calculateService.updateBatchStatus(batch);
+        payrollEventPublisher.sendCalculate(id, batch.getPeriod());
+        return Result.success(Map.of("message", "计算任务已提交"));
     }
 
     @GetMapping("/{id}/details")
     public Result<PageResult<PayrollDetailVO>> details(@PathVariable Long id, PageParam pageParam) {
         return Result.success(calculateService.getDetails(id, pageParam));
+    }
+
+    @GetMapping("/{id}/details/export-excel")
+    public ResponseEntity<byte[]> exportDetails(@PathVariable Long id) {
+        List<PayrollDetailExportVO> list = calculateService.exportDetails(id);
+        byte[] bytes = ExcelExportUtil.generateExcelBytes("批次明细", list, PayrollDetailExportVO.class);
+        String fileName = URLEncoder.encode("批次明细-" + id, StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename*=utf-8''" + fileName + ".xlsx")
+                .body(bytes);
     }
 
     @GetMapping("/{id}/chart-data")

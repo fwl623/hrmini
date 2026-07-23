@@ -208,8 +208,8 @@ const AttendancePunchPage: React.FC = () => {
         await loadData();
         await loadCalendar(calendarMonth);
       }
-    } catch (err: any) {
-      message.error(err?.message || '打卡失败');
+    } catch {
+      // 错误已由全局 errorHandler 处理，此处无需重复提示
     } finally {
       setLoading(false);
     }
@@ -218,9 +218,22 @@ const AttendancePunchPage: React.FC = () => {
   const handleFixSubmit = async () => {
     try {
       const values = await fixForm.validateFields();
+      const dateStr = values.punchDate.format('YYYY-MM-DD');
+
+      // 前端预检：若考勤日历显示该日已正常，提示后不提交
+      const dayInfo = dayMap.get(dateStr);
+      if (dayInfo && dayInfo.dayStatus === 'NORMAL') {
+        Modal.warning({
+          title: '补卡提示',
+          content: '当日考勤已正常，无需补卡',
+          okText: '知道了',
+        });
+        return;
+      }
+
       setFixSubmitting(true);
       const res = await applyPunchFix({
-        punchDate: values.punchDate.format('YYYY-MM-DD'),
+        punchDate: dateStr,
         type: values.type,
         punchTime: values.punchTime.format('HH:mm'),
         reason: values.reason,
@@ -233,8 +246,8 @@ const AttendancePunchPage: React.FC = () => {
         await loadData();
         await loadCalendar(calendarMonth);
       }
-    } catch (err: any) {
-      if (err?.message) message.error(err.message);
+    } catch {
+      // 错误已由全局 errorHandler 处理，此处无需重复提示
     } finally {
       setFixSubmitting(false);
     }
@@ -284,11 +297,10 @@ const AttendancePunchPage: React.FC = () => {
                       block
                       className="hrms-punch-btn hrms-punch-btn-out"
                       icon={<AimOutlined />}
-                      loading={loading && !hasClockedOut}
-                      disabled={hasClockedOut}
+                      loading={loading}
                       onClick={() => handlePunch('out')}
                     >
-                      {hasClockedOut ? '已打卡' : '下班打卡'}
+                      {hasClockedOut ? '更新下班打卡' : '下班打卡'}
                     </Button>
                   </>
                 );

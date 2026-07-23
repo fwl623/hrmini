@@ -13,7 +13,9 @@ import com.company.hrms.employee.service.EmployeeService;
 import com.company.hrms.employee.service.MobileChangeService;
 import com.company.hrms.employee.service.SalaryService;
 import com.company.hrms.employee.service.SensitiveFieldService;
+import com.company.hrms.common.util.ExcelExportUtil;
 import com.company.hrms.employee.vo.EmployeeDetailVO;
+import com.company.hrms.employee.vo.EmployeeExportVO;
 import com.company.hrms.employee.vo.EmployeeListVO;
 import com.company.hrms.employee.vo.SalaryHistoryVO;
 import com.company.hrms.employee.vo.SalaryProfileVO;
@@ -21,8 +23,13 @@ import com.company.hrms.employee.vo.SensitiveFieldVO;
 import com.company.hrms.employee.vo.TransferHistoryVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -48,6 +55,18 @@ public class EmployeeController {
     public Result<PageResult<EmployeeListVO>> pageSearch(@Valid EmployeePageQuery query) {
         EmployeeAccessGuard.requireRosterRead();
         return Result.success(employeeService.pageSearch(query));
+    }
+
+    @GetMapping("/export-excel")
+    public ResponseEntity<byte[]> export(EmployeePageQuery query) {
+        EmployeeAccessGuard.requireRosterRead();
+        List<EmployeeExportVO> list = employeeService.exportList(query);
+        byte[] bytes = ExcelExportUtil.generateExcelBytes("员工花名册", list, EmployeeExportVO.class);
+        String fileName = URLEncoder.encode("员工花名册", StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename*=utf-8''" + fileName + ".xlsx")
+                .body(bytes);
     }
 
     @GetMapping("/{id}")

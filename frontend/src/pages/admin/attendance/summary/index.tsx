@@ -1,10 +1,11 @@
 import React, { useRef, useState } from 'react';
 import { Card, Button, Tag, message, Switch, Modal, Input, Space } from 'antd';
+import { DownloadOutlined } from '@ant-design/icons';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 
-import { getMonthlySummary, updateMonthlySummaryLock, generateMonthlySummary } from '@/services/attendance';
+import { getMonthlySummary, updateMonthlySummaryLock, generateMonthlySummary, exportMonthlySummary } from '@/services/attendance';
 
 const MonthlySummaryPage: React.FC = () => {
   const actionRef = useRef<ActionType>();
@@ -41,11 +42,19 @@ const MonthlySummaryPage: React.FC = () => {
     } catch (err: any) { message.error(err?.message || '生成失败'); }
   };
 
+  const handleExport = async () => {
+    try {
+      await exportMonthlySummary(period);
+      message.success('导出成功');
+    } catch (err: any) { message.error(err?.message || '导出失败'); }
+  };
+
   return (
     <Card title={`月考勤汇总 - ${period}`}
       extra={
         <Space>
           <Button onClick={handleGenerate}>生成汇总</Button>
+          <Button icon={<DownloadOutlined />} onClick={handleExport}>导出 Excel</Button>
           <Button type={locked ? 'default' : 'primary'} danger={!locked} onClick={() => setLockModalOpen(true)}>
             {locked ? '已锁定' : '锁定月汇总'}
           </Button>

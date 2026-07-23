@@ -107,6 +107,21 @@ public class EmployeeServiceImpl implements EmployeeService {
         return PageResult.of(list, total, query.getPage(), query.getPageSize());
     }
 
+    @Override
+    public List<EmployeeExportVO> exportList(EmployeePageQuery query) {
+        List<Long> deptIds = parseCommaLongs(query.getDepartmentIds());
+        List<Long> positionIds = parseCommaLongs(query.getPositionIds());
+        List<Integer> statusList = parseStatuses(query.getEmploymentStatus());
+        List<String> gradeList = parseCommaStrings(query.getGradeLevels());
+        String dataScope = resolveEmployeeDataScope();
+
+        List<Employee> rows = employeeMapper.search(
+                query.getKeyword(), deptIds, positionIds, statusList, gradeList,
+                query.getHireDateFrom(), query.getHireDateTo(), dataScope);
+
+        return rows.stream().map(this::toExportVO).collect(Collectors.toList());
+    }
+
     // ==================== 员工详情 ====================
 
     @Override
@@ -436,6 +451,18 @@ public class EmployeeServiceImpl implements EmployeeService {
     private EmployeeListVO toListVO(Employee emp) {
         EmployeeListVO vo = new EmployeeListVO();
         vo.setEmployeeId(emp.getId());
+        vo.setEmpNo(emp.getEmployeeNo());
+        vo.setName(emp.getName());
+        vo.setDepartment(emp.getDepartmentName());
+        vo.setPosition(emp.getPositionName());
+        vo.setGrade(emp.getGrade());
+        vo.setEmploymentStatus(formatStatus(emp.getEmploymentStatus()));
+        vo.setHireDate(emp.getHireDate());
+        return vo;
+    }
+
+    private EmployeeExportVO toExportVO(Employee emp) {
+        EmployeeExportVO vo = new EmployeeExportVO();
         vo.setEmpNo(emp.getEmployeeNo());
         vo.setName(emp.getName());
         vo.setDepartment(emp.getDepartmentName());

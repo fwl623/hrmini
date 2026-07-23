@@ -1,0 +1,20 @@
+diff --git a/node_modules/@umijs/plugins/dist/request.js b/node_modules/@umijs/plugins/dist/request.js
+index 839b35c..57f77c3 100644
+--- a/node_modules/@umijs/plugins/dist/request.js
++++ b/node_modules/@umijs/plugins/dist/request.js
+@@ -223,10 +223,13 @@ const getRequestInstance = (): AxiosInstance => {
+        requestInstance.interceptors.response.use(interceptor);
+   });
+ 
+-  // 当响应的数据 success 是 false 的时候，抛出 error 以供 errorHandler 处理。
++  // 当响应的数据 success 是 false 或 code !== 0 时，抛出 error 以供 errorHandler 处理。
+   requestInstance.interceptors.response.use((response) => {
+     const { data } = response;
+-    if(data?.success === false && config?.errorConfig?.errorThrower){
++    if(config?.errorConfig?.errorThrower && (
++        data?.success === false ||
++        (typeof data?.code === 'number' && data?.code !== 0)
++    )){
+       config.errorConfig.errorThrower(data);
+     }
+     return response;
