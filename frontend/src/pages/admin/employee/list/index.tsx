@@ -4,13 +4,13 @@
  * PRD §4.2.2 高级搜索：关键词 / 部门树多选 / 职位多选 / 在职状态多选 / 职级多选 / 入职日期范围
  * PRD §4.2.3 列表操作：详情 / 编辑 / 更多（调岗、离职，按在职状态与权限）
  */
-import React, { useEffect, useMemo, useState } from 'react';
-import type { ProColumns } from '@ant-design/pro-components';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import { Button, Dropdown, Space, Tag, TreeSelect, message } from 'antd';
-import { DownOutlined } from '@ant-design/icons';
+import { DownOutlined, DownloadOutlined } from '@ant-design/icons';
 import { history, useAccess, useNavigate } from '@umijs/max';
-import { getEmployeeList } from '@/services/employee';
+import { getEmployeeList, exportEmployeeList } from '@/services/employee';
 import type { EmployeeItem } from '@/services/employee';
 import { getDeptTree, listPositions } from '@/services/org';
 import type { DeptTreeNode } from '@/services/org';
@@ -59,8 +59,23 @@ const GRADE_OPTIONS = [
 const EmployeeListPage: React.FC = () => {
   const navigate = useNavigate();
   const access = useAccess();
+  const actionRef = useRef<ActionType>();
   const [deptTreeOptions, setDeptTreeOptions] = useState<TreeOption[]>([]);
   const [positionOptions, setPositionOptions] = useState<{ label: string; value: number }[]>([]);
+  const [searchParams, setSearchParams] = useState<Record<string, any>>({});
+
+  const handleExport = async () => {
+    // 过滤空值以免空字符串绑定 LocalDate 失败
+    const params = Object.fromEntries(
+      Object.entries(searchParams).filter(([, v]) => v !== '' && v !== undefined && v !== null)
+    );
+    try {
+      await exportEmployeeList(params);
+      message.success('导出成功');
+    } catch (err: any) {
+      message.error(err?.message || '导出失败');
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -283,6 +298,7 @@ const EmployeeListPage: React.FC = () => {
     <ProTable<EmployeeItem>
       headerTitle="员工花名册"
       rowKey="employeeId"
+      actionRef={actionRef as any}
       search={{
         labelWidth: 'auto',
         defaultCollapsed: false,
@@ -290,9 +306,8 @@ const EmployeeListPage: React.FC = () => {
       scroll={{ x: 1100 }}
       request={async (params) => {
         const { current, pageSize, ...formValues } = params;
-        const res = await getEmployeeList({
-          page: current,
-          pageSize,
+        // 保存当前搜索条件供导出使用
+        const currentSearch = {
           keyword: (formValues.keyword as string) || '',
           departmentIds: joinIds(formValues.departmentIds),
           positionIds: joinIds(formValues.positionIds),
@@ -300,6 +315,12 @@ const EmployeeListPage: React.FC = () => {
           gradeLevels: joinIds(formValues.gradeLevels),
           hireDateFrom: (formValues as { hireDateFrom?: string }).hireDateFrom || '',
           hireDateTo: (formValues as { hireDateTo?: string }).hireDateTo || '',
+        };
+        setSearchParams(currentSearch);
+        const res = await getEmployeeList({
+          page: current,
+          pageSize,
+          ...currentSearch,
         });
         return {
           data: res.data?.list || [],
@@ -307,6 +328,11 @@ const EmployeeListPage: React.FC = () => {
           total: res.data?.total || 0,
         };
       }}
+      toolBarRender={() => [
+        <Button key="export" icon={<DownloadOutlined />} onClick={handleExport}>
+          导出 Excel
+        </Button>,
+      ]}
       locale={{ emptyText: '暂无匹配的员工信息' }}
       columns={columns}
       pagination={{

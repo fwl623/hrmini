@@ -43,4 +43,7 @@ public interface EmployeeService {
 
     /** 调岗历史（含部门/职位名称） */
     List<TransferHistoryVO> listTransferHistory(Long employeeId);
+
+    /** 导出花名册（按当前筛选条件导出全部匹配记录） */
+    List<EmployeeExportVO> exportList(EmployeePageQuery query);
 }

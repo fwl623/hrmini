@@ -156,6 +156,29 @@ export async function getBatchDetails(id: number, params: { page?: number; pageS
 }
 
 /**
+ * 导出批次核算明细
+ *
+ * 获取指定批次下所有员工的核算明细 Excel 文件。
+ *
+ * @param id - 批次唯一标识
+ */
+export async function exportBatchDetails(id: number): Promise<void> {
+  return request(`${API_PREFIX}/batches/${id}/details/export-excel`, {
+    method: 'GET',
+    responseType: 'blob',
+  }).then((blob: any) => {
+    const url = window.URL.createObjectURL(blob as Blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `批次明细-${id}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  });
+}
+
+/**
  * 手工调整核算明细
  *
  * HR 对某员工的核算结果进行手动调整（如补发、扣款等），

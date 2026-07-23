@@ -6,6 +6,7 @@ import {
   CheckCircleOutlined,
   SendOutlined,
   EyeOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import type { ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
@@ -19,6 +20,7 @@ import {
   approveBatch,
   distributeBatch,
   getBatchDetails,
+  exportBatchDetails,
 } from '@/services/payroll';
 
 const statusColor: Record<string, string> = {
@@ -215,6 +217,14 @@ const BatchPage: React.FC = () => {
     await fetchDetailData(id, 1, detailPageSize);
   };
 
+  const handleExportDetail = async () => {
+    if (!detailBatchId) return;
+    try {
+      await exportBatchDetails(detailBatchId);
+      message.success('导出成功');
+    } catch (err: any) { message.error(err?.message || '导出失败'); }
+  };
+
   const fetchDetailData = async (id: number, page: number, pageSize: number) => {
     setDetailLoading(true);
     try {
@@ -355,7 +365,7 @@ const BatchPage: React.FC = () => {
 
       {/* Detail modal with anomaly highlighting */}
       <Modal
-        title={`批次明细 - #${detailBatchId}`}
+        title={<Space>批次明细 - #{detailBatchId}<Button size="small" icon={<DownloadOutlined />} onClick={handleExportDetail}>导出 Excel</Button></Space>}
         open={detailOpen}
         onCancel={() => setDetailOpen(false)}
         footer={null}

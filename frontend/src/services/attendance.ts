@@ -448,6 +448,30 @@ export async function getOvertimeLedger(params: { period: string; page?: number;
 // ========== 月考勤汇总 & 统计 ==========
 
 /**
+ * 导出月汇总
+ *
+ * 获取指定周期的月考勤汇总 Excel 文件。
+ *
+ * @param period - 汇总周期，格式 "YYYY-MM"
+ */
+export async function exportMonthlySummary(period: string): Promise<void> {
+  return request(`/api/v1/attendance/monthly-summary/export-excel`, {
+    method: 'GET',
+    params: { period },
+    responseType: 'blob',
+  }).then((blob: any) => {
+    const url = window.URL.createObjectURL(blob as Blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `考勤月报-${period}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  });
+}
+
+/**
  * 月汇总查看
  *
  * 获取指定周期（月份）的考勤汇总统计数据，

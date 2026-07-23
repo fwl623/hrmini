@@ -1048,6 +1048,61 @@ public class CalculateService {
     //  核算明细查询
     // ========================================================================
 
+    /** 查询批次核算明细（不分页，用于导出） */
+    public List<PayrollDetailExportVO> exportDetails(Long batchId) {
+        List<PayrollDetail> records = detailMapper.selectList(
+                new LambdaQueryWrapper<PayrollDetail>()
+                        .eq(PayrollDetail::getBatchId, batchId));
+
+        // 批量查询员工姓名
+        Set<Long> empIds = records.stream()
+                .map(PayrollDetail::getEmployeeId)
+                .collect(Collectors.toSet());
+        Map<Long, String> nameMap = new HashMap<>();
+        for (Long empId : empIds) {
+            try {
+                Employee emp = employeeMapper.selectById(empId);
+                if (emp != null) nameMap.put(empId, emp.getName());
+            } catch (Exception e) {
+                log.warn("查询员工姓名失败: employeeId={}", empId);
+            }
+        }
+
+        List<PayrollDetailExportVO> voList = records.stream().map(d -> {
+            PayrollDetailExportVO vo = new PayrollDetailExportVO();
+            vo.setEmployeeId(d.getEmployeeId());
+            vo.setEmployeeName(nameMap.getOrDefault(d.getEmployeeId(), String.valueOf(d.getEmployeeId())));
+            vo.setGrossSalary(d.getGrossSalary());
+            vo.setNetSalary(d.getNetSalary());
+            vo.setCalcStatus("SUCCESS".equals(d.getCalcStatus()) ? "成功" :
+                             "FAILED".equals(d.getCalcStatus()) ? "失败" : d.getCalcStatus());
+            // 异常标记转为可读字符串
+            String flags = "";
+            if (d.getAnomalyFlags() != null && !"[]".equals(d.getAnomalyFlags())) {
+                try {
+                    List<String> flagList = objectMapper.readValue(d.getAnomalyFlags(), List.class);
+                    Map<String, String> labelMap = Map.of(
+                            "LEAVE_HIGH", "请假过多",
+                            "OVERTIME_HIGH", "加班过多",
+                            "SALARY_CHANGE_HIGH", "变动大",
+                            "NO_PROFILE", "无档案",
+                            "NO_SCHEME", "无账套",
+                            "NO_ITEMS", "无工资项目");
+                    flags = flagList.stream()
+                            .map(f -> labelMap.getOrDefault(f, f))
+                            .collect(Collectors.joining(", "));
+                } catch (Exception e) {
+                    flags = d.getAnomalyFlags();
+                }
+            }
+            vo.setAnomalyFlags(flags.isEmpty() ? "-" : flags);
+            vo.setManualAdjusted(d.getManualAdjusted() == 1 ? "是" : "否");
+            return vo;
+        }).collect(Collectors.toList());
+
+        return voList;
+    }
+
     /** 查询批次核算明细（分页，自动填充员工姓名） */
     public PageResult<PayrollDetailVO> getDetails(Long batchId, PageParam pageParam) {
         LambdaQueryWrapper<PayrollDetail> wrapper = new LambdaQueryWrapper<PayrollDetail>()

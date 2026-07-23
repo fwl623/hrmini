@@ -19,6 +19,7 @@ import com.company.hrms.common.web.PageResult;
 import com.company.hrms.module.attendance.dto.AttendanceCalendarDay;
 import com.company.hrms.module.attendance.dto.AttendanceCalendarVO;
 import com.company.hrms.module.attendance.dto.DepartmentStatisticsVO;
+import com.company.hrms.module.attendance.dto.MonthlySummaryExportVO;
 import com.company.hrms.module.attendance.dto.MonthlySummaryItem;
 import com.company.hrms.module.attendance.dto.MonthlySummaryVO;
 import com.company.hrms.module.attendance.dto.PersonalStatisticsVO;
@@ -126,6 +127,46 @@ public class SummaryService {
         vo.setTotal(page.getTotal());
         vo.setLocked(lock != null && lock.getStatus() == 20);
         return vo;
+    }
+
+    /**
+     * 导出月汇总（不分页，返回所有记录）
+     *
+     * @param period 账期（格式 YYYY-MM）
+     * @return 月汇总导出列表
+     */
+    public List<MonthlySummaryExportVO> exportMonthlySummary(String period) {
+        LambdaQueryWrapper<AttendanceMonthlySummary> wrapper = new LambdaQueryWrapper<AttendanceMonthlySummary>()
+                .eq(AttendanceMonthlySummary::getPeriod, period)
+                .orderByAsc(AttendanceMonthlySummary::getEmployeeId);
+
+        List<AttendanceMonthlySummary> records = monthlySummaryMapper.selectList(wrapper);
+
+        List<MonthlySummaryExportVO> list = new ArrayList<>();
+        for (AttendanceMonthlySummary ms : records) {
+            MonthlySummaryExportVO vo = new MonthlySummaryExportVO();
+            vo.setEmployeeId(ms.getEmployeeId());
+            String employeeName = String.valueOf(ms.getEmployeeId());
+            try {
+                com.company.hrms.employee.entity.Employee emp = employeeMapper.selectById(ms.getEmployeeId());
+                if (emp != null && emp.getName() != null) {
+                    employeeName = emp.getName();
+                }
+            } catch (Exception e) {
+                log.warn("查询员工姓名失败: employeeId={}", ms.getEmployeeId(), e);
+            }
+            vo.setEmployeeName(employeeName);
+            vo.setPeriod(ms.getPeriod());
+            vo.setShouldAttendDays(ms.getShouldAttendDays() != null ? ms.getShouldAttendDays() : 0);
+            vo.setActualAttendDays(ms.getActualAttendDays() != null ? ms.getActualAttendDays() : BigDecimal.ZERO);
+            vo.setLateCount(ms.getLateCount() != null ? ms.getLateCount() : 0);
+            vo.setEarlyLeaveCount(ms.getEarlyLeaveCount() != null ? ms.getEarlyLeaveCount() : 0);
+            vo.setAbsentDays(ms.getAbsentDays() != null ? ms.getAbsentDays() : BigDecimal.ZERO);
+            vo.setLeaveDays(ms.getLeaveDays() != null ? ms.getLeaveDays() : BigDecimal.ZERO);
+            vo.setOvertimeHours(ms.getOvertimeHours() != null ? ms.getOvertimeHours() : BigDecimal.ZERO);
+            list.add(vo);
+        }
+        return list;
     }
 
     /**
