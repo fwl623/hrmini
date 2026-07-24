@@ -14,6 +14,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 上传文件文本抽取与分块：PDF（PDFBox）/ 纯文本，按字符切 chunk 供向量入库。
+ */
 @Slf4j
 @Component
 public class DocumentTextExtractor {

@@ -1,153 +1,330 @@
 /**
  * 请假管理（管理端）
  *
- * 功能：ProTable + 搜索（员工姓名下拉、请假类型）
- *       + 管理员可查看所有员工的请假记录并执行撤销操作
- *
- * 与门户端共享 LEAVE_TYPE_OPTIONS / statusLabelMap / statusColorMap / calcLeaveDays 逻辑
+ * 功能：员工 / 类型 / 状态筛选 + 请假记录列表；待审批可撤销
  */
 import React, { useRef, useState } from 'react';
 import {
-  Card,
-  Tag,
+  Button,
+  Popconfirm,
   Select,
-  Space,
+  Tag,
   Typography,
+  message,
 } from 'antd';
-import type { ActionType } from '@ant-design/pro-components';
+import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 
-import { getLeaveApplications } from '@/services/attendance';
+import { cancelLeave, getLeaveApplications } from '@/services/attendance';
 import { getEmployeeList } from '@/services/employee';
 import { LEAVE_TYPE_OPTIONS, leaveTypeLabel } from '@/constants/leave';
+import './leave.less';
 
-// ========== 共享常量 ==========
+type LeaveRow = API.LeaveApplicationVO;
 
-/** 状态 → 中文标签映射 */
-const statusLabelMap: Record<string, string> = {
-  PENDING: '待审批',
-  APPROVED: '已通过',
-  REJECTED: '已驳回',
-  CANCELLED: '已撤销',
+type LeaveFilters = {
+  employeeId?: number;
+  leaveType?: string;
+  status?: string;
 };
 
-/** 状态 → Tag 颜色映射 */
-const statusColorMap: Record<string, string> = {
-  PENDING: 'orange',
-  APPROVED: 'green',
-  REJECTED: 'red',
-  CANCELLED: 'default',
+const EMPTY_FILTERS: LeaveFilters = {
+  employeeId: undefined,
+  leaveType: undefined,
+  status: undefined,
 };
 
-// ========== 页面组件 ==========
+const STATUS_OPTIONS = [
+  { label: '待审批', value: 'PENDING' },
+  { label: '已通过', value: 'APPROVED' },
+  { label: '已驳回', value: 'REJECTED' },
+  { label: '已撤销', value: 'CANCELLED' },
+];
+
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  PENDING: { label: '待审批', color: 'orange' },
+  APPROVED: { label: '已通过', color: 'success' },
+  REJECTED: { label: '已驳回', color: 'error' },
+  CANCELLED: { label: '已撤销', color: 'default' },
+};
+
+const TYPE_COLOR: Record<string, string> = {
+  ANNUAL: 'blue',
+  SICK: 'magenta',
+  PERSONAL: 'gold',
+  MARRIAGE: 'purple',
+  MATERNITY: 'pink',
+  BEREAVEMENT: 'default',
+  COMP_OFF: 'cyan',
+  COMPENSATORY: 'cyan',
+};
+
+function formatDateTime(value?: string) {
+  if (!value) return '-';
+  const d = dayjs(value);
+  return d.isValid() ? d.format('YYYY-MM-DD HH:mm') : value;
+}
+
+function avatarText(name?: string) {
+  const n = (name || '').trim();
+  return n ? n.slice(-1) : '?';
+}
 
 const AdminLeavePage: React.FC = () => {
   const actionRef = useRef<ActionType>();
-  const [searchEmpId, setSearchEmpId] = useState<number | undefined>();
+  /** 筛选条草稿（点查询后才生效） */
+  const [draft, setDraft] = useState<LeaveFilters>(EMPTY_FILTERS);
+  /** 已应用筛选，供表格 request 使用 */
+  const [applied, setApplied] = useState<LeaveFilters>(EMPTY_FILTERS);
+  const appliedRef = useRef(applied);
+  appliedRef.current = applied;
+
   const [empOptions, setEmpOptions] = useState<{ label: string; value: number }[]>([]);
   const [empLoading, setEmpLoading] = useState(false);
 
-  // ---------- 搜索员工 ----------
-
   const searchEmployees = async (keyword: string) => {
-    if (!keyword || keyword.length < 1) { setEmpOptions([]); return; }
+    if (!keyword?.trim()) {
+      setEmpOptions([]);
+      return;
+    }
     setEmpLoading(true);
     try {
       const res = await getEmployeeList({ keyword, page: 1, pageSize: 20 });
       const list = res.data?.list ?? [];
-      setEmpOptions(list.map((e) => ({
-        label: `${e.name} (${e.empNo}) - ${e.department || ''}`,
-        value: e.employeeId,
-      })));
-    } catch { setEmpOptions([]); }
-    finally { setEmpLoading(false); }
+      setEmpOptions(
+        list.map((e) => ({
+          label: `${e.name}（${e.empNo}）${e.department ? ` · ${e.department}` : ''}`,
+          value: e.employeeId,
+        })),
+      );
+    } catch {
+      setEmpOptions([]);
+    } finally {
+      setEmpLoading(false);
+    }
   };
 
-  // ---------- 表格列定义 ----------
+  const reloadWith = (next: LeaveFilters) => {
+    setApplied(next);
+    appliedRef.current = next;
+    actionRef.current?.reloadAndRest?.() ?? actionRef.current?.reload();
+  };
 
-  const columns: any[] = [
-    { title: '员工姓名', dataIndex: 'employeeName', width: 100, hideInSearch: true },
-    { title: '部门', dataIndex: 'department', width: 120, hideInSearch: true },
+  const handleSearch = () => reloadWith({ ...draft });
+
+  const handleReset = () => {
+    setDraft(EMPTY_FILTERS);
+    setEmpOptions([]);
+    reloadWith(EMPTY_FILTERS);
+  };
+
+  const handleCancel = async (id: number) => {
+    try {
+      await cancelLeave(id);
+      message.success('已撤销');
+      actionRef.current?.reload();
+    } catch (err: any) {
+      message.error(err?.message || '撤销失败');
+    }
+  };
+
+  const columns: ProColumns<LeaveRow>[] = [
+    {
+      title: '员工',
+      dataIndex: 'employeeName',
+      width: 140,
+      render: (_, record) => (
+        <div className="leave-emp">
+          <span className="leave-emp__avatar">{avatarText(record.employeeName)}</span>
+          <span className="leave-emp__name">{record.employeeName || '-'}</span>
+        </div>
+      ),
+    },
+    {
+      title: '部门',
+      dataIndex: 'department',
+      width: 120,
+      ellipsis: true,
+      render: (_, record) => record.department || '—',
+    },
     {
       title: '请假类型',
       dataIndex: 'leaveType',
       width: 100,
-      valueType: 'select',
-      valueEnum: Object.fromEntries(LEAVE_TYPE_OPTIONS.map((o) => [o.value, { text: o.label }])),
-      render: (_: unknown, record: { leaveType?: string }) => leaveTypeLabel(record.leaveType),
+      render: (_, record) => {
+        const code = String(record.leaveType || '').toUpperCase();
+        return (
+          <Tag className="leave-type-tag" color={TYPE_COLOR[code] || 'processing'}>
+            {leaveTypeLabel(record.leaveType)}
+          </Tag>
+        );
+      },
     },
-    { title: '开始时间', dataIndex: 'startTime', width: 160, hideInSearch: true },
-    { title: '结束时间', dataIndex: 'endTime', width: 160, hideInSearch: true },
-    { title: '天数', dataIndex: 'leaveDays', width: 60, hideInSearch: true },
-    { title: '原因', dataIndex: 'reason', ellipsis: true, hideInSearch: true },
+    {
+      title: '请假时段',
+      dataIndex: 'startTime',
+      width: 168,
+      render: (_, record) => (
+        <div className="leave-range">
+          <span className="leave-range__date">{formatDateTime(record.startTime)}</span>
+          <span className="leave-range__time">至 {formatDateTime(record.endTime)}</span>
+        </div>
+      ),
+    },
+    {
+      title: '天数',
+      dataIndex: 'leaveDays',
+      width: 72,
+      align: 'right',
+      render: (_, record) => (
+        <span className="leave-days">
+          {record.leaveDays ?? '-'}
+          <span className="leave-days__unit">天</span>
+        </span>
+      ),
+    },
+    {
+      title: '原因',
+      dataIndex: 'reason',
+      ellipsis: true,
+      render: (_, record) => (
+        <Typography.Text type={record.reason ? undefined : 'secondary'} ellipsis={{ tooltip: record.reason }}>
+          {record.reason || '未填写'}
+        </Typography.Text>
+      ),
+    },
     {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      hideInSearch: true,
-      render: (_: unknown, record: { status?: string }) => {
-        const v = record.status || '';
-        return <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>;
+      render: (_, record) => {
+        const meta = STATUS_META[record.status || ''] || {
+          label: record.status || '-',
+          color: 'default',
+        };
+        return (
+          <Tag className="leave-status-tag" color={meta.color}>
+            {meta.label}
+          </Tag>
+        );
       },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 88,
+      fixed: 'right',
+      render: (_, record) =>
+        record.status === 'PENDING' ? (
+          <Popconfirm
+            title="确认撤销该请假申请？"
+            okText="撤销"
+            cancelText="取消"
+            onConfirm={() => handleCancel(record.id)}
+          >
+            <Button type="link" size="small" danger>
+              撤销
+            </Button>
+          </Popconfirm>
+        ) : (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ),
     },
   ];
 
-  // ---------- 渲染 ----------
-
   return (
-    <Card title="请假管理">
-      <ProTable<any>
-        rowKey="id"
-        columns={columns}
-        actionRef={actionRef}
-        request={async (params) => {
-          const { current, pageSize, leaveType, ...rest } = params;
-          try {
-            const res = await getLeaveApplications({
-              page: current,
-              leaveType,
-              employeeId: searchEmpId ?? 0,
-            });
-            return {
-              data: res.data?.list || [],
-              total: res.data?.total || 0,
-              success: true,
-            };
-          } catch {
-            return { data: [], total: 0, success: false };
-          }
-        }}
-        pagination={{ showSizeChanger: true, defaultPageSize: 20 }}
-        search={{
-          labelWidth: 'auto',
-          defaultCollapsed: false,
-          optionRender: (searchConfig, formProps, dom) => [...dom.reverse()],
-        }}
-        toolBarRender={() => [
-          <Select
-            key="empSearch"
-            showSearch
-            placeholder="搜索员工姓名"
-            allowClear
-            filterOption={false}
-            notFoundContent={null}
-            loading={empLoading}
-            onSearch={searchEmployees}
-            onChange={(val) => {
-              setSearchEmpId(val as number | undefined);
-              actionRef.current?.reload();
-            }}
-            onClear={() => {
-              setSearchEmpId(undefined);
-              actionRef.current?.reload();
-            }}
-            value={searchEmpId}
-            options={empOptions}
-            style={{ width: 240 }}
-          />,
-        ]}
-      />
-    </Card>
+    <div className="leave-page">
+      <header className="leave-hero">
+        <div>
+          <h1>请假列表</h1>
+          <p>查看全员请假申请，按员工、类型、状态筛选；待审批记录可撤销。</p>
+        </div>
+      </header>
+
+      <div className="leave-filters">
+        <span className="leave-filters__label">员工</span>
+        <Select
+          showSearch
+          allowClear
+          placeholder="输入姓名搜索"
+          filterOption={false}
+          notFoundContent={null}
+          loading={empLoading}
+          onSearch={searchEmployees}
+          onChange={(val) => setDraft((prev) => ({ ...prev, employeeId: val as number | undefined }))}
+          value={draft.employeeId}
+          options={empOptions}
+          style={{ width: 240 }}
+        />
+        <span className="leave-filters__label">类型</span>
+        <Select
+          allowClear
+          placeholder="全部类型"
+          value={draft.leaveType}
+          onChange={(val) => setDraft((prev) => ({ ...prev, leaveType: val }))}
+          options={LEAVE_TYPE_OPTIONS}
+          style={{ width: 140 }}
+        />
+        <span className="leave-filters__label">状态</span>
+        <Select
+          allowClear
+          placeholder="全部状态"
+          value={draft.status}
+          onChange={(val) => setDraft((prev) => ({ ...prev, status: val }))}
+          options={STATUS_OPTIONS}
+          style={{ width: 140 }}
+        />
+        <div className="leave-filters__actions">
+          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+            查询
+          </Button>
+          <Button icon={<ReloadOutlined />} onClick={handleReset}>
+            重置
+          </Button>
+        </div>
+      </div>
+
+      <div className="leave-table-card">
+        <ProTable<LeaveRow>
+          rowKey="id"
+          columns={columns}
+          actionRef={actionRef}
+          search={false}
+          options={{ density: true, reload: true, setting: true }}
+          cardProps={{ bodyStyle: { padding: 0 } }}
+          headerTitle="请假记录"
+          request={async (params) => {
+            const { current, pageSize } = params;
+            const filters = appliedRef.current;
+            try {
+              const res = await getLeaveApplications({
+                page: current,
+                pageSize,
+                leaveType: filters.leaveType,
+                status: filters.status,
+                employeeId: filters.employeeId ?? 0,
+              });
+              return {
+                data: (res.data?.list || []) as LeaveRow[],
+                total: res.data?.total || 0,
+                success: true,
+              };
+            } catch {
+              return { data: [], total: 0, success: false };
+            }
+          }}
+          pagination={{
+            showSizeChanger: true,
+            defaultPageSize: 20,
+            showTotal: (total) => `共 ${total} 条`,
+            style: { padding: '16px 20px' },
+          }}
+          scroll={{ x: 980 }}
+        />
+      </div>
+    </div>
   );
 };
 

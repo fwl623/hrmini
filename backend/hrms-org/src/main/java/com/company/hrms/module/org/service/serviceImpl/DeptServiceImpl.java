@@ -38,12 +38,20 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * 部门领域服务：树缓存、层级/path 维护、合并，以及负责人变更时同步 DEPT_MANAGER。
+ * <p>
+ * 读接口走 {@link OrgAccessGuard#requireDeptRead()}；写接口走 {@link OrgAccessGuard#requireDeptWrite()}。
+ * 部门树 Redis Key 见 {@link OrgRedisKeys#DEPT_TREE}，变更后主动失效。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DeptServiceImpl implements DeptService {
 
+    /** 部门树最大层级（系分约束） */
     private static final int MAX_LEVEL = 5;
+    /** 部门树缓存 TTL（秒） */
     private static final long TREE_CACHE_SECONDS = 300L;
 
     private final DepartmentMapper departmentMapper;
@@ -56,6 +64,7 @@ public class DeptServiceImpl implements DeptService {
     @Override
     public List<DeptTreeNodeVO> getTree() {
         OrgAccessGuard.requireDeptRead();
+        // 先读缓存；反序列化失败则回源并覆盖
         String cached = redisTemplate.opsForValue().get(OrgRedisKeys.DEPT_TREE);
         if (StringUtils.hasText(cached)) {
             try {
@@ -150,6 +159,11 @@ public class DeptServiceImpl implements DeptService {
             throw new BusinessException(ErrorCode.DEPT_LEVEL_EXCEEDED);
         }
 
+        int sortOrder = request.getSortOrder() == null
+                ? nextSiblingSortOrder(request.getParentId(), null)
+                : request.getSortOrder();
+        assertSortOrderGtSiblingMax(request.getParentId(), sortOrder, null);
+
         Department dept = new Department();
         dept.setName(request.getName().trim());
         dept.setCode(code);
@@ -157,7 +171,7 @@ public class DeptServiceImpl implements DeptService {
         dept.setLevel(level);
         dept.setPath("/"); // 占位，插入后回写
         dept.setHeadEmployeeId(request.getHeadEmployeeId());
-        dept.setSortOrder(request.getSortOrder() == null ? 0 : request.getSortOrder());
+        dept.setSortOrder(sortOrder);
         dept.setDescription(request.getDescription());
         departmentMapper.insert(dept);
 
@@ -188,15 +202,21 @@ public class DeptServiceImpl implements DeptService {
         Long newHeadId = request.getHeadEmployeeId();
         Long newParentId = request.getParentId();
         boolean parentChanged = !Objects.equals(dept.getParentId(), newParentId);
+        Integer newSortOrder = request.getSortOrder() == null ? 0 : request.getSortOrder();
+        boolean sortChanged = !Objects.equals(dept.getSortOrder(), newSortOrder);
 
         if (parentChanged) {
             moveDepartment(dept, newParentId);
+        }
+        // 改挂上级或改序号：须严格大于新同级其他部门的最大序号（保证同级不重复）
+        if (parentChanged || sortChanged) {
+            assertSortOrderGtSiblingMax(dept.getParentId(), newSortOrder, id);
         }
 
         dept.setName(request.getName().trim());
         dept.setCode(code);
         dept.setHeadEmployeeId(newHeadId);
-        dept.setSortOrder(request.getSortOrder() == null ? 0 : request.getSortOrder());
+        dept.setSortOrder(newSortOrder);
         dept.setDescription(request.getDescription());
         departmentMapper.updateById(dept);
 
@@ -448,6 +468,45 @@ public class DeptServiceImpl implements DeptService {
                 : departmentMapper.countByCodeExclude(code, excludeId);
         if (cnt > 0) {
             throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, "部门编码已存在");
+        }
+    }
+
+    /** 同级最大序号；无同级返回 -1，便于 next = max + 1 从 0 起。 */
+    private int maxSiblingSortOrder(Long parentId, Long excludeId) {
+        LambdaQueryWrapper<Department> qw = new LambdaQueryWrapper<>();
+        if (parentId == null) {
+            qw.isNull(Department::getParentId);
+        } else {
+            qw.eq(Department::getParentId, parentId);
+        }
+        if (excludeId != null) {
+            qw.ne(Department::getId, excludeId);
+        }
+        qw.select(Department::getSortOrder);
+        return departmentMapper.selectList(qw).stream()
+                .map(Department::getSortOrder)
+                .filter(Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(-1);
+    }
+
+    private int nextSiblingSortOrder(Long parentId, Long excludeId) {
+        return maxSiblingSortOrder(parentId, excludeId) + 1;
+    }
+
+    /**
+     * 同级排序：手选/变更后的序号必须严格大于同级已有最大序号，从而自然保证不重复。
+     */
+    private void assertSortOrderGtSiblingMax(Long parentId, int sortOrder, Long excludeId) {
+        if (sortOrder < 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "排序序号不能为负数");
+        }
+        int max = maxSiblingSortOrder(parentId, excludeId);
+        if (sortOrder <= max) {
+            throw new BusinessException(
+                    ErrorCode.PARAM_INVALID,
+                    "排序序号须大于同级已有最大序号 " + max + "（建议使用 " + (max + 1) + "）");
         }
     }
 

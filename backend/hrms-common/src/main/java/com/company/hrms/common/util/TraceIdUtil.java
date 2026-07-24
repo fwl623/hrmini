@@ -5,7 +5,8 @@ import org.slf4j.MDC;
 import java.util.UUID;
 
 /**
- * TraceId 生成与 MDC 注入。
+ * TraceId 生成与 SLF4J MDC 注入；与 {@link com.company.hrms.common.filter.TraceIdFilter}、
+ * {@link com.company.hrms.common.web.Result} 中的 traceId 字段配合。
  */
 public final class TraceIdUtil {
 

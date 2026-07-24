@@ -13,6 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 指定部门负责人 ↔ 自动授予/回收 DEPT_MANAGER。
+ * <p>
+ * 规则：新负责人无该角色则自动授予并写入来源标记表；
+ * 卸任时仅当「不再担任任何部门负责人」且角色来源为自动授予才回收；
+ * 手工在用户管理里勾选的 DEPT_MANAGER 不会被误删。
  */
 @Slf4j
 @Service

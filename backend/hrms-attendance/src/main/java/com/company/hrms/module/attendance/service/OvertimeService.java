@@ -75,10 +75,17 @@ public class OvertimeService {
      * @return 分页结果
      */
     public PageResult<OvertimeApplicationVO> pageApplications(PageParam pageParam, Long employeeId) {
+        return pageApplications(pageParam, employeeId, null);
+    }
+
+    public PageResult<OvertimeApplicationVO> pageApplications(PageParam pageParam, Long employeeId, String status) {
         LambdaQueryWrapper<OvertimeApplication> wrapper = new LambdaQueryWrapper<OvertimeApplication>()
                 .orderByDesc(OvertimeApplication::getCreatedAt);
         if (employeeId != null) {
             wrapper.eq(OvertimeApplication::getEmployeeId, employeeId);
+        }
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(OvertimeApplication::getStatus, status);
         }
 
         IPage<OvertimeApplication> page = overtimeApplicationMapper.selectPage(

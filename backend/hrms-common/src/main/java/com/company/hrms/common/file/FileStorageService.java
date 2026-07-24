@@ -22,7 +22,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 本地磁盘文件存储（请假证明材料等）。
+ * 本地磁盘文件存储（请假证明、附件等）：校验扩展名与大小、UUID 落盘、按名加载 Resource。
  */
 @Service
 @RequiredArgsConstructor

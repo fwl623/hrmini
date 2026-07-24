@@ -7,6 +7,8 @@
 | [HRMS-Frontend-System-Design.md](../HRMS-Frontend-System-Design.md) | 前端系分 **v1.8** |
 | [HRMini-Development-Plan.md](../HRMini-Development-Plan.md) | 开发计划 |
 | [前端系分模版.md](../前端系分模版.md) | 公司模板参考 |
+| [ai-knowledge/](./ai-knowledge/) | 助理小R 知识库制度稿（上传至管理端知识库） |
+| [答辩讲解稿-样板.md](./答辩讲解稿-样板.md) | 答辩口播样板 |
 
 ## 待补充（Sprint 0）
 

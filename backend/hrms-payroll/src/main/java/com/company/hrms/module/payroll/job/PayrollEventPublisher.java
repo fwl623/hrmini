@@ -10,7 +10,9 @@ import java.util.Map;
 
 /**
  * 核算事件发布者。
- * 本地排除 AMQP / 无 RabbitTemplate 时降级打日志；核算主路径见 BatchController 同步 calculate。
+ * <p>
+ * RabbitTemplate 不可用或发送失败时返回 false，由调用方改为同步核算，
+ * 避免批次永久卡在 {@code CALCULATING}。
  */
 @Slf4j
 @Component
@@ -20,19 +22,24 @@ public class PayrollEventPublisher {
     private final ObjectProvider<RabbitTemplate> rabbitTemplateProvider;
 
     /**
-     * 发送异步核算消息
+     * 发送异步核算消息。
      *
-     * @param batchId 批次 ID
-     * @param period  核算账期，格式 YYYY-MM
+     * @return true=已投递 MQ；false=应改走同步核算
      */
-    public void sendCalculate(Long batchId, String period) {
+    public boolean sendCalculate(Long batchId, String period) {
         RabbitTemplate rabbitTemplate = rabbitTemplateProvider.getIfAvailable();
         if (rabbitTemplate == null) {
-            log.warn("[MQ] RabbitTemplate 不可用，核算消息降级日志 batchId={} period={}", batchId, period);
-            return;
+            log.warn("[MQ] RabbitTemplate 不可用，将同步核算 batchId={} period={}", batchId, period);
+            return false;
         }
-        rabbitTemplate.convertAndSend("hrms.payroll", "payroll.calculate",
-                Map.of("batchId", batchId, "period", period));
-        log.info("已发送核算消息: batchId={}, period={}", batchId, period);
+        try {
+            rabbitTemplate.convertAndSend("hrms.payroll", "payroll.calculate",
+                    Map.of("batchId", batchId, "period", period));
+            log.info("已发送核算消息: batchId={}, period={}", batchId, period);
+            return true;
+        } catch (Exception e) {
+            log.warn("[MQ] 发送核算消息失败，将同步核算 batchId={}: {}", batchId, e.getMessage());
+            return false;
+        }
     }
 }

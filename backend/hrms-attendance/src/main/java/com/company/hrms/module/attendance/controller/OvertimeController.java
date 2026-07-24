@@ -33,12 +33,13 @@ public class OvertimeController {
 
     /**
      * 加班列表
-     * GET /api/v1/overtime/applications?page=1&employeeId=
+     * GET /api/v1/overtime/applications?page=1&employeeId=&status=
      * 管理端传 employeeId=0 查全部；不传则查本人（门户）
      */
     @GetMapping("/applications")
     public Result<PageResult<OvertimeApplicationVO>> list(PageParam pageParam,
-                                                          @RequestParam(required = false) Long employeeId) {
+                                                          @RequestParam(required = false) Long employeeId,
+                                                          @RequestParam(required = false) String status) {
         // employeeId=0 查全部（管理端）；不传则查本人（门户）
         if (employeeId == null) {
             employeeId = SecurityUtils.getCurrentUser().getEmployeeId();
@@ -50,7 +51,7 @@ public class OvertimeController {
             AttendanceAccessGuard.requireHrStaff();
         }
         Long filterEmployeeId = employeeId == 0L ? null : employeeId;
-        return Result.success(overtimeService.pageApplications(pageParam, filterEmployeeId));
+        return Result.success(overtimeService.pageApplications(pageParam, filterEmployeeId, status));
     }
 
     /**

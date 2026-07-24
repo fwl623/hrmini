@@ -9,6 +9,9 @@ import org.springframework.web.client.RestClient;
 import java.net.http.HttpClient;
 import java.time.Duration;
 
+/**
+ * AI 模块 Spring 配置：启用 {@link AiProperties}，并提供带长读超时的 RestClient.Builder（给百炼/Qdrant 用）。
+ */
 @Configuration
 @EnableConfigurationProperties(AiProperties.class)
 public class AiAutoConfiguration {

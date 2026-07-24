@@ -1,41 +1,29 @@
 import {
   BookOutlined,
-  RobotOutlined,
+  ClearOutlined,
   SendOutlined,
-  ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
-import {
-  Avatar,
-  Badge,
-  Button,
-  Empty,
-  Input,
-  Space,
-  Spin,
-  Tag,
-  Typography,
-} from 'antd';
+import { Avatar, Button, Empty, Input, Popconfirm, Space, Spin, Typography } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   fetchAiCapabilities,
   streamAiChat,
   type AiAction,
-  type AiCitation,
   type AiQuickPrompt,
 } from '@/services/ai';
+import { useAiChatStore } from '@/stores/aiChatStore';
+import AiApprovalTodoCard from './AiApprovalTodoCard';
+import AiDataStatsCard from './AiDataStatsCard';
+import AiEmployeeListCard from './AiEmployeeListCard';
+import AiLeaveFormCard from './AiLeaveFormCard';
+import AiOvertimeFormCard from './AiOvertimeFormCard';
+import AiOwlAvatar from './AiOwlAvatar';
 import './ai.less';
 
 const { TextArea } = Input;
 const { Text, Paragraph, Title } = Typography;
-
-type ChatMsg = {
-  role: 'user' | 'assistant';
-  content: string;
-  citations?: AiCitation[];
-  actions?: AiAction[];
-};
 
 type Props = {
   /** 进入页面时恢复悬浮球显示 */
@@ -45,14 +33,28 @@ type Props = {
 
 const FLOAT_HIDDEN_KEY = 'hrms.ai.float.hidden';
 
+function actionKey(a: AiAction, idx: number) {
+  return `${a.type || 'NAVIGATE'}-${a.intent || ''}-${a.formId || a.route || ''}-${idx}`;
+}
+
+/** 管理端个人中心与门户路由对齐 */
+function resolveBizRoute(route?: string) {
+  if (!route) return route;
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+    if (route === '/portal/leave') return '/admin/personal/leave';
+    if (route === '/portal/overtime') return '/admin/personal/overtime';
+    if (route === '/portal/attendance') return '/admin/personal/attendance';
+    if (route === '/portal/payslips') return '/admin/personal/payslips';
+    if (route === '/portal/resignation') return '/admin/personal/resignation';
+    if (route === '/admin/approval') return '/admin/approval';
+  }
+  return route;
+}
+
 const AiChatPanel: React.FC<Props> = ({ restoreFloatBall = false, dense = false }) => {
-  const [messages, setMessages] = useState<ChatMsg[]>([
-    {
-      role: 'assistant',
-      content:
-        '你好，我是助理小R。可以问制度政策，或说「我要请假」「打开花名册」让我帮你指路。',
-    },
-  ]);
+  const messages = useAiChatStore((s) => s.messages);
+  const setMessages = useAiChatStore((s) => s.setMessages);
+  const clearMessages = useAiChatStore((s) => s.clearMessages);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [quickPrompts, setQuickPrompts] = useState<AiQuickPrompt[]>([]);
@@ -62,8 +64,15 @@ const AiChatPanel: React.FC<Props> = ({ restoreFloatBall = false, dense = false 
   useEffect(() => {
     if (restoreFloatBall) {
       localStorage.removeItem(FLOAT_HIDDEN_KEY);
-      window.dispatchEvent(new Event('hrms-ai-float-restore'));
+      const t = window.setTimeout(() => {
+        window.dispatchEvent(new Event('hrms-ai-float-restore'));
+      }, 50);
+      return () => window.clearTimeout(t);
     }
+    return undefined;
+  }, [restoreFloatBall]);
+
+  useEffect(() => {
     fetchAiCapabilities()
       .then((res) => {
         if (res?.code === 0 && res.data) {
@@ -71,11 +80,15 @@ const AiChatPanel: React.FC<Props> = ({ restoreFloatBall = false, dense = false 
         }
       })
       .catch(() => undefined);
-  }, [restoreFloatBall]);
+  }, []);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, loading]);
+
+  const appendAssistantTip = (tip: string) => {
+    setMessages((prev) => [...prev, { role: 'assistant', content: tip }]);
+  };
 
   const send = async (text: string) => {
     const content = text.trim();
@@ -167,46 +180,160 @@ const AiChatPanel: React.FC<Props> = ({ restoreFloatBall = false, dense = false 
     }
   };
 
+  const renderActions = (actions: AiAction[] | undefined) => {
+    if (!actions?.length) return null;
+    const leaveForms = actions.filter((a) => a.type === 'FORM_SUBMIT' && a.formId === 'leave_apply');
+    const overtimeForms = actions.filter(
+      (a) => a.type === 'FORM_SUBMIT' && a.formId === 'overtime_apply',
+    );
+    const todoLists = actions.filter(
+      (a) => a.type === 'TASK_LIST' && a.formId === 'approval_todo_list',
+    );
+    const employeeLists = actions.filter(
+      (a) => a.type === 'INFO_LIST' && a.formId === 'employee_roster',
+    );
+    const dataCards = actions.filter((a) => a.type === 'DATA_CARD');
+    const navs = actions.filter(
+      (a) =>
+        a.type !== 'FORM_SUBMIT' &&
+        a.type !== 'TASK_LIST' &&
+        a.type !== 'INFO_LIST' &&
+        a.type !== 'DATA_CARD',
+    );
+    const go = (route?: string) => {
+      const r = resolveBizRoute(route);
+      if (r) history.push(r);
+    };
+    return (
+      <div className="ai-bubble-actions">
+        {todoLists.map((a, i) => (
+          <AiApprovalTodoCard
+            key={actionKey(a, i)}
+            action={a}
+            disabled={loading}
+            onSuccess={appendAssistantTip}
+            onNavigate={go}
+          />
+        ))}
+        {employeeLists.map((a, i) => (
+          <AiEmployeeListCard key={actionKey(a, i + 5)} action={a} onNavigate={go} />
+        ))}
+        {dataCards.map((a, i) => (
+          <AiDataStatsCard key={actionKey(a, i + 8)} action={a} onNavigate={go} />
+        ))}
+        {leaveForms.map((a, i) => (
+          <AiLeaveFormCard
+            key={actionKey(a, i + 10)}
+            action={a}
+            disabled={loading}
+            onSuccess={appendAssistantTip}
+            onNavigate={go}
+          />
+        ))}
+        {overtimeForms.map((a, i) => (
+          <AiOvertimeFormCard
+            key={actionKey(a, i + 20)}
+            action={a}
+            disabled={loading}
+            onSuccess={appendAssistantTip}
+            onNavigate={go}
+          />
+        ))}
+        {!!navs.length && (
+          <Space wrap>
+            {navs.map((a, i) => (
+              <Button
+                key={actionKey(a, i + 50)}
+                size="small"
+                type="primary"
+                ghost
+                disabled={!a.route}
+                onClick={() => go(a.route)}
+              >
+                {a.label}
+              </Button>
+            ))}
+          </Space>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className={`ai-chat-shell${dense ? ' is-dense' : ''}`}>
       {!dense && (
-        <div className="ai-chat-header">
-          <Badge dot color="#52c41a" offset={[-2, 42]}>
-            <Avatar
-              size={44}
-              style={{ background: 'linear-gradient(135deg,#1677ff,#69b1ff)' }}
-              icon={<RobotOutlined />}
-            />
-          </Badge>
-          <div className="ai-chat-header-meta">
-            <Title level={4} style={{ margin: 0, color: '#fff' }}>
-              助理小R
-            </Title>
-            <Text style={{ color: 'rgba(255,255,255,0.85)' }}>有问题随时问我</Text>
+        <header className="ai-chat-header">
+          <div className="ai-chat-header-left">
+            <span className="ai-chat-header-avatar">
+              <AiOwlAvatar size={42} />
+              <span className="ai-online-dot" aria-hidden />
+            </span>
+            <div className="ai-chat-header-meta">
+              <Title level={5} className="ai-chat-header-title">
+                助理小R
+              </Title>
+              <Text className="ai-chat-header-sub">制度问答 · 业务指路 · 聊天办事</Text>
+            </div>
           </div>
-          <Tag icon={<ThunderboltOutlined />} style={{ border: 'none' }}>
-            在线
-          </Tag>
+          <Space size={8}>
+            <Popconfirm
+              title="清空当前会话？"
+              description="清空后不可恢复"
+              okText="清空"
+              cancelText="取消"
+              onConfirm={() => {
+                abortRef.current?.abort();
+                clearMessages();
+                setLoading(false);
+              }}
+            >
+              <Button size="small" icon={<ClearOutlined />} disabled={loading}>
+                清空
+              </Button>
+            </Popconfirm>
+            <span className="ai-online-pill">
+              <i />
+              在线
+            </span>
+          </Space>
+        </header>
+      )}
+
+      {dense && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '4px 8px 0' }}>
+          <Popconfirm
+            title="清空当前会话？"
+            okText="清空"
+            cancelText="取消"
+            onConfirm={() => {
+              abortRef.current?.abort();
+              clearMessages();
+              setLoading(false);
+            }}
+          >
+            <Button size="small" type="text" icon={<ClearOutlined />} disabled={loading}>
+              清空
+            </Button>
+          </Popconfirm>
         </div>
       )}
 
       <div ref={listRef} className="ai-chat-list">
+        <div className="ai-chat-list-glow" aria-hidden />
         {messages.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="开始提问吧" />
         ) : (
           messages.map((m, idx) => (
             <div key={idx} className={`ai-msg-row${m.role === 'user' ? ' is-user' : ''}`}>
-              <Avatar
-                size={36}
-                style={
-                  m.role === 'user'
-                    ? { background: '#91caff', color: '#0958d9' }
-                    : { background: 'linear-gradient(135deg,#1677ff,#69b1ff)' }
-                }
-                icon={m.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
-              />
+              {m.role === 'user' ? (
+                <Avatar size={34} className="ai-msg-user-avatar" icon={<UserOutlined />} />
+              ) : (
+                <span className="ai-msg-owl-avatar">
+                  <AiOwlAvatar size={34} />
+                </span>
+              )}
               <div className={`ai-bubble${m.role === 'user' ? ' is-user' : ' is-assistant'}`}>
-                <Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'inherit' }}>
+                <Paragraph className="ai-bubble-text">
                   {m.content || (loading && idx === messages.length - 1 ? '正在思考…' : '')}
                 </Paragraph>
                 {!!m.citations?.length && (
@@ -215,50 +342,41 @@ const AiChatPanel: React.FC<Props> = ({ restoreFloatBall = false, dense = false 
                     来源：{m.citations.map((c) => c.title).join('、')}
                   </div>
                 )}
-                {!!m.actions?.length && (
-                  <Space wrap style={{ marginTop: 10 }}>
-                    {m.actions.map((a) => (
-                      <Button
-                        key={a.route}
-                        size="small"
-                        type="primary"
-                        ghost={m.role !== 'user'}
-                        onClick={() => history.push(a.route)}
-                      >
-                        {a.label}
-                      </Button>
-                    ))}
-                  </Space>
-                )}
+                {m.role === 'assistant' ? renderActions(m.actions) : null}
               </div>
             </div>
           ))
         )}
         {loading && (
-          <div style={{ textAlign: 'center', paddingBottom: 8 }}>
-            <Spin size="small" tip="生成中" />
+          <div className="ai-loading-hint">
+            <Spin size="small" />
+            <span>生成中</span>
           </div>
         )}
       </div>
 
-      {!!quickPrompts.length && (
-        <div className="ai-quick">
-          <Space wrap size={[8, 8]}>
-            {quickPrompts.slice(0, 8).map((q) => (
-              <Button key={q.intent} size="small" onClick={() => send(q.prompt)}>
+      <footer className="ai-composer-wrap">
+        {!!quickPrompts.length && (
+          <div className="ai-quick">
+            {quickPrompts.slice(0, 6).map((q) => (
+              <button
+                key={q.intent}
+                type="button"
+                className="ai-quick-chip"
+                disabled={loading}
+                onClick={() => send(q.prompt)}
+              >
                 {q.prompt}
-              </Button>
+              </button>
             ))}
-          </Space>
-        </div>
-      )}
+          </div>
+        )}
 
-      <div className="ai-composer">
-        <Space.Compact style={{ width: '100%' }}>
+        <div className="ai-composer">
           <TextArea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="试着问：请假怎么申请？公司薪资全量在哪看？"
+            placeholder="问制度、找入口，或说「我要请假」…"
             autoSize={{ minRows: 1, maxRows: 4 }}
             onPressEnter={(e) => {
               if (!e.shiftKey) {
@@ -267,17 +385,23 @@ const AiChatPanel: React.FC<Props> = ({ restoreFloatBall = false, dense = false 
               }
             }}
             disabled={loading}
+            bordered={false}
           />
           <Button
             type="primary"
+            className="ai-send-btn"
             icon={<SendOutlined />}
             onClick={() => void send(input)}
             loading={loading}
+            disabled={!input.trim() && !loading}
           >
             发送
           </Button>
-        </Space.Compact>
-      </div>
+        </div>
+        <Text type="secondary" className="ai-composer-hint">
+          Enter 发送 · Shift+Enter 换行 · 可直接说「我要请假」在聊天里办理
+        </Text>
+      </footer>
     </div>
   );
 };

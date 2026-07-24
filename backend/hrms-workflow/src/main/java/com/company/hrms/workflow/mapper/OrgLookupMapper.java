@@ -48,10 +48,13 @@ public interface OrgLookupMapper {
     List<Long> selectDepartmentIdsByHeadUserId(@Param("userId") Long userId);
 
     @Select("""
-            SELECT old_mobile AS oldMobile, new_mobile AS newMobile, reason, status,
-                   employee_id AS employeeId
-            FROM employee_mobile_change_application
-            WHERE id = #{id}
+            SELECT m.old_mobile AS oldMobile, m.new_mobile AS newMobile, m.reason, m.status,
+                   m.employee_id AS employeeId,
+                   e.name AS employeeName,
+                   e.employee_no AS empNo
+            FROM employee_mobile_change_application m
+            LEFT JOIN employee e ON e.id = m.employee_id
+            WHERE m.id = #{id}
             LIMIT 1
             """)
     java.util.Map<String, Object> selectMobileChangeBrief(@Param("id") Long id);

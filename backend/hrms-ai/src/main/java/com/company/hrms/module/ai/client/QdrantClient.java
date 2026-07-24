@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Qdrant HTTP API（6333）。
+ * Qdrant 向量库客户端：建集合、写入/删除分块向量、按相似度检索知识片段（默认端口 6333）。
  */
 @Slf4j
 @Component

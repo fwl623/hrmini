@@ -141,6 +141,11 @@ export default defineConfig({
           component: './admin/ai/knowledge',
           access: 'canManageAiKnowledge',
         },
+        {
+          path: 'ai/settings',
+          component: './admin/ai/settings',
+          access: 'canManageAiKnowledge',
+        },
       ],
     },
     {

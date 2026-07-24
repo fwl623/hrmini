@@ -1,13 +1,18 @@
 /**
- * 工作台：4 KPI（可跳转）+ 可自定义快捷入口 + 访问趋势 + 最近操作
- * 接口失败友好降级，不白屏
+ * 工作台：KPI + 可自定义快捷入口 + 访问趋势 + 最近操作
  */
 import {
   AuditOutlined,
+  BankOutlined,
+  BarChartOutlined,
+  CalendarOutlined,
+  ClockCircleOutlined,
   ClusterOutlined,
+  FileTextOutlined,
   PlusOutlined,
   SettingOutlined,
   TeamOutlined,
+  UserAddOutlined,
   UserOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
@@ -20,17 +25,16 @@ import {
   Checkbox,
   Col,
   Empty,
-  List,
   Modal,
+  Progress,
   Row,
-  Space,
-  Statistic,
   Typography,
   message,
 } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
 import { getWorkbenchSummary, type WorkbenchSummary } from '@/services/workbench';
 import { getRequestErrorMessage } from '@/utils/requestError';
+import './workbench.less';
 
 const EMPTY_SUMMARY: WorkbenchSummary = {
   totalEmployees: 0,
@@ -45,7 +49,7 @@ const EMPTY_SUMMARY: WorkbenchSummary = {
 type ShortcutDef = {
   title: string;
   path: string;
-  /** access 字段名；不填则始终可选 */
+  icon?: React.ReactNode;
   accessKey?:
     | 'canViewEmployee'
     | 'canViewAnalytics'
@@ -60,26 +64,26 @@ type ShortcutDef = {
 };
 
 const SHORTCUT_CATALOG: ShortcutDef[] = [
-  { title: '数据分析', path: '/admin/analytics', accessKey: 'canViewAnalytics' },
-  { title: '花名册', path: '/admin/employee/list', accessKey: 'canViewEmployee' },
-  { title: '手机号变更', path: '/admin/employee/mobile-change', accessKey: 'canViewEmployee' },
-  { title: '部门管理', path: '/admin/org/departments', accessKey: 'canViewDept' },
-  { title: '职位管理', path: '/admin/org/positions', accessKey: 'canViewPosition' },
-  { title: '入职管理', path: '/admin/onboarding', accessKey: 'canManageWorkflow' },
-  { title: '转正管理', path: '/admin/regularization', accessKey: 'canManageWorkflow' },
-  { title: '调岗管理', path: '/admin/transfers', accessKey: 'canManageWorkflow' },
-  { title: '离职管理', path: '/admin/resignation', accessKey: 'canManageResignation' },
-  { title: '审批中心', path: '/admin/approval', accessKey: 'canApprove' },
-  { title: '审批委托', path: '/admin/delegation', accessKey: 'canApprove' },
-  { title: '考勤组', path: '/admin/attendance/groups', accessKey: 'canManageAttendance' },
-  { title: '打卡中心', path: '/admin/attendance/punch', accessKey: 'canManageAttendance' },
-  { title: '考勤统计', path: '/admin/attendance/statistics', accessKey: 'canManageAttendance' },
-  { title: '月考勤汇总', path: '/admin/attendance/summary', accessKey: 'canManageAttendance' },
-  { title: '请假列表', path: '/admin/leave/list', accessKey: 'canManageAttendance' },
-  { title: '加班列表', path: '/admin/overtime/list', accessKey: 'canManageAttendance' },
-  { title: '账套管理', path: '/admin/payroll/schemes', accessKey: 'canViewPayroll' },
-  { title: '核算批次', path: '/admin/payroll/batches', accessKey: 'canViewPayroll' },
-  { title: '用户管理', path: '/admin/system/users', accessKey: 'canManageSystem' },
+  { title: '数据分析', path: '/admin/analytics', accessKey: 'canViewAnalytics', icon: <BarChartOutlined /> },
+  { title: '花名册', path: '/admin/employee/list', accessKey: 'canViewEmployee', icon: <TeamOutlined /> },
+  { title: '手机号变更', path: '/admin/employee/mobile-change', accessKey: 'canViewEmployee', icon: <UserOutlined /> },
+  { title: '部门管理', path: '/admin/org/departments', accessKey: 'canViewDept', icon: <ClusterOutlined /> },
+  { title: '职位管理', path: '/admin/org/positions', accessKey: 'canViewPosition', icon: <BankOutlined /> },
+  { title: '入职管理', path: '/admin/onboarding', accessKey: 'canManageWorkflow', icon: <UserAddOutlined /> },
+  { title: '转正管理', path: '/admin/regularization', accessKey: 'canManageWorkflow', icon: <AuditOutlined /> },
+  { title: '调岗管理', path: '/admin/transfers', accessKey: 'canManageWorkflow', icon: <FileTextOutlined /> },
+  { title: '离职管理', path: '/admin/resignation', accessKey: 'canManageResignation', icon: <FileTextOutlined /> },
+  { title: '审批中心', path: '/admin/approval', accessKey: 'canApprove', icon: <AuditOutlined /> },
+  { title: '审批委托', path: '/admin/delegation', accessKey: 'canApprove', icon: <SettingOutlined /> },
+  { title: '考勤组', path: '/admin/attendance/groups', accessKey: 'canManageAttendance', icon: <ClusterOutlined /> },
+  { title: '打卡中心', path: '/admin/attendance/punch', accessKey: 'canManageAttendance', icon: <ClockCircleOutlined /> },
+  { title: '考勤统计', path: '/admin/attendance/statistics', accessKey: 'canManageAttendance', icon: <BarChartOutlined /> },
+  { title: '月考勤汇总', path: '/admin/attendance/summary', accessKey: 'canManageAttendance', icon: <CalendarOutlined /> },
+  { title: '请假列表', path: '/admin/leave/list', accessKey: 'canManageAttendance', icon: <CalendarOutlined /> },
+  { title: '加班列表', path: '/admin/overtime/list', accessKey: 'canManageAttendance', icon: <ClockCircleOutlined /> },
+  { title: '账套管理', path: '/admin/payroll/schemes', accessKey: 'canViewPayroll', icon: <BankOutlined /> },
+  { title: '核算批次', path: '/admin/payroll/batches', accessKey: 'canViewPayroll', icon: <FileTextOutlined /> },
+  { title: '用户管理', path: '/admin/system/users', accessKey: 'canManageSystem', icon: <UserOutlined /> },
 ];
 
 const DEFAULT_SHORTCUT_PATHS = [
@@ -192,20 +196,28 @@ const WorkbenchPage: React.FC = () => {
     count: p.count,
   }));
 
+  const maxHeadcount = Math.max(1, ...(summary.departmentStats || []).map((d) => d.headcount || 0));
+  const punchPct =
+    summary.todayPunchRate != null
+      ? Math.min(100, Math.max(0, Math.round(summary.todayPunchRate * 10000) / 100))
+      : null;
+
   const kpiCards = [
     {
       title: '在职总人数',
       value: summary.totalEmployees,
       icon: <TeamOutlined />,
-      color: '#1677ff',
+      color: '#165dff',
+      bg: 'rgba(22, 93, 255, 0.1)',
       path: access.canViewEmployee ? '/admin/employee/list' : undefined,
       hint: '查看花名册',
     },
     {
       title: '本月入职',
       value: summary.newHiresThisMonth,
-      icon: <UserOutlined />,
-      color: '#52c41a',
+      icon: <UserAddOutlined />,
+      color: '#00b42a',
+      bg: 'rgba(0, 180, 42, 0.1)',
       path: access.canManageWorkflow || access.canHr ? '/admin/onboarding' : undefined,
       hint: '进入入职管理',
     },
@@ -213,7 +225,8 @@ const WorkbenchPage: React.FC = () => {
       title: '待审批',
       value: summary.pendingApprovals,
       icon: <AuditOutlined />,
-      color: '#1677ff',
+      color: '#0fc6c2',
+      bg: 'rgba(15, 198, 194, 0.12)',
       path: access.canApprove ? '/admin/approval' : undefined,
       hint: '进入审批中心',
     },
@@ -221,18 +234,22 @@ const WorkbenchPage: React.FC = () => {
       title: '考勤异常',
       value: summary.attendanceAnomalies,
       icon: <WarningOutlined />,
-      color: '#ff4d4f',
+      color: '#f53f3f',
+      bg: 'rgba(245, 63, 63, 0.1)',
       path: access.canManageAttendance ? '/admin/attendance/statistics' : undefined,
       hint: '查看考勤统计',
     },
   ];
 
   return (
-    <>
-      <div className="hrms-page-header">
-        <h2>工作台</h2>
-        <p>欢迎回来，以下是系统概览</p>
-      </div>
+    <div className="wb-page">
+      <section className="wb-hero">
+        <div>
+          <h1>工作台</h1>
+          <p>今日概览与常用入口，点击指标可直达对应功能</p>
+        </div>
+      </section>
+
       {degraded && (
         <Alert
           type="warning"
@@ -242,52 +259,52 @@ const WorkbenchPage: React.FC = () => {
         />
       )}
 
-      <Row gutter={[16, 16]}>
+      <div className="wb-kpi-grid">
         {kpiCards.map((card) => (
-          <Col key={card.title} xs={24} sm={12} lg={6}>
-            <Card
-              loading={loading}
-              size="small"
-              hoverable={!!card.path}
-              className="hrms-stat-card"
-              onClick={() => {
-                if (card.path) history.push(card.path);
-              }}
-              style={card.path ? { cursor: 'pointer' } : undefined}
-            >
-              <Statistic
-                title={
-                  <Space>
-                    <span style={{ color: card.color }}>{card.icon}</span>
-                    {card.title}
-                  </Space>
-                }
-                value={card.value}
-              />
-              {card.path ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  点击{card.hint}
-                </Typography.Text>
-              ) : null}
-            </Card>
-          </Col>
+          <div
+            key={card.title}
+            className={`wb-kpi${card.path ? ' is-clickable' : ''}`}
+            onClick={() => {
+              if (card.path) history.push(card.path);
+            }}
+            role={card.path ? 'button' : undefined}
+          >
+            <div className="wb-kpi__accent" style={{ background: card.color }} />
+            <div className="wb-kpi__top">
+              <span className="wb-kpi__label">{card.title}</span>
+              <span className="wb-kpi__icon" style={{ color: card.color, background: card.bg }}>
+                {card.icon}
+              </span>
+            </div>
+            <div className="wb-kpi__value">{loading ? '—' : card.value}</div>
+            {card.path ? <div className="wb-kpi__hint">点击{card.hint}</div> : null}
+          </div>
         ))}
-      </Row>
+      </div>
 
-      {summary.todayPunchRate != null && (
-        <Card size="small" style={{ marginTop: 16 }} loading={loading}>
-          <Statistic
-            title="今日打卡率"
-            value={Math.round(summary.todayPunchRate * 10000) / 100}
-            suffix="%"
-            prefix={<ClusterOutlined />}
-          />
-        </Card>
+      {punchPct != null && (
+        <div className="wb-punch">
+          <div className="wb-punch__meta">
+            <span className="wb-punch__label">今日打卡率</span>
+            <span className="wb-punch__value">{loading ? '—' : `${punchPct}%`}</span>
+          </div>
+          <div className="wb-punch__bar">
+            <Progress
+              percent={loading ? 0 : punchPct}
+              strokeColor={{ from: '#4080ff', to: '#165dff' }}
+              trailColor="#e8f0ff"
+              showInfo={false}
+              size={['100%', 10]}
+            />
+          </div>
+        </div>
       )}
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} lg={10}>
           <Card
+            className="wb-section"
+            bordered={false}
             title="快捷入口"
             loading={loading}
             extra={
@@ -297,37 +314,27 @@ const WorkbenchPage: React.FC = () => {
             }
           >
             {quickLinks.length ? (
-              <Space wrap>
+              <div className="wb-shortcut-grid">
                 {quickLinks.map((link) => (
-                  <Card
+                  <button
                     key={link.path}
-                    size="small"
-                    hoverable
-                    style={{ width: 148, textAlign: 'center' }}
+                    type="button"
+                    className="wb-shortcut"
                     onClick={() => history.push(link.path)}
                   >
-                    {link.title}
-                  </Card>
+                    <span className="wb-shortcut__icon">{link.icon || <FileTextOutlined />}</span>
+                    <span className="wb-shortcut__title">{link.title}</span>
+                  </button>
                 ))}
-                <Card
-                  size="small"
-                  hoverable
-                  style={{
-                    width: 148,
-                    textAlign: 'center',
-                    borderStyle: 'dashed',
-                    color: '#1677ff',
-                  }}
-                  onClick={openEdit}
-                >
-                  <PlusOutlined /> 添加
-                </Card>
-              </Space>
+                <button type="button" className="wb-shortcut wb-shortcut--add" onClick={openEdit}>
+                  <span className="wb-shortcut__icon">
+                    <PlusOutlined />
+                  </span>
+                  <span className="wb-shortcut__title">添加</span>
+                </button>
+              </div>
             ) : (
-              <Empty
-                description="暂无快捷入口"
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              >
+              <Empty description="暂无快捷入口" image={Empty.PRESENTED_IMAGE_SIMPLE}>
                 <Button type="primary" icon={<PlusOutlined />} onClick={openEdit}>
                   添加快捷入口
                 </Button>
@@ -336,62 +343,74 @@ const WorkbenchPage: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} lg={14}>
-          <Card title="近 7 日访问趋势（登录成功）" loading={loading}>
+          <Card className="wb-section" bordered={false} title="近 7 日访问趋势" loading={loading}>
             {trendData.some((d) => d.count > 0) ? (
               <Line
                 data={trendData}
                 xField="date"
                 yField="count"
-                height={220}
+                height={240}
                 point={{ size: 3 }}
                 smooth
+                color="#165dff"
               />
             ) : (
-              <Empty description="暂无访问数据" />
+              <Empty description="暂无访问数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
           </Card>
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row gutter={[16, 16]} style={{ marginTop: 0 }}>
         <Col xs={24} lg={12}>
-          <Card title="部门人数 Top" loading={loading}>
+          <Card className="wb-section" bordered={false} title="部门人数 Top" loading={loading}>
             {(summary.departmentStats || []).length ? (
-              <List
-                size="small"
-                dataSource={summary.departmentStats}
-                renderItem={(item) => (
-                  <List.Item>
-                    <List.Item.Meta title={item.deptName} />
-                    <div>{item.headcount} 人</div>
-                  </List.Item>
-                )}
-              />
+              <div>
+                {summary.departmentStats!.map((item, idx) => (
+                  <div key={`${item.deptName}-${idx}`} className="wb-dept-item">
+                    <span className={`wb-dept-rank${idx < 3 ? ' is-top' : ''}`}>{idx + 1}</span>
+                    <div className="wb-dept-body">
+                      <div className="wb-dept-name">
+                        <span>{item.deptName}</span>
+                        <span>{item.headcount} 人</span>
+                      </div>
+                      <Progress
+                        percent={Math.round(((item.headcount || 0) / maxHeadcount) * 100)}
+                        showInfo={false}
+                        size={['100%', 6]}
+                        strokeColor="#165dff"
+                        trailColor="#eef2f8"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <Empty description="暂无部门统计" />
+              <Empty description="暂无部门统计" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="最近操作" loading={loading}>
+          <Card className="wb-section" bordered={false} title="最近操作" loading={loading}>
             {(summary.recentOperations || []).length ? (
-              <List
-                size="small"
-                dataSource={summary.recentOperations}
-                renderItem={(item) => (
-                  <List.Item>
-                    <List.Item.Meta
-                      title={`${item.module} / ${item.action}`}
-                      description={`用户 ${item.userId}${item.targetId ? ` · 目标 ${item.targetId}` : ''}`}
-                    />
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {item.createdAt || ''}
-                    </Typography.Text>
-                  </List.Item>
-                )}
-              />
+              <div>
+                {summary.recentOperations!.map((item) => (
+                  <div key={item.id} className="wb-op-item">
+                    <div>
+                      <div className="wb-op-title">
+                        {item.module} / {item.action}
+                      </div>
+                      <div className="wb-op-desc">
+                        用户 {item.userId}
+                        {item.targetId ? ` · 目标 ${item.targetId}` : ''}
+                      </div>
+                    </div>
+                    <div className="wb-op-time">{item.createdAt || ''}</div>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <Empty description="暂无操作记录" />
+              <Empty description="暂无操作记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
           </Card>
         </Col>
@@ -425,7 +444,7 @@ const WorkbenchPage: React.FC = () => {
         </Checkbox.Group>
         {!allowedCatalog.length ? <Empty description="当前角色暂无可选入口" /> : null}
       </Modal>
-    </>
+    </div>
   );
 };
 

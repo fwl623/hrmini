@@ -5,6 +5,12 @@ import { ADMIN_ROLES, canAccessAdmin, isEmployeeOnly, type RoleCode } from '@/co
 import { getHomePath, normalizeRoles } from '@/utils/authSession';
 import { getAccessToken } from '@/utils/token';
 
+/**
+ * 路由鉴权包装：无 Token 跳登录；按角色/权限码区分 /admin 与 /portal。
+ * - 纯 EMPLOYEE：禁止进管理端
+ * - 管理端角色误入门户：拉回工作台
+ * - 菜单细粒度仍由 access.ts + AdminLayout 控制
+ */
 const AuthWrapper: React.FC = () => {
   const location = useLocation();
   const token = getAccessToken();

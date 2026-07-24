@@ -2,6 +2,7 @@ package com.company.hrms.module.ai.client;
 
 import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.module.ai.config.AiProperties;
+import com.company.hrms.module.ai.config.AiRuntimeSettings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -21,7 +22,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * 阿里云百炼 OpenAI 兼容：Chat Completions（流式）+ Embeddings。
+ * 阿里云百炼 HTTP 客户端：OpenAI 兼容接口，提供流式对话（Chat Completions）与文本向量（Embeddings）。
  */
 @Slf4j
 @Component
@@ -29,6 +30,7 @@ import java.util.function.Consumer;
 public class BailianClient {
 
     private final AiProperties properties;
+    private final AiRuntimeSettings runtimeSettings;
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
 
@@ -94,9 +96,10 @@ public class BailianClient {
         requireApiKey();
         try {
             ObjectNode body = objectMapper.createObjectNode();
-            body.put("model", properties.getChat().getModel());
+            body.put("model", runtimeSettings.getChatModel());
             body.put("stream", true);
-            body.put("enable_thinking", properties.getChat().isEnableThinking());
+            body.put("temperature", runtimeSettings.getTemperature());
+            body.put("enable_thinking", runtimeSettings.isEnableThinking());
             ArrayNode messages = body.putArray("messages");
             messages.addObject().put("role", "system").put("content", systemPrompt);
             messages.addObject().put("role", "user").put("content", userPrompt);

@@ -37,7 +37,7 @@ const PunchAdminPage: React.FC = () => {
 
   // ── 昨日概览 ──
   const [yesterdayStatus, setYesterdayStatus] = useState({
-    clockedCount: 0, totalCount: 0, lateCount: 0, earlyLeaveCount: 0, absentCount: 0,
+    clockedCount: 0, totalCount: 0, lateCount: 0, earlyLeaveCount: 0, absentCount: 0, leaveCount: 0,
   });
 
   // ── 补卡配额 ──
@@ -224,7 +224,13 @@ const PunchAdminPage: React.FC = () => {
             <Statistic title="缺勤" value={yesterdayStatus.absentCount} suffix="人"
               valueStyle={{ color: yesterdayStatus.absentCount > 0 ? '#ff4d4f' : undefined }} prefix={<CloseCircleOutlined />} />
           </Col>
+          <Col xs={12} sm={8} md={4}>
+            <Statistic title="请假" value={yesterdayStatus.leaveCount ?? 0} suffix="人" />
+          </Col>
         </Row>
+        <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12, fontSize: 12 }}>
+          应打卡 = 在职且非全天请假；迟到/早退是已打卡细分；请假不计入应打卡。关系：应打卡 ≈ 已打卡 + 缺勤。
+        </Typography.Text>
       </Card>
 
       {/* ═══════════════ 今日打卡记录 ═══════════════ */}

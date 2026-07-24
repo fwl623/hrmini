@@ -27,6 +27,12 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 系统管理 API：用户 CRUD、角色与权限分配、登录/操作日志。
+ * <p>
+ * 具体鉴权在 Service 内用 {@code PermissionGuard}（system:user:* / system:role:* / menu:system）。
+ * 路径前缀 {@code /api/v1/system}。
+ */
 @RestController
 @RequestMapping("/system")
 public class SystemController {

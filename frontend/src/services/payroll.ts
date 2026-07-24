@@ -248,16 +248,29 @@ export async function distributeBatch(id: number) {
 /**
  * 查询工资条列表（管理端）
  *
- * HR/财务端查看所有员工的工资条列表，支持按账期和部门筛选。
+ * HR/财务端查看所有员工的工资条列表，支持按账期、部门、应发/实发区间筛选。
  *
  * @param params - 查询参数
  * @param params.period - 账期筛选（可选），格式 YYYY-MM
- * @param params.departmentId - 部门筛选（可选）
+ * @param params.departmentId - 部门筛选（可选，含下属部门）
+ * @param params.minGross - 应发下限（可选）
+ * @param params.maxGross - 应发上限（可选）
+ * @param params.minNet - 实发下限（可选）
+ * @param params.maxNet - 实发上限（可选）
  * @param params.page - 当前页码，默认 1
  * @param params.pageSize - 每页条数，默认 20
  * @returns 返回分页后的工资条列表
  */
-export async function getPayslips(params: { period?: string; departmentId?: number; page?: number; pageSize?: number }) {
+export async function getPayslips(params: {
+  period?: string;
+  departmentId?: number;
+  minGross?: number;
+  maxGross?: number;
+  minNet?: number;
+  maxNet?: number;
+  page?: number;
+  pageSize?: number;
+}) {
   return request<API.Result<API.Page<API.PayslipVO>>>(`${API_PREFIX}/payslips`, {
     method: 'GET',
     params,

@@ -14,7 +14,8 @@ import org.springframework.context.event.ContextRefreshedEvent;
 import java.util.Map;
 
 /**
- * MyBatis-Plus 配置
+ * MyBatis-Plus 插件：分页、乐观锁；并在容器就绪后显式注册 {@link DataScopeInterceptor}，
+ * 避免行级数据权限插件漏挂导致越权。
  */
 @Configuration
 public class MyBatisPlusConfig implements ApplicationListener<ContextRefreshedEvent> {

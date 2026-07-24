@@ -320,6 +320,7 @@ export async function getLeaveBalances(employeeId?: number) {
  */
 export async function getLeaveApplications(params: {
   page?: number;
+  pageSize?: number;
   leaveType?: string;
   status?: string;
   employeeId?: number;
@@ -399,7 +400,9 @@ export async function calcLeaveDays(params: { startTime: string; endTime: string
  */
 export async function getOvertimeApplications(params: {
   page?: number;
+  pageSize?: number;
   employeeId?: number;
+  status?: string;
   keyword?: string;
   dateFrom?: string;
   dateTo?: string;

@@ -46,10 +46,15 @@ const MobileChangePage: React.FC = () => {
 
   useEffect(loadData, []);
 
+  const displayEmployee = (r: MobileChangeApp) =>
+    r.employeeName || r.empNo
+      ? `${r.employeeName || '-'}${r.empNo ? `（${r.empNo}）` : ''}`
+      : `员工#${r.employeeId}`;
+
   const handleApprove = (record: MobileChangeApp) => {
     Modal.confirm({
       title: '确认通过？',
-      content: `${record.employeeName}（${record.empNo}）申请将手机号变更为 ${record.newMobile}`,
+      content: `${displayEmployee(record)}申请将手机号变更为 ${record.newMobile}`,
       onOk: async () => {
         const res = await request(`/api/v1/employees/mobile-change-applications/${record.id}/approve`, { method: 'POST' });
         if (res.code === 0) {
@@ -65,7 +70,7 @@ const MobileChangePage: React.FC = () => {
   const handleReject = (record: MobileChangeApp) => {
     Modal.confirm({
       title: '确认驳回？',
-      content: `${record.employeeName}（${record.empNo}）的变更申请将被驳回`,
+      content: `${displayEmployee(record)}的变更申请将被驳回`,
       onOk: async () => {
         const res = await request(`/api/v1/employees/mobile-change-applications/${record.id}/reject`, { method: 'POST' });
         if (res.code === 0) {
@@ -79,8 +84,18 @@ const MobileChangePage: React.FC = () => {
   };
 
   const columns = [
-    { title: '员工', dataIndex: 'employeeName', width: 100 },
-    { title: '工号', dataIndex: 'empNo', width: 120 },
+    {
+      title: '员工',
+      dataIndex: 'employeeName',
+      width: 100,
+      render: (_: string, r: MobileChangeApp) => r.employeeName || '-',
+    },
+    {
+      title: '工号',
+      dataIndex: 'empNo',
+      width: 120,
+      render: (_: string, r: MobileChangeApp) => r.empNo || '-',
+    },
     { title: '原手机号', dataIndex: 'oldMobile', width: 130 },
     { title: '新手机号', dataIndex: 'newMobile', width: 130 },
     { title: '变更原因', dataIndex: 'reason', width: 200, ellipsis: true },

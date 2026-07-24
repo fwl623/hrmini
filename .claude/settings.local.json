@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(git add *)",
-      "PowerShell(git checkout *)",
-      "Bash(git status *)"
-    ]
-  }
-}

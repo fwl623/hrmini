@@ -11,10 +11,66 @@ export interface AiQuickPrompt {
   prompt: string;
 }
 
-export interface AiAction {
+export interface AiFormFieldOption {
+  value: string;
   label: string;
-  route: string;
+}
+
+export interface AiFormField {
+  name: string;
+  label: string;
+  fieldType: 'select' | 'datetime' | 'number' | 'textarea' | 'text' | 'date' | string;
+  required?: boolean;
+  options?: AiFormFieldOption[];
+}
+
+export interface AiApprovalTaskItem {
+  taskId: number;
+  instanceId?: number;
+  processType?: string;
+  title?: string;
+  applicantName?: string;
+  currentNodeLabel?: string;
+  createTime?: string;
+  businessSummary?: string;
+}
+
+export interface AiEmployeeItem {
+  employeeId?: number;
+  empNo?: string;
+  name?: string;
+  department?: string;
+  position?: string;
+  grade?: string;
+  employmentStatus?: string;
+}
+
+export interface AiStatItem {
+  label: string;
+  value: number | string;
+}
+
+export interface AiActionMeta {
+  title?: string;
+  total?: number;
+  deptName?: string;
+  hint?: string;
+}
+
+export interface AiAction {
+  type?: 'NAVIGATE' | 'FORM_SUBMIT' | 'TASK_LIST' | 'INFO_LIST' | 'DATA_CARD' | string;
+  label: string;
+  route?: string;
   intent?: string;
+  formId?: string;
+  formSchema?: AiFormField[];
+  prefill?: Record<string, unknown>;
+  submitApi?: { method: string; path: string };
+  tasks?: AiApprovalTaskItem[];
+  items?: AiEmployeeItem[];
+  stats?: AiStatItem[];
+  meta?: AiActionMeta;
+  hint?: string;
 }
 
 export interface AiCitation {
@@ -67,6 +123,38 @@ export async function setKnowledgeEnabled(id: number, enabled: boolean) {
 export async function deleteKnowledgeDoc(id: number) {
   return request<API.Result<{ deleted: boolean }>>(`${API_BASE}/ai/knowledge/docs/${id}`, {
     method: 'DELETE',
+  });
+}
+
+export interface AiSettings {
+  chunkSize: number;
+  chunkOverlap: number;
+  topK: number;
+  temperature: number;
+  chatModel: string;
+  enableThinking: boolean;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  apiKeyConfigured: boolean;
+}
+
+export type AiSettingsUpdate = Partial<{
+  chunkSize: number;
+  chunkOverlap: number;
+  topK: number;
+  temperature: number;
+  chatModel: string;
+  enableThinking: boolean;
+}>;
+
+export async function getAiSettings() {
+  return request<API.Result<AiSettings>>(`${API_BASE}/ai/settings`, { method: 'GET' });
+}
+
+export async function updateAiSettings(data: AiSettingsUpdate) {
+  return request<API.Result<AiSettings>>(`${API_BASE}/ai/settings`, {
+    method: 'PUT',
+    data,
   });
 }
 

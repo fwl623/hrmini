@@ -124,6 +124,15 @@ const BatchPage: React.FC = () => {
               计算
             </Button>
           )}
+          {r.status === 'CALCULATING' && (
+            <Button
+              size="small"
+              icon={<PlayCircleOutlined />}
+              onClick={() => handleCalculate(r.id)}
+            >
+              重试计算
+            </Button>
+          )}
           {r.status === 'PENDING_CONFIRM' && (
             <Button
               size="small"
@@ -172,13 +181,37 @@ const BatchPage: React.FC = () => {
   const handleCalculate = async (id: number) => {
     try {
       const res = await startCalculate(id);
-      // 全局 errorHandler 已处理业务错误提示（如考勤未锁定弹窗），此处只处理成功
+      // 兜底：若 umi 未将业务错误抛进 catch（补丁未生效时），本地仍要提示
+      if (res && typeof res.code === 'number' && res.code !== 0) {
+        const msg = res.message || '请求失败';
+        if (
+          res.code === 50004 ||
+          msg.includes('考勤数据未锁定') ||
+          msg.includes('考勤月结')
+        ) {
+          Modal.warning({
+            title: '核算提示',
+            content: '当前月考勤数据未锁定，请先完成考勤月结',
+            okText: '知道了',
+          });
+        } else {
+          message.error(msg);
+        }
+        return;
+      }
       if (res && res.code === 0) {
-        message.success('计算任务已提交');
+        const mode = (res.data as { mode?: string; message?: string } | undefined)?.mode;
+        const tip =
+          mode === 'async'
+            ? '计算任务已提交，请稍后刷新'
+            : mode === 'sync-fallback'
+              ? '异步不可用或已卡住，已降级同步完成'
+              : '计算完成';
+        message.success(tip);
         actionRef.current?.reload();
       }
     } catch {
-      // 错误已由全局 errorHandler 处理，此处无需重复提示
+      // 错误已由全局 errorHandler 处理（含考勤未锁定弹窗）
     }
   };
   const handleSubmit = async (id: number) => {

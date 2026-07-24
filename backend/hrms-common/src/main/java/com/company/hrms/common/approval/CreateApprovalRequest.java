@@ -6,6 +6,9 @@ import lombok.Data;
 
 import java.util.Map;
 
+/**
+ * 跨模块创建审批实例的入参（processType + businessId + 申请人 + 路由变量 formData）。
+ */
 @Data
 public class CreateApprovalRequest {
 

@@ -13,7 +13,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * 从请求头读取或生成 traceId，写入 MDC 与响应头。
+ * 从请求头 {@code X-Trace-Id} 读取或生成 traceId，写入 MDC 与响应头，便于全链路日志关联。
+ * 顺序最高，早于 JWT 等业务 Filter。
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)

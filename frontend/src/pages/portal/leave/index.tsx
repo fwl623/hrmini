@@ -9,7 +9,6 @@ import {
   Card,
   Col,
   DatePicker,
-  Drawer,
   Form,
   Input,
   Modal,
@@ -18,15 +17,14 @@ import {
   Select,
   Space,
   Statistic,
-  Steps,
   Table,
   Tag,
-  Timeline,
   Typography,
   Upload,
   message,
 } from 'antd';
-import { UploadOutlined } from '@ant-design/icons';
+import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
 import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
 import dayjs from 'dayjs';
 
@@ -40,37 +38,49 @@ import {
 import { uploadFile } from '@/services/file';
 import { fetchInstanceDetail, type ApprovalTimelineItem } from '@/services/workflow';
 import { LEAVE_TYPE_OPTIONS, leaveTypeLabel } from '@/constants/leave';
+import ApprovalProgressDrawer, {
+  type ApprovalProgressNode,
+} from '@/components/ApprovalProgressDrawer';
+import '../attendance-self.less';
 
-const statusLabelMap: Record<string, string> = {
-  PENDING: '待审批',
-  APPROVED: '已通过',
-  REJECTED: '已驳回',
-  CANCELLED: '已撤销',
-};
-const statusColorMap: Record<string, string> = {
-  PENDING: 'orange',
-  APPROVED: 'green',
-  REJECTED: 'red',
-  CANCELLED: 'default',
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  PENDING: { label: '待审批', color: 'orange' },
+  APPROVED: { label: '已通过', color: 'success' },
+  REJECTED: { label: '已驳回', color: 'error' },
+  CANCELLED: { label: '已撤销', color: 'default' },
 };
 
-const nodeStateToStep: Record<string, 'wait' | 'process' | 'finish' | 'error'> = {
-  pending: 'wait',
-  current: 'process',
-  done: 'finish',
-  cancelled: 'error',
+const TYPE_COLOR: Record<string, string> = {
+  ANNUAL: 'blue',
+  SICK: 'magenta',
+  PERSONAL: 'gold',
+  MARRIAGE: 'purple',
+  MATERNITY: 'pink',
+  BEREAVEMENT: 'default',
+  COMP_OFF: 'cyan',
+  COMPENSATORY: 'cyan',
 };
 
-/** 需附件的请假类型 */
-const ATTACHMENT_REQUIRED_TYPES = ['sick', 'marriage', 'maternity'];
-
+const ATTACHMENT_REQUIRED_TYPES = ['SICK', 'MARRIAGE', 'MATERNITY'];
 const ACCEPT_TYPES =
   'image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,image/jpeg,image/png,image/gif,image/webp,image/bmp';
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+function statusMeta(code?: string) {
+  const key = String(code || '').trim().toUpperCase();
+  return STATUS_META[key] || { label: code || '-', color: 'default' };
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return '-';
+  const d = dayjs(value);
+  return d.isValid() ? d.format('YYYY-MM-DD HH:mm') : value;
+}
+
 const LeavePage: React.FC = () => {
   const [balances, setBalances] = useState<{ leaveType: string; balance: number }[]>([]);
   const [records, setRecords] = useState<API.LeaveApplicationVO[]>([]);
+  const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
@@ -81,7 +91,7 @@ const LeavePage: React.FC = () => {
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressLoading, setProgressLoading] = useState(false);
   const [progressTitle, setProgressTitle] = useState('');
-  const [progressNodes, setProgressNodes] = useState<{ order: number; label: string; state: string }[]>([]);
+  const [progressNodes, setProgressNodes] = useState<ApprovalProgressNode[]>([]);
   const [progressTimeline, setProgressTimeline] = useState<ApprovalTimelineItem[]>([]);
   const [progressStatus, setProgressStatus] = useState('');
   const [progressCurrent, setProgressCurrent] = useState('');
@@ -94,12 +104,15 @@ const LeavePage: React.FC = () => {
   };
 
   const loadData = useCallback(async () => {
+    setLoading(true);
     try {
       const [balRes, recRes] = await Promise.all([getLeaveBalances(), getLeaveApplications({})]);
       if (balRes.data) setBalances(balRes.data);
       if (recRes.data?.list) setRecords(recRes.data.list);
     } catch {
       /* ignore */
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -121,7 +134,7 @@ const LeavePage: React.FC = () => {
           const days = res.data?.days ?? 1;
           const needsAtt =
             ATTACHMENT_REQUIRED_TYPES.includes(leaveType) &&
-            (leaveType === 'sick' ? days > 1 : true);
+            (leaveType === 'SICK' ? days > 1 : true);
           setNeedAttachment(needsAtt);
         }
       } catch {
@@ -133,7 +146,7 @@ const LeavePage: React.FC = () => {
   const handleTypeChange = (value: string) => {
     const days = previewDays || form.getFieldValue('days') || 1;
     const needsAtt =
-      ATTACHMENT_REQUIRED_TYPES.includes(value) && (value === 'sick' ? days > 1 : true);
+      ATTACHMENT_REQUIRED_TYPES.includes(value) && (value === 'SICK' ? days > 1 : true);
     setNeedAttachment(needsAtt);
   };
 
@@ -189,10 +202,9 @@ const LeavePage: React.FC = () => {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      // 病假>1天 或 婚假/产假 需上传附件
       const needsAtt =
         ATTACHMENT_REQUIRED_TYPES.includes(values.leaveType) &&
-        (values.leaveType === 'sick' ? (previewDays || values.days || 1) > 1 : true);
+        (values.leaveType === 'SICK' ? (previewDays || values.days || 1) > 1 : true);
       if (needsAtt && !values.attachment) {
         message.warning('该请假类型需要上传证明材料');
         return;
@@ -211,7 +223,7 @@ const LeavePage: React.FC = () => {
       resetModal();
       await loadData();
     } catch (err: any) {
-      if (err?.message) message.error(err.message);
+      if (err?.errorFields) return;
     } finally {
       setSubmitting(false);
     }
@@ -242,9 +254,10 @@ const LeavePage: React.FC = () => {
     setProgressLoading(true);
     setProgressTitle(`${leaveTypeLabel(record.leaveType)} · ${record.leaveDays} 天`);
     setProgressStatus(record.status);
+    setProgressCurrent('');
     try {
       const detail = await fetchInstanceDetail(record.instanceId);
-      setProgressNodes(detail?.nodes ?? []);
+      setProgressNodes((detail?.nodes ?? []) as ApprovalProgressNode[]);
       setProgressTimeline(detail?.timeline ?? []);
       setProgressCurrent(detail?.currentNodeLabel || '');
       if (detail?.status) setProgressStatus(detail.status);
@@ -257,31 +270,76 @@ const LeavePage: React.FC = () => {
     }
   };
 
-  const columns = [
+  const columns: ColumnsType<API.LeaveApplicationVO> = [
     {
       title: '类型',
       dataIndex: 'leaveType',
-      render: (_: unknown, r: API.LeaveApplicationVO) => leaveTypeLabel(r.leaveType),
+      width: 100,
+      render: (_, r) => {
+        const code = String(r.leaveType || '').toUpperCase();
+        return (
+          <Tag className="portal-att-type" color={TYPE_COLOR[code] || 'processing'}>
+            {leaveTypeLabel(r.leaveType)}
+          </Tag>
+        );
+      },
     },
-    { title: '开始', dataIndex: 'startTime', width: 160 },
-    { title: '结束', dataIndex: 'endTime', width: 160 },
-    { title: '天数', dataIndex: 'leaveDays', width: 70 },
-    { title: '原因', dataIndex: 'reason', ellipsis: true },
+    {
+      title: '请假时段',
+      dataIndex: 'startTime',
+      width: 180,
+      render: (_, r) => (
+        <div className="portal-att-range">
+          <span className="portal-att-range__date">{formatDateTime(r.startTime)}</span>
+          <span className="portal-att-range__time">至 {formatDateTime(r.endTime)}</span>
+        </div>
+      ),
+    },
+    {
+      title: '天数',
+      dataIndex: 'leaveDays',
+      width: 80,
+      align: 'right',
+      render: (v) => (
+        <span className="portal-att-days">
+          {v ?? '-'}
+          <span className="portal-att-days__unit">天</span>
+        </span>
+      ),
+    },
+    {
+      title: '原因',
+      dataIndex: 'reason',
+      ellipsis: { showTitle: true },
+      render: (v: string) => (
+        <Typography.Text type={v ? undefined : 'secondary'} ellipsis={{ tooltip: v }}>
+          {v || '未填写'}
+        </Typography.Text>
+      ),
+    },
     {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      render: (v: string) => <Tag color={statusColorMap[v]}>{statusLabelMap[v] || v}</Tag>,
+      render: (v: string) => {
+        const meta = statusMeta(v);
+        return (
+          <Tag className="portal-att-status" color={meta.color}>
+            {meta.label}
+          </Tag>
+        );
+      },
     },
     {
       title: '操作',
-      width: 180,
-      render: (_: unknown, record: API.LeaveApplicationVO) => (
-        <Space>
+      width: 160,
+      fixed: 'right',
+      render: (_, record) => (
+        <Space size={4}>
           <Button type="link" size="small" onClick={() => handleViewProgress(record)}>
-            审批进度
+            进度
           </Button>
-          {record.status === 'PENDING' ? (
+          {String(record.status).toUpperCase() === 'PENDING' ? (
             <Popconfirm title="确认撤销该请假申请？" onConfirm={() => handleCancel(record.id)}>
               <Button type="link" size="small" danger>
                 撤销
@@ -293,45 +351,50 @@ const LeavePage: React.FC = () => {
     },
   ];
 
-  const currentStepIndex = Math.max(
-    0,
-    progressNodes.findIndex((n) => n.state === 'current'),
-  );
-
   return (
-    <Row gutter={[24, 24]}>
-      <Col xs={24} lg={6}>
-        <Card title="假期余额">
-          {balances.map((b) => (
-            <Statistic
-              key={b.leaveType}
-              title={leaveTypeLabel(b.leaveType)}
-              value={b.balance}
-              suffix="天"
-              style={{ marginBottom: 16 }}
+    <div className="portal-att-page">
+      <header className="portal-att-hero">
+        <div>
+          <h1>我的请假</h1>
+          <p>查看假期余额与请假记录，提交申请并跟踪审批进度。</p>
+        </div>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+          申请请假
+        </Button>
+      </header>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={6}>
+          <Card className="portal-att-side" title="假期余额">
+            <div className="portal-att-balance">
+              {balances.map((b) => (
+                <div key={b.leaveType} className="portal-att-balance__item">
+                  <Statistic title={leaveTypeLabel(b.leaveType)} value={b.balance} suffix="天" />
+                </div>
+              ))}
+              {balances.length === 0 ? (
+                <Typography.Text type="secondary">暂无余额</Typography.Text>
+              ) : null}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} lg={18}>
+          <Card className="portal-att-main" title="请假记录">
+            <Table
+              rowKey="id"
+              columns={columns}
+              dataSource={records}
+              loading={loading}
+              pagination={{
+                pageSize: 10,
+                showTotal: (t) => `共 ${t} 条`,
+                style: { padding: '16px 20px' },
+              }}
+              scroll={{ x: 860 }}
             />
-          ))}
-          {balances.length === 0 && <Typography.Text type="secondary">暂无余额</Typography.Text>}
-        </Card>
-      </Col>
-      <Col xs={24} lg={18}>
-        <Card
-          title="请假记录"
-          extra={
-            <Button type="primary" onClick={() => setModalOpen(true)}>
-              申请请假
-            </Button>
-          }
-        >
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={records}
-            pagination={{ pageSize: 10 }}
-            size="small"
-          />
-        </Card>
-      </Col>
+          </Card>
+        </Col>
+      </Row>
 
       <Modal
         title="申请请假"
@@ -352,21 +415,36 @@ const LeavePage: React.FC = () => {
           </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
             <Form.Item name="startTime" label="开始时间" rules={[{ required: true, message: '请选择开始时间' }]}>
-              <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange}
-                disabledDate={(d) => d && d.isBefore(dayjs(), 'day')} />
+              <DatePicker
+                showTime
+                format="YYYY-MM-DD HH:mm"
+                onChange={handleDateChange}
+                disabledDate={(d) => d && d.isBefore(dayjs(), 'day')}
+              />
             </Form.Item>
             <Form.Item name="endTime" label="结束时间" rules={[{ required: true, message: '请选择结束时间' }]}>
-              <DatePicker showTime format="YYYY-MM-DD HH:mm" onChange={handleDateChange}
-                disabledDate={(d) => d && d.isBefore(dayjs(), 'day')} />
+              <DatePicker
+                showTime
+                format="YYYY-MM-DD HH:mm"
+                onChange={handleDateChange}
+                disabledDate={(d) => d && d.isBefore(dayjs(), 'day')}
+              />
             </Form.Item>
           </Space>
-          {previewDays !== null && (
+          {previewDays !== null ? (
             <Typography.Text type="success">预览天数：{previewDays} 天</Typography.Text>
-          )}
-          <Form.Item name="reason" label="请假原因" rules={[{ required: true, message: '请填写请假事由' }, { max: 512, message: '事由不超过512字符' }]}>
+          ) : null}
+          <Form.Item
+            name="reason"
+            label="请假原因"
+            rules={[
+              { required: true, message: '请填写请假事由' },
+              { max: 512, message: '事由不超过512字符' },
+            ]}
+          >
             <Input.TextArea rows={3} maxLength={512} showCount />
           </Form.Item>
-          {needAttachment && (
+          {needAttachment ? (
             <Alert
               type="warning"
               showIcon
@@ -374,7 +452,7 @@ const LeavePage: React.FC = () => {
               description="病假超过1天需上传医院证明，婚假需结婚证，产假需医院证明"
               style={{ marginBottom: 16 }}
             />
-          )}
+          ) : null}
           <Form.Item
             name="attachment"
             rules={needAttachment ? [{ required: true, message: '请上传证明材料' }] : []}
@@ -402,77 +480,17 @@ const LeavePage: React.FC = () => {
         </Form>
       </Modal>
 
-      <Drawer
-        title="审批进度"
+      <ApprovalProgressDrawer
         open={progressOpen}
+        loading={progressLoading}
+        title={progressTitle}
+        status={progressStatus}
+        currentNodeLabel={progressCurrent}
+        nodes={progressNodes}
+        timeline={progressTimeline}
         onClose={() => setProgressOpen(false)}
-        width={420}
-        destroyOnClose
-      >
-        {progressLoading ? (
-          <Typography.Text type="secondary">加载中…</Typography.Text>
-        ) : (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <div>
-              <Typography.Text strong>{progressTitle}</Typography.Text>
-              <div style={{ marginTop: 8 }}>
-                <Tag color={statusColorMap[progressStatus] || 'default'}>
-                  {statusLabelMap[progressStatus] || progressStatus}
-                </Tag>
-                {progressCurrent ? (
-                  <Typography.Text type="secondary">当前：{progressCurrent}</Typography.Text>
-                ) : null}
-              </div>
-            </div>
-
-            {progressNodes.length > 0 ? (
-              <Steps
-                direction="vertical"
-                size="small"
-                current={currentStepIndex >= 0 ? currentStepIndex : progressNodes.length}
-                items={progressNodes.map((n) => ({
-                  title: n.label,
-                  status: nodeStateToStep[n.state] || 'wait',
-                }))}
-              />
-            ) : (
-              <Typography.Text type="secondary">暂无审批节点信息</Typography.Text>
-            )}
-
-            <Card size="small" title="审批动态" type="inner">
-              {progressTimeline.length > 0 ? (
-                <Timeline
-                  items={progressTimeline.map((t, i) => ({
-                    key: i,
-                    children: (
-                      <>
-                        <Typography.Text>
-                          {t.displayText || `${t.assignee || '-'} · ${t.action || t.node || '-'}`}
-                        </Typography.Text>
-                        {t.comment ? (
-                          <div>
-                            <Typography.Text type="secondary">{t.comment}</Typography.Text>
-                          </div>
-                        ) : null}
-                        {t.time ? (
-                          <div>
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {t.time}
-                            </Typography.Text>
-                          </div>
-                        ) : null}
-                      </>
-                    ),
-                  }))}
-                />
-              ) : (
-                <Typography.Text type="secondary">暂无审批记录</Typography.Text>
-              )}
-            </Card>
-          </Space>
-        )}
-      </Drawer>
-    </Row>
+      />
+    </div>
   );
 };
 

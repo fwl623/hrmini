@@ -7,7 +7,8 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 
 /**
- * 自动填充 created_at / updated_at / deleted（与现有表字段一致）。
+ * 自动填充 created_at / updated_at / deleted（与实体字段名 camelCase 对应）。
+ * 配合 {@link com.company.hrms.common.entity.BaseEntity} 或同类字段使用。
  */
 @Component
 public class AuditMetaObjectHandler implements MetaObjectHandler {

@@ -17,6 +17,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * AI 知识库管理接口：制度文档列表、上传入库、启停、删除（需 ai:knowledge:manage）。
+ */
 @RestController
 @RequestMapping("/ai/knowledge")
 @RequiredArgsConstructor

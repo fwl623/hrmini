@@ -49,37 +49,78 @@ public class PayslipController {
 
     /**
      * HR端工资条列表
-     * GET /payroll/payslips?period=
-     * 查 PayrollDetail，按批次+账期过滤，组装 PayslipVO
+     * GET /payroll/payslips?period=&departmentId=&minGross=&maxGross=&minNet=&maxNet=
+     * 查明细并按账期/部门/应发实发区间过滤，分页返回
      */
     @GetMapping("/payroll/payslips")
     public Result<Object> list(PageParam pageParam,
-                               @RequestParam(required = false) String period) {
+                               @RequestParam(required = false) String period,
+                               @RequestParam(required = false) Long departmentId,
+                               @RequestParam(required = false) Double minGross,
+                               @RequestParam(required = false) Double maxGross,
+                               @RequestParam(required = false) Double minNet,
+                               @RequestParam(required = false) Double maxNet) {
         LambdaQueryWrapper<PayrollBatch> wrapper = new LambdaQueryWrapper<PayrollBatch>()
                 .orderByDesc(PayrollBatch::getPeriod);
         if (period != null && !period.isEmpty()) {
             wrapper.eq(PayrollBatch::getPeriod, period);
         }
-        var page = batchMapper.selectPage(
-                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageParam.getPage(), pageParam.getPageSize()),
-                wrapper);
+        List<PayrollBatch> batches = batchMapper.selectList(wrapper);
 
+        Set<Long> deptIdSet = null;
+        if (departmentId != null) {
+            deptIdSet = resolveDeptSubtreeIds(departmentId);
+        }
+
+        Map<Long, Department> deptCache = new HashMap<>();
         List<PayslipVO> voList = new ArrayList<>();
-        for (PayrollBatch batch : page.getRecords()) {
+        for (PayrollBatch batch : batches) {
             List<PayrollDetail> details = detailMapper.selectByBatchId(batch.getId());
             for (PayrollDetail detail : details) {
+                double gross = detail.getGrossSalary() != null ? detail.getGrossSalary().doubleValue() : 0;
+                double net = detail.getNetSalary() != null ? detail.getNetSalary().doubleValue() : 0;
+                if (minGross != null && gross < minGross) {
+                    continue;
+                }
+                if (maxGross != null && gross > maxGross) {
+                    continue;
+                }
+                if (minNet != null && net < minNet) {
+                    continue;
+                }
+                if (maxNet != null && net > maxNet) {
+                    continue;
+                }
+
                 Employee emp = employeeMapper.selectById(detail.getEmployeeId());
+                Long empDeptId = emp != null ? emp.getDepartmentId() : null;
+                if (deptIdSet != null && (empDeptId == null || !deptIdSet.contains(empDeptId))) {
+                    continue;
+                }
+
                 PayslipVO vo = new PayslipVO();
                 vo.setEmployeeId(detail.getEmployeeId());
                 vo.setEmployeeName(emp != null ? emp.getName() : "");
+                vo.setDepartmentId(empDeptId);
+                vo.setDepartmentName(resolveDeptName(empDeptId, deptCache));
                 vo.setPeriod(batch.getPeriod());
-                vo.setGrossSalary(detail.getGrossSalary() != null ? detail.getGrossSalary().doubleValue() : 0);
-                vo.setNetSalary(detail.getNetSalary() != null ? detail.getNetSalary().doubleValue() : 0);
+                vo.setGrossSalary(gross);
+                vo.setNetSalary(net);
                 vo.setStatus(batch.getStatus());
                 voList.add(vo);
             }
         }
-        return Result.success(Map.of("list", voList, "total", (long) voList.size()));
+
+        int page = Math.max(pageParam.getPage(), 1);
+        int pageSize = Math.max(pageParam.getPageSize(), 1);
+        int from = Math.min((page - 1) * pageSize, voList.size());
+        int to = Math.min(from + pageSize, voList.size());
+        List<PayslipVO> pageList = voList.subList(from, to);
+        return Result.success(Map.of(
+                "list", pageList,
+                "total", (long) voList.size(),
+                "page", page,
+                "pageSize", pageSize));
     }
 
     /**
@@ -120,6 +161,13 @@ public class PayslipController {
                 new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageParam.getPage(), pageParam.getPageSize()),
                 batchWrapper);
 
+        Long empDeptId = emp != null ? emp.getDepartmentId() : null;
+        String empDeptName = "";
+        if (empDeptId != null) {
+            Department dept = departmentMapper.selectById(empDeptId);
+            empDeptName = dept != null ? dept.getName() : "";
+        }
+
         List<PayslipVO> voList = new ArrayList<>();
         for (PayrollBatch batch : batchPage.getRecords()) {
             PayrollDetail detail = detailMapper.selectByBatchAndEmployee(batch.getId(), empId);
@@ -127,6 +175,8 @@ public class PayslipController {
                 PayslipVO vo = new PayslipVO();
                 vo.setEmployeeId(empId);
                 vo.setEmployeeName(emp != null ? emp.getName() : "");
+                vo.setDepartmentId(empDeptId);
+                vo.setDepartmentName(empDeptName);
                 vo.setPeriod(batch.getPeriod());
                 vo.setGrossSalary(detail.getGrossSalary() != null ? detail.getGrossSalary().doubleValue() : 0);
                 vo.setNetSalary(detail.getNetSalary() != null ? detail.getNetSalary().doubleValue() : 0);
@@ -240,6 +290,37 @@ public class PayslipController {
     }
 
     // ==================== 私有方法 ====================
+
+    /** 部门及其子部门 ID（按 path 前缀） */
+    private Set<Long> resolveDeptSubtreeIds(Long departmentId) {
+        Department root = departmentMapper.selectById(departmentId);
+        if (root == null) {
+            return Set.of(departmentId);
+        }
+        String pathPrefix = root.getPath() != null && !root.getPath().isEmpty()
+                ? root.getPath()
+                : String.valueOf(root.getId());
+        List<Department> subtree = departmentMapper.selectList(
+                new LambdaQueryWrapper<Department>()
+                        .likeRight(Department::getPath, pathPrefix));
+        if (subtree.isEmpty()) {
+            return Set.of(departmentId);
+        }
+        Set<Long> ids = new HashSet<>();
+        for (Department d : subtree) {
+            ids.add(d.getId());
+        }
+        ids.add(departmentId);
+        return ids;
+    }
+
+    private String resolveDeptName(Long departmentId, Map<Long, Department> cache) {
+        if (departmentId == null) {
+            return "";
+        }
+        Department dept = cache.computeIfAbsent(departmentId, departmentMapper::selectById);
+        return dept != null ? dept.getName() : "";
+    }
 
     /**
      * 构建 PayslipDetailVO（解析 detailJson，查询员工/部门信息）

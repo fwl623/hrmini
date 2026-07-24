@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Card,
   Button,
@@ -14,6 +14,7 @@ import {
   Tag,
   message,
   Alert,
+  Typography,
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined } from '@ant-design/icons';
 import type { ActionType } from '@ant-design/pro-components';
@@ -31,6 +32,26 @@ const SHIFT_TYPE_OPTIONS = [
   { label: '排班制', value: 'SCHEDULE' },
 ];
 
+/** 将树节点及选中项展开为自身+全部子孙 id（选中父部门时覆盖子部门员工） */
+function expandDeptIds(tree: any[], selected: number[]): number[] {
+  if (!selected?.length) return [];
+  const selectedSet = new Set(selected);
+  const result = new Set<number>();
+  const addSubtree = (node: any) => {
+    if (node?.id == null) return;
+    result.add(node.id);
+    (node.children || []).forEach(addSubtree);
+  };
+  const walk = (nodes: any[]) => {
+    for (const n of nodes || []) {
+      if (selectedSet.has(n.id)) addSubtree(n);
+      else if (n.children?.length) walk(n.children);
+    }
+  };
+  walk(tree);
+  return [...result];
+}
+
 const AttendanceGroupPage: React.FC = () => {
   const actionRef = useRef<ActionType>();
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -38,18 +59,64 @@ const AttendanceGroupPage: React.FC = () => {
   const [form] = Form.useForm();
   const [saving, setSaving] = React.useState(false);
   const [deptTree, setDeptTree] = useState<any[]>([]);
-  const [empList, setEmpList] = useState<any[]>([]);
+  const [empOptions, setEmpOptions] = useState<{ label: string; value: number }[]>([]);
+  const [empLoading, setEmpLoading] = useState(false);
   const shiftType = Form.useWatch('shiftType', form);
+  const departmentIds = Form.useWatch('departmentIds', form) as number[] | undefined;
 
   useEffect(() => {
     getDeptTree().then((res: any) => setDeptTree(res.data || [])).catch(() => {});
-    getEmployeeList({ page: 1, pageSize: 200 }).then((res: any) => {
-      setEmpList(res.data?.list || []);
-    }).catch((err) => {
-      console.error('加载员工列表失败', err);
-      message.warning('员工列表加载失败，无法选择适用员工');
-    });
   }, []);
+
+  /** 按已选部门加载可选员工（含子孙部门） */
+  const loadEmployeesByDepts = useCallback(async (deptIds: number[]) => {
+    const expanded = expandDeptIds(deptTree, deptIds || []);
+    if (!expanded.length) {
+      setEmpOptions([]);
+      return [] as number[];
+    }
+    setEmpLoading(true);
+    try {
+      const res = await getEmployeeList({
+        page: 1,
+        pageSize: 500,
+        departmentIds: expanded.join(','),
+        employmentStatus: 'probation,regular,pending_resign',
+      });
+      const list = res.data?.list || [];
+      const options = list.map((e: any) => ({
+        label: `${e.name} (${e.empNo || e.employeeId})`,
+        value: e.employeeId as number,
+      }));
+      setEmpOptions(options);
+      return options.map((o) => o.value);
+    } catch {
+      setEmpOptions([]);
+      message.warning('该部门员工列表加载失败');
+      return [] as number[];
+    } finally {
+      setEmpLoading(false);
+    }
+  }, [deptTree]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const ids = departmentIds || [];
+    if (!ids.length) {
+      setEmpOptions([]);
+      form.setFieldValue('employeeIds', []);
+      return;
+    }
+    void loadEmployeesByDepts(ids).then((allowedIds) => {
+      const allowed = new Set(allowedIds);
+      const current: number[] = form.getFieldValue('employeeIds') || [];
+      if (!current.length) return;
+      const next = current.filter((id) => allowed.has(id));
+      if (next.length !== current.length) {
+        form.setFieldValue('employeeIds', next);
+      }
+    });
+  }, [departmentIds, modalOpen, loadEmployeesByDepts, form]);
 
   // ---------- 表格列定义 ----------
   const columns: any[] = [
@@ -96,7 +163,8 @@ const AttendanceGroupPage: React.FC = () => {
   const handleAdd = () => {
     setEditingGroup(null);
     form.resetFields();
-    form.setFieldsValue({ lateThreshold: 15, earlyLeaveThreshold: 15 });
+    form.setFieldsValue({ lateThreshold: 15, earlyLeaveThreshold: 15, employeeIds: [] });
+    setEmpOptions([]);
     setModalOpen(true);
   };
 
@@ -142,14 +210,21 @@ const AttendanceGroupPage: React.FC = () => {
       const values = await form.validateFields();
       setSaving(true);
 
-      // 组装适用范围
+      const rawDeptIds: number[] = values.departmentIds || [];
+      const expandedDeptIds = expandDeptIds(deptTree, rawDeptIds);
+      const employeeIds: number[] = values.employeeIds || [];
+
+      if (!expandedDeptIds.length && !employeeIds.length) {
+        message.error('请至少选择适用部门');
+        return;
+      }
+
       const applicableScope = {
-        departmentIds: values.departmentIds || [],
+        departmentIds: expandedDeptIds.length ? expandedDeptIds : rawDeptIds,
         positionIds: [],
-        employeeIds: values.employeeIds || [],
+        employeeIds,
       };
 
-      // 构造 API 请求数据（按班次类型组装）
       const payload: any = {
         name: values.name,
         shiftType: values.shiftType,
@@ -159,7 +234,6 @@ const AttendanceGroupPage: React.FC = () => {
       };
 
       if (values.shiftType === 'FLEXIBLE') {
-        // 弹性班次：只需要弹性范围 + 下班时间
         payload.flexibleRange = {
           earliest: values.flexStartEarliest?.format('HH:mm'),
           latest: values.flexStartLatest?.format('HH:mm'),
@@ -168,11 +242,9 @@ const AttendanceGroupPage: React.FC = () => {
         payload.lateThreshold = values.lateThreshold ?? 15;
         payload.earlyLeaveThreshold = values.earlyLeaveThreshold ?? 15;
       } else if (values.shiftType === 'SCHEDULE') {
-        // 排班制当前等同于固定班次处理
         payload.onDuty = values.onDuty?.format('HH:mm');
         payload.offDuty = values.offDuty?.format('HH:mm');
       } else {
-        // FIXED：标准固定班
         payload.onDuty = values.onDuty?.format('HH:mm');
         payload.offDuty = values.offDuty?.format('HH:mm');
         payload.lateThreshold = values.lateThreshold ?? 15;
@@ -196,7 +268,8 @@ const AttendanceGroupPage: React.FC = () => {
     }
   };
 
-  // ---------- 渲染 ----------
+  const hasDept = !!(departmentIds && departmentIds.length);
+
   return (
     <Card
       title="考勤组管理"
@@ -206,6 +279,12 @@ const AttendanceGroupPage: React.FC = () => {
         </Button>
       }
     >
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="适用部门必选；适用员工可选——不选则该部门全部在职员工入组，选了则仅所选员工。"
+      />
       <ProTable<any>
         rowKey="id"
         columns={columns}
@@ -228,75 +307,53 @@ const AttendanceGroupPage: React.FC = () => {
         toolBarRender={false}
       />
 
-      {/* 新增/编辑弹窗 */}
       <Modal
         title={editingGroup ? '编辑考勤组' : '新建考勤组'}
         open={modalOpen}
         onOk={handleSave}
         onCancel={() => setModalOpen(false)}
         confirmLoading={saving}
-        width={720}
+        width={640}
+        destroyOnClose
       >
-        <Form form={form} layout="vertical">
-          <Form.Item name="name" label="考勤组名称" rules={[{ required: true, min: 2, max: 20 }]}>
-            <Input placeholder="2-20 字符" />
+        <Form form={form} layout="vertical" initialValues={{ shiftType: 'FIXED' }}>
+          <Form.Item name="name" label="考勤组名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input maxLength={64} placeholder="如：后端部门考勤" />
           </Form.Item>
           <Form.Item name="shiftType" label="班次类型" rules={[{ required: true }]}>
-            <Select options={SHIFT_TYPE_OPTIONS} placeholder="请选择班次类型" />
+            <Select options={SHIFT_TYPE_OPTIONS} />
           </Form.Item>
 
-          {/* ── 排班制提示 ── */}
-          {shiftType === 'SCHEDULE' && (
-            <Alert
-              type="warning"
-              showIcon
-              message="排班制开发中，暂等同于固定班次处理"
-              style={{ marginBottom: 16 }}
-            />
-          )}
-
-          {/* ── FIXED 固定班次 / SCHEDULE 排班制 ── */}
-          {(shiftType === 'FIXED' || shiftType === 'SCHEDULE') && (
+          {shiftType === 'FLEXIBLE' && (
             <>
               <Space style={{ display: 'flex' }} align="start">
-                <Form.Item name="onDuty" label="上班时间" rules={[{ required: true }]}>
+                <Form.Item name="flexStartEarliest" label="弹性最早" rules={[{ required: true }]}>
+                  <TimePicker format="HH:mm" />
+                </Form.Item>
+                <Form.Item name="flexStartLatest" label="弹性最晚" rules={[{ required: true }]}>
                   <TimePicker format="HH:mm" />
                 </Form.Item>
                 <Form.Item name="offDuty" label="下班时间" rules={[{ required: true }]}>
                   <TimePicker format="HH:mm" />
                 </Form.Item>
-                <Form.Item name="restStart" label="午休开始">
-                  <TimePicker format="HH:mm" />
+              </Space>
+              <Space style={{ display: 'flex' }} align="start">
+                <Form.Item name="lateThreshold" label="迟到阈值(min)" initialValue={15}>
+                  <InputNumber min={0} max={120} />
                 </Form.Item>
-                <Form.Item name="restEnd" label="午休结束">
-                  <TimePicker format="HH:mm" />
+                <Form.Item name="earlyLeaveThreshold" label="早退阈值(min)" initialValue={15}>
+                  <InputNumber min={0} max={120} />
                 </Form.Item>
               </Space>
-              {shiftType === 'FIXED' && (
-                <Space style={{ display: 'flex' }} align="start">
-                  <Form.Item name="lateThreshold" label="迟到阈值(min)" initialValue={15}>
-                    <InputNumber min={0} max={120} />
-                  </Form.Item>
-                  <Form.Item name="earlyLeaveThreshold" label="早退阈值(min)" initialValue={15}>
-                    <InputNumber min={0} max={120} />
-                  </Form.Item>
-                </Space>
-              )}
             </>
           )}
 
-          {/* ── FLEXIBLE 弹性班次 ── */}
-          {shiftType === 'FLEXIBLE' && (
+          {(shiftType === 'FIXED' || shiftType === 'SCHEDULE' || !shiftType) && (
             <>
-              <Space style={{ display: 'flex' }} align="start">
-                <Form.Item name="flexStartEarliest" label="弹性最早打卡" rules={[{ required: true }]}>
+              <Space style={{ display: 'flex' }} align="start" wrap>
+                <Form.Item name="onDuty" label="上班时间" rules={[{ required: true }]}>
                   <TimePicker format="HH:mm" />
                 </Form.Item>
-                <Form.Item name="flexStartLatest" label="弹性最晚打卡" rules={[{ required: true }]}>
-                  <TimePicker format="HH:mm" />
-                </Form.Item>
-              </Space>
-              <Space style={{ display: 'flex' }} align="start">
                 <Form.Item name="offDuty" label="下班时间" rules={[{ required: true }]}>
                   <TimePicker format="HH:mm" />
                 </Form.Item>
@@ -318,31 +375,41 @@ const AttendanceGroupPage: React.FC = () => {
             </>
           )}
 
-          {/* ── 适用范围 ── */}
-          <Form.Item name="departmentIds" label="适用部门">
+          <Form.Item
+            name="departmentIds"
+            label="适用部门"
+            rules={[{ required: true, message: '请选择适用部门' }]}
+          >
             <TreeSelect
               treeData={deptTree}
-              fieldNames={{ label: 'name', value: 'id' }}
+              fieldNames={{ label: 'name', value: 'id', children: 'children' }}
               treeCheckable
-              showCheckedStrategy="SHOW_PARENT"
+              showCheckedStrategy={TreeSelect.SHOW_PARENT}
               placeholder="选择适用部门"
               allowClear
               style={{ width: '100%' }}
             />
           </Form.Item>
-          <Form.Item name="employeeIds" label="适用员工">
+          <Form.Item
+            name="employeeIds"
+            label="适用员工"
+            extra={
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {hasDept
+                  ? '可选。不选 = 所选部门全部在职员工；选了 = 仅名单内员工（只能从该部门选）。'
+                  : '请先选择适用部门'}
+              </Typography.Text>
+            }
+          >
             <Select
               mode="multiple"
-              placeholder="搜索并选择员工"
+              placeholder={hasDept ? '不选则默认该部门全部员工' : '请先选择适用部门'}
               allowClear
               showSearch
-              filterOption={(input, option) =>
-                (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
-              }
-              options={empList.map((e: any) => ({
-                label: `${e.name} (${e.empNo || e.employeeId})`,
-                value: e.employeeId,
-              }))}
+              disabled={!hasDept}
+              loading={empLoading}
+              optionFilterProp="label"
+              options={empOptions}
             />
           </Form.Item>
         </Form>

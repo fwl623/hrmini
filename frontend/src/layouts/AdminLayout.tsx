@@ -103,6 +103,7 @@ const AdminLayout: React.FC = () => {
         children: [
           { key: '/admin/ai/chat', label: '智能对话' },
           { key: '/admin/ai/knowledge', label: '知识库管理', accessKey: 'aiKnowledge' },
+          { key: '/admin/ai/settings', label: '参数设置', accessKey: 'aiKnowledge' },
         ],
       },
       { key: '/admin/workbench', label: '工作台', accessKey: 'workbench' },

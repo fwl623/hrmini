@@ -1,8 +1,11 @@
 /**
- * 部门管理：左侧树 + 右侧详情
- * 对齐原型；挂载于 AdminLayout `/admin/org/departments`
+ * 部门管理页：左侧组织树 + 右侧详情/子部门。
+ * 写操作按钮受 access.canEditDept 控制（部门主管只读）；
+ * 挂载于 AdminLayout `/admin/org/departments`。
  */
 import {
+  CaretDownOutlined,
+  CaretRightOutlined,
   DeleteOutlined,
   EditOutlined,
   MergeCellsOutlined,
@@ -77,18 +80,56 @@ function filterTree(nodes: DeptTreeNode[], keyword: string): DeptTreeNode[] {
   return walk(nodes);
 }
 
+/** 收集所有有子节点的 id（搜索展开用） */
+function collectExpandableIds(nodes: DeptTreeNode[], out = new Set<number>()) {
+  for (const n of nodes) {
+    if (n.children?.length) {
+      out.add(n.id);
+      collectExpandableIds(n.children, out);
+    }
+  }
+  return out;
+}
+
+/** 收集某节点到根的祖先 id（不含自身） */
+function collectAncestorIds(
+  nodeId: number,
+  byId: Map<number, DeptTreeNode>,
+): number[] {
+  const ids: number[] = [];
+  let cur = byId.get(nodeId);
+  const parentOf = new Map<number, number>();
+  for (const [id, n] of byId) {
+    n.children?.forEach((c) => parentOf.set(c.id, id));
+  }
+  let pid = cur?.parentId ?? parentOf.get(nodeId);
+  while (pid != null) {
+    ids.push(pid);
+    const p = byId.get(pid);
+    pid = p?.parentId ?? parentOf.get(pid);
+  }
+  return ids;
+}
+
 const DeptNodeCard: React.FC<{
   node: DeptTreeNode;
   depth: number;
   selectedId?: number;
+  expandedIds: Set<number>;
   onSelect: (node: DeptTreeNode) => void;
-}> = ({ node, depth, selectedId, onSelect }) => {
+  onToggle: (id: number) => void;
+}> = ({ node, depth, selectedId, expandedIds, onSelect, onToggle }) => {
   const selected = selectedId === node.id;
+  const hasChildren = !!node.children?.length;
+  const expanded = hasChildren && expandedIds.has(node.id);
+
   return (
-    <div style={{ marginLeft: depth === 0 ? 0 : 16 }}>
+    <div className="dept-tree-node">
       <div
         role="button"
         tabIndex={0}
+        className={`dept-tree-row${selected ? ' is-selected' : ''}${hasChildren ? ' has-children' : ''}`}
+        style={{ paddingLeft: 8 + depth * 18 }}
         onClick={() => onSelect(node)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -96,30 +137,34 @@ const DeptNodeCard: React.FC<{
             onSelect(node);
           }
         }}
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          gap: 8,
-          padding: '10px 12px',
-          marginBottom: 8,
-          borderRadius: 8,
-          border: selected ? '1px solid #1677ff' : '1px solid #f0f0f0',
-          background: selected ? '#f0f5ff' : '#fff',
-          cursor: 'pointer',
-          transition: 'background 0.15s, border-color 0.15s',
-        }}
       >
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div>
-            <Typography.Text strong ellipsis>
+        <span
+          className={`dept-tree-caret${hasChildren ? '' : ' is-leaf'}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (hasChildren) onToggle(node.id);
+          }}
+          role={hasChildren ? 'button' : undefined}
+          aria-label={hasChildren ? (expanded ? '收起' : '展开') : undefined}
+        >
+          {hasChildren ? (
+            expanded ? (
+              <CaretDownOutlined />
+            ) : (
+              <CaretRightOutlined />
+            )
+          ) : null}
+        </span>
+        <div className="dept-tree-main">
+          <div className="dept-tree-title">
+            <Typography.Text strong ellipsis style={{ maxWidth: '100%' }}>
               {node.name}
             </Typography.Text>
-            <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+            <Typography.Text type="secondary" className="dept-tree-code">
               {node.code}
             </Typography.Text>
           </div>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" className="dept-tree-manager">
             {node.manager || '暂无负责人'}
           </Typography.Text>
         </div>
@@ -129,15 +174,21 @@ const DeptNodeCard: React.FC<{
           overflowCount={99999}
         />
       </div>
-      {node.children?.map((child) => (
-        <DeptNodeCard
-          key={child.id}
-          node={child}
-          depth={depth + 1}
-          selectedId={selectedId}
-          onSelect={onSelect}
-        />
-      ))}
+      {hasChildren && expanded && (
+        <div className="dept-tree-children">
+          {node.children!.map((child) => (
+            <DeptNodeCard
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              selectedId={selectedId}
+              expandedIds={expandedIds}
+              onSelect={onSelect}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -151,6 +202,8 @@ const DepartmentsPage: React.FC = () => {
   const [keyword, setKeyword] = useState('');
   const [selectedId, setSelectedId] = useState<number>();
   const [detailHeadcount, setDetailHeadcount] = useState<number>();
+  /** 手动展开的节点；搜索时另算 autoExpand */
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
 
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<DeptFormMode>('createRoot');
@@ -163,6 +216,38 @@ const DepartmentsPage: React.FC = () => {
   const selected = selectedId != null ? byId.get(selectedId) ?? null : null;
   const filteredTree = useMemo(() => filterTree(tree, keyword), [tree, keyword]);
   const children = selected?.children ?? [];
+  const searching = !!keyword.trim();
+
+  /** 搜索时自动展开过滤结果中的全部父节点；平时用手动展开集合 */
+  const visibleExpandedIds = useMemo(() => {
+    if (searching) {
+      return collectExpandableIds(filteredTree);
+    }
+    return expandedIds;
+  }, [searching, filteredTree, expandedIds]);
+
+  const toggleExpand = useCallback((id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleSelectNode = useCallback(
+    (node: DeptTreeNode) => {
+      setSelectedId(node.id);
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        collectAncestorIds(node.id, byId).forEach((id) => next.add(id));
+        // 有子部门时，选中即展开一层，便于继续往下点
+        if (node.children?.length) next.add(node.id);
+        return next;
+      });
+    },
+    [byId],
+  );
 
   /** 树结构可推导 parentId，兜底旧缓存缺字段 */
   const selectedWithParent = useMemo(() => {
@@ -362,6 +447,49 @@ const DepartmentsPage: React.FC = () => {
             title="组织树"
             styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflow: 'auto' } }}
           >
+            <style>{`
+              .dept-tree { display: flex; flex-direction: column; gap: 2px; }
+              .dept-tree-row {
+                display: flex;
+                align-items: flex-start;
+                gap: 6px;
+                padding: 8px 10px 8px 4px;
+                border-radius: 8px;
+                border: 1px solid transparent;
+                cursor: pointer;
+                transition: background 0.15s, border-color 0.15s;
+              }
+              .dept-tree-row:hover { background: #f7f9fc; }
+              .dept-tree-row.is-selected {
+                background: #f0f5ff;
+                border-color: #91caff;
+              }
+              .dept-tree-caret {
+                width: 18px;
+                height: 22px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+                color: #8c8c8c;
+                font-size: 11px;
+                border-radius: 4px;
+              }
+              .dept-tree-caret:not(.is-leaf):hover {
+                color: #1677ff;
+                background: rgba(22, 119, 255, 0.08);
+              }
+              .dept-tree-caret.is-leaf { visibility: hidden; }
+              .dept-tree-main { min-width: 0; flex: 1; }
+              .dept-tree-title {
+                display: flex;
+                align-items: baseline;
+                gap: 8px;
+                min-width: 0;
+              }
+              .dept-tree-code { font-size: 12px; flex-shrink: 0; }
+              .dept-tree-manager { display: block; font-size: 12px; margin-top: 2px; }
+            `}</style>
             <Input.Search
               allowClear
               placeholder="搜索部门名称或编码"
@@ -376,15 +504,19 @@ const DepartmentsPage: React.FC = () => {
                   description={keyword ? '无匹配部门' : '暂无部门，请先新增根部门'}
                 />
               ) : (
-                filteredTree.map((n) => (
-                  <DeptNodeCard
-                    key={n.id}
-                    node={n}
-                    depth={0}
-                    selectedId={selectedId}
-                    onSelect={(node) => setSelectedId(node.id)}
-                  />
-                ))
+                <div className="dept-tree">
+                  {filteredTree.map((n) => (
+                    <DeptNodeCard
+                      key={n.id}
+                      node={n}
+                      depth={0}
+                      selectedId={selectedId}
+                      expandedIds={visibleExpandedIds}
+                      onSelect={handleSelectNode}
+                      onToggle={toggleExpand}
+                    />
+                  ))}
+                </div>
               )}
             </Spin>
           </Card>
@@ -482,7 +614,7 @@ const DepartmentsPage: React.FC = () => {
                         <Card
                           size="small"
                           hoverable
-                          onClick={() => setSelectedId(child.id)}
+                          onClick={() => handleSelectNode(child)}
                           styles={{ body: { padding: 12 } }}
                         >
                           <div

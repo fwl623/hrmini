@@ -10,11 +10,13 @@ import java.util.List;
  */
 @Data
 public class TodayPunchVO {
-    private long clockedCount;      // 已打卡次数
-    private long totalCount;        // 应打卡次数（2=上午+下午）
-    private long lateCount;         // 迟到次数
-    private long earlyLeaveCount;   // 早退次数
-    private long absentCount;       // 旷工次数
+    private long clockedCount;      // 已打卡次数/人数
+    private long totalCount;        // 应打卡次数/人数
+    private long lateCount;         // 迟到次数/人数
+    private long earlyLeaveCount;   // 早退次数/人数
+    private long absentCount;       // 旷工/缺勤次数/人数
+    /** 昨日概览：全天请假人数（不计入应打卡） */
+    private long leaveCount;
 
     /** 今日打卡记录明细（type/time/status） */
     private List<PunchRecordItem> records;

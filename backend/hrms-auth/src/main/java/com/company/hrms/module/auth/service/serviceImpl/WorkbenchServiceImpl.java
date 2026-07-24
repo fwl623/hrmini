@@ -1,6 +1,8 @@
 package com.company.hrms.module.auth.service.serviceImpl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.company.hrms.common.approval.ApprovalEngineService;
+import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.module.auth.dto.WorkbenchSummaryVO;
 import com.company.hrms.module.auth.entity.OperationLog;
 import com.company.hrms.module.auth.mapper.OperationLogMapper;
@@ -8,6 +10,7 @@ import com.company.hrms.module.auth.mapper.WorkbenchMapper;
 import com.company.hrms.module.auth.service.WorkbenchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -25,10 +28,15 @@ public class WorkbenchServiceImpl implements WorkbenchService {
 
     private final WorkbenchMapper workbenchMapper;
     private final OperationLogMapper operationLogMapper;
+    private final ObjectProvider<ApprovalEngineService> approvalEngineService;
 
-    public WorkbenchServiceImpl(WorkbenchMapper workbenchMapper, OperationLogMapper operationLogMapper) {
+    public WorkbenchServiceImpl(
+            WorkbenchMapper workbenchMapper,
+            OperationLogMapper operationLogMapper,
+            ObjectProvider<ApprovalEngineService> approvalEngineService) {
         this.workbenchMapper = workbenchMapper;
         this.operationLogMapper = operationLogMapper;
+        this.approvalEngineService = approvalEngineService;
     }
 
     @Override
@@ -36,13 +44,32 @@ public class WorkbenchServiceImpl implements WorkbenchService {
         WorkbenchSummaryVO vo = new WorkbenchSummaryVO();
         vo.setTotalEmployees(safeLong(() -> workbenchMapper.countActiveEmployees()));
         vo.setNewHiresThisMonth(safeLong(() -> workbenchMapper.countNewHiresThisMonth()));
-        vo.setPendingApprovals(safeLong(() -> workbenchMapper.countPendingApprovals()));
+        // 与审批中心「待办」同口径：仅当前登录用户作为有效审批人的待办，禁止全库串数
+        vo.setPendingApprovals(countMyPendingApprovals());
         vo.setAttendanceAnomalies(safeLong(() -> workbenchMapper.countAttendanceAnomaliesToday()));
         vo.setTodayPunchRate(safePunchRate());
         vo.setDepartmentStats(safeList(() -> workbenchMapper.listDepartmentStats()));
         vo.setVisitTrend(buildVisitTrend());
         vo.setRecentOperations(loadRecentOperations());
         return vo;
+    }
+
+    private long countMyPendingApprovals() {
+        try {
+            ApprovalEngineService engine = approvalEngineService.getIfAvailable();
+            if (engine == null) {
+                log.warn("workbench pendingApprovals degraded: ApprovalEngineService unavailable");
+                return 0L;
+            }
+            Long userId = SecurityUtils.getUserId();
+            if (userId == null) {
+                return 0L;
+            }
+            return engine.countPendingTasksForAssignee(userId);
+        } catch (Exception e) {
+            log.warn("workbench pendingApprovals degraded: {}", e.getMessage());
+            return 0L;
+        }
     }
 
     private Double safePunchRate() {

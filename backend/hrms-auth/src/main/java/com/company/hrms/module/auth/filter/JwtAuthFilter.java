@@ -46,6 +46,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final List<String> WHITE_LIST = List.of(
             "/api/v1/auth/login",
+            "/api/v1/auth/crypto/public-key",
             "/api/v1/auth/refresh",
             // 无 Token / Token 过期也可登出（由 AuthService 尽力拉黑）
             "/api/v1/auth/logout",
@@ -107,6 +108,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
         if (isInternalPath(path)) {
+            //模块间内部调用：验X-Internal-Token，不走登录用户
             if (!isValidInternalToken(request)) {
                 writeForbidden(response, "内部接口未授权");
                 return;
@@ -115,6 +117,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
         if (isWhitelisted(path)) {
+            //登录/刷新/等直接放行
             filterChain.doFilter(request, response);
             return;
         }
@@ -125,6 +128,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 writeUnauthorized(response, "未登录或 Token 过期");
                 return;
             }
+            //登出后拿旧token，拦截住
             String token = header.substring(7).trim();
             Claims claims = jwtTokenProvider.parseClaims(token);
             String jti = claims.getId();
@@ -134,6 +138,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
             Long userId = Long.valueOf(claims.getSubject());
             if (authService.isIdleTimeout(userId)) {
+                //长时间未操作
                 writeUnauthorized(response, "登录已过期，请重新登录");
                 return;
             }
@@ -145,17 +150,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
 
             LoginUser loginUser = authService.buildLoginUser(user);
+            //强制改密：只能访问profile/password/logout
             if (authService.requiresPasswordChange(user) && !isMustChangePasswordAllowed(path)) {
                 writeForbidden(response, "请先修改密码后再访问系统");
                 return;
             }
+            //薪资双拦截：SYS_ADMIN不可见薪资全量
             if (!canAccessPayrollRelated(path, loginUser)) {
                 writeForbidden(response, "无薪资数据访问权限");
                 return;
             }
 
             SecurityUtils.setLoginUser(loginUser);
-            authService.touchLastActive(userId);
+            authService.touchLastActive(userId);//续期，最后活跃
             filterChain.doFilter(request, response);
         } catch (UnauthorizedException ex) {
             writeUnauthorized(response, ex.getMessage());

@@ -5,6 +5,10 @@ import org.springframework.context.ApplicationEvent;
 
 import java.time.LocalDate;
 
+/**
+ * 员工在职状态变更的应用内事件（入职确认、离职生效等发布）。
+ * 考勤等模块可用 {@code @EventListener} 消费，无需依赖 MQ。
+ */
 @Getter
 public class EmployeeStatusChangeEvent extends ApplicationEvent {
 

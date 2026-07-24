@@ -431,9 +431,16 @@ public class PunchService {
 
     /**
      * 昨日打卡概览（全员工聚合，管理端使用）
-     *
-     * 统计所有在职员工昨日的打卡情况：
-     * 已打卡人数、迟到/早退/缺勤人数。
+     * <p>
+     * 口径：
+     * <ul>
+     *   <li>应打卡 = 在职(试用/正式)且非「全天请假」的人数</li>
+     *   <li>已打卡 = 至少有上午或下午有效打卡</li>
+     *   <li>迟到 / 早退 = 已打卡中的异常细分（与已打卡可重叠，不与应打卡相加）</li>
+     *   <li>缺勤 = 无日汇总，或非请假时段缺卡/旷工</li>
+     *   <li>请假 = 全天请假（am=4 且 pm=4），不计入应打卡</li>
+     * </ul>
+     * 关系：应打卡 ≈ 已打卡（无异常）+ 缺勤；请假单独展示。
      */
     public TodayPunchVO getYesterdayOverview() {
         LocalDate yesterday = LocalDate.now(CST).minusDays(1);
@@ -441,7 +448,6 @@ public class PunchService {
         // 所有在职员工（试用期+正式）
         List<com.company.hrms.employee.entity.Employee> employees = employeeMapper.search(
                 null, null, null, java.util.List.of(10, 20), null, null, null, "");
-        long total = employees.size();
 
         // 查昨天日汇总
         java.util.Map<Long, com.company.hrms.attendance.entity.AttendanceDailySummary> summaryMap = new java.util.HashMap<>();
@@ -450,10 +456,12 @@ public class PunchService {
                         .eq(com.company.hrms.attendance.entity.AttendanceDailySummary::getSummaryDate, yesterday))
                 .forEach(ds -> summaryMap.put(ds.getEmployeeId(), ds));
 
-        long clocked = 0, late = 0, early = 0, absent = 0;
+        long expected = 0, clocked = 0, late = 0, early = 0, absent = 0, leave = 0;
         for (com.company.hrms.employee.entity.Employee emp : employees) {
             com.company.hrms.attendance.entity.AttendanceDailySummary ds = summaryMap.get(emp.getId());
             if (ds == null) {
+                // 无日汇总：按应打卡且缺勤
+                expected++;
                 absent++;
                 continue;
             }
@@ -463,26 +471,64 @@ public class PunchService {
                     String[] parts = raw.split(",");
                     int am = Integer.parseInt(parts[0].split(":")[1]);
                     int pm = Integer.parseInt(parts[1].split(":")[1]);
-                    if (am == 4 || pm == 4) continue; // 请假不计入统计
-                    boolean hasIn = (am != 5);
-                    boolean hasOut = (pm != 5);
-                    if (hasIn || hasOut) clocked++;
-                    if (am == 1) late++;
-                    if (pm == 2) early++;
-                    if (am == 3 || pm == 3) absent++;
-                    else if (am == 5 && pm == 5) absent++;
-                } catch (Exception e) {}
+                    // 0正常 1迟到 2早退 3旷工 4请假 5缺卡
+                    if (am == 4 && pm == 4) {
+                        leave++;
+                        continue; // 全天假：不计入应打卡
+                    }
+                    expected++;
+                    boolean hasIn = am != 4 && am != 5;
+                    boolean hasOut = pm != 4 && pm != 5;
+                    if (hasIn || hasOut) {
+                        clocked++;
+                    }
+                    if (am == 1) {
+                        late++;
+                    }
+                    if (pm == 2) {
+                        early++;
+                    }
+                    boolean amAbsent = am == 3 || am == 5;
+                    boolean pmAbsent = pm == 3 || pm == 5;
+                    // 非请假半日出现旷工/缺卡 → 记缺勤（半天假+另一半正常则不算缺勤）
+                    if ((am != 4 && amAbsent) || (pm != 4 && pmAbsent)) {
+                        absent++;
+                    } else if (!hasIn && !hasOut) {
+                        absent++;
+                    }
+                } catch (Exception e) {
+                    expected++;
+                    absent++;
+                }
             } else {
                 // 旧格式兼容
+                expected++;
+                if ("LEAVE".equals(raw)) {
+                    leave++;
+                    expected--; // 请假不计入应打卡
+                    continue;
+                }
                 boolean hasRecord = ("NORMAL".equals(raw) || "LATE".equals(raw) || "EARLY_LEAVE".equals(raw)
                         || "ABSENT_HALF".equals(raw) || "MISSING_IN".equals(raw) || "MISSING_OUT".equals(raw));
-                if (hasRecord) clocked++;
-                if ("LATE".equals(raw)) late++;
-                if ("EARLY_LEAVE".equals(raw)) early++;
-                if ("ABSENT".equals(raw)) absent++;
+                if (hasRecord) {
+                    clocked++;
+                }
+                if ("LATE".equals(raw)) {
+                    late++;
+                }
+                if ("EARLY_LEAVE".equals(raw)) {
+                    early++;
+                }
+                if ("ABSENT".equals(raw) || "ABSENT_HALF".equals(raw) || "MISSING_IN".equals(raw) || "MISSING_OUT".equals(raw)) {
+                    absent++;
+                } else if (!hasRecord) {
+                    absent++;
+                }
             }
         }
-        return new TodayPunchVO(clocked, total, late, early, absent);
+        TodayPunchVO vo = new TodayPunchVO(clocked, expected, late, early, absent);
+        vo.setLeaveCount(leave);
+        return vo;
     }
 
     // ========================================================================

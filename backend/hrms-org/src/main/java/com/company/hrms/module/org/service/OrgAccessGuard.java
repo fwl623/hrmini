@@ -30,6 +30,7 @@ public final class OrgAccessGuard {
         requireDeptWrite();
     }
 
+    /** 读部门树/详情：HR、部门主管，或持有 view/edit/menu:org */
     public static void requireDeptRead() {
         LoginUser user = SecurityUtils.requireLoginUser();
         if (isOrgReader(user)
@@ -41,6 +42,7 @@ public final class OrgAccessGuard {
         throw new ForbiddenException();
     }
 
+    /** 写部门（增删改合并）：仅 HR/管理员或 org:dept:edit */
     public static void requireDeptWrite() {
         LoginUser user = SecurityUtils.requireLoginUser();
         if (isHrOrAdmin(user) || user.hasPermission(PERM_DEPT_EDIT)) {
@@ -49,6 +51,7 @@ public final class OrgAccessGuard {
         throw new ForbiddenException();
     }
 
+    /** 读职位列表/详情：同部门读规则 */
     public static void requirePositionRead() {
         LoginUser user = SecurityUtils.requireLoginUser();
         if (isOrgReader(user)
@@ -60,6 +63,7 @@ public final class OrgAccessGuard {
         throw new ForbiddenException();
     }
 
+    /** 写职位：仅 HR/管理员或 org:position:edit */
     public static void requirePositionWrite() {
         LoginUser user = SecurityUtils.requireLoginUser();
         if (isHrOrAdmin(user) || user.hasPermission(PERM_POSITION_EDIT)) {

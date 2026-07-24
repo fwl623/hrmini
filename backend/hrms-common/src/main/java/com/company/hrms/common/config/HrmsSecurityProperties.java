@@ -4,7 +4,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * 内部调用与短信联调等安全相关配置。
+ * 内部调用 Token、短信联调码等安全相关配置（前缀 {@code hrms.*}）。
+ * JWT 密钥等见 application.yml 中 {@code hrms.jwt} / {@code hrms.crypto}。
  */
 @Component
 @ConfigurationProperties(prefix = "hrms")

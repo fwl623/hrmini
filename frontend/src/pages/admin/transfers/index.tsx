@@ -96,13 +96,21 @@ export default function TransfersPage() {
   const [form] = Form.useForm();
   const [deptTreeOptions, setDeptTreeOptions] = useState<TreeOption[]>([]);
   const [deptNameMap, setDeptNameMap] = useState<Record<number, string>>({});
-  const [positionOptions, setPositionOptions] = useState<{ label: string; value: number; departmentId?: number }[]>([]);
-  const [allPositions, setAllPositions] = useState<{ label: string; value: number; departmentId?: number }[]>([]);
+  const [allPositions, setAllPositions] = useState<
+    { label: string; value: number; departmentId?: number | null }[]
+  >([]);
   const newDeptId = Form.useWatch('newDepartmentId', form);
   const [empOptions, setEmpOptions] = useState<EmpOption[]>([]);
   const [mgrOptions, setMgrOptions] = useState<EmpOption[]>([]);
   const [empLoading, setEmpLoading] = useState(false);
   const [mgrLoading, setMgrLoading] = useState(false);
+  /** 当前所选员工原部门，用于「新部门不可与原部门相同」即时校验 */
+  const [fromDepartmentId, setFromDepartmentId] = useState<number | null>(null);
+
+  const positionOptions = useMemo(() => {
+    if (newDeptId == null) return [];
+    return allPositions.filter((p) => p.departmentId === newDeptId);
+  }, [allPositions, newDeptId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,11 +139,31 @@ export default function TransfersPage() {
         setDeptTreeOptions(toDeptTreeOptions(tree));
         setDeptNameMap(flattenDeptNames(tree));
         const listPos = posRes.data?.list ?? [];
-        setPositionOptions(listPos.map((p) => ({ label: p.name, value: p.id })));
+        setAllPositions(
+          listPos.map((p) => ({
+            label: p.name,
+            value: p.id,
+            departmentId: p.departmentId,
+          })),
+        );
       } catch {
         message.warning('部门/职位选项加载失败，可稍后刷新重试');
       }
     })();
+  }, []);
+
+  const resolveFromDepartment = useCallback(async (employeeId: number) => {
+    try {
+      const res = await getEmployeeDetail(employeeId);
+      if (res.code === 0 && res.data?.departmentId != null) {
+        setFromDepartmentId(res.data.departmentId);
+        return res.data;
+      }
+    } catch {
+      // ignore
+    }
+    setFromDepartmentId(null);
+    return null;
   }, []);
 
   const searchEmployees = useCallback(async (keyword: string, forManager: boolean) => {
@@ -179,23 +207,21 @@ export default function TransfersPage() {
     (async () => {
       form.resetFields();
       form.setFieldsValue({ employeeId: id });
-      try {
-        const res = await getEmployeeDetail(id);
-        if (res.code === 0 && res.data) {
-          setEmpOptions([
-            {
-              label: `${res.data.name}（${res.data.empNo}）`,
-              value: id,
-            },
-          ]);
-        }
-      } catch {
+      const detail = await resolveFromDepartment(id);
+      if (detail) {
+        setEmpOptions([
+          {
+            label: `${detail.name}（${detail.empNo}）`,
+            value: id,
+          },
+        ]);
+      } else {
         setEmpOptions([{ label: `员工#${id}`, value: id }]);
       }
       setOpen(true);
       setSearchParams({}, { replace: true });
     })();
-  }, [form, searchParams, setSearchParams]);
+  }, [form, resolveFromDepartment, searchParams, setSearchParams]);
 
   const deptLabel = useCallback(
     (id?: number) => (id != null ? deptNameMap[id] || String(id) : '-'),
@@ -273,6 +299,7 @@ export default function TransfersPage() {
             form.resetFields();
             setEmpOptions([]);
             setMgrOptions([]);
+            setFromDepartmentId(null);
             setOpen(true);
           }}
         >
@@ -308,8 +335,9 @@ export default function TransfersPage() {
             setOpen(false);
             load();
           } catch (e) {
+            // 表单校验失败：已在字段下展示红字
             if ((e as { errorFields?: unknown })?.errorFields) return;
-            message.error((e as Error)?.message || '提交失败');
+            // 业务/网络错误：全局 errorHandler 已 toast 业务文案，此处勿再弹 Axios 状态码
           }
         }}
         destroyOnClose
@@ -330,13 +358,40 @@ export default function TransfersPage() {
               loading={empLoading}
               onSearch={(kw) => searchEmployees(kw, false)}
               notFoundContent={empLoading ? '搜索中…' : '输入关键词搜索'}
+              onChange={async (id: number | undefined) => {
+                form.setFieldsValue({ newDepartmentId: undefined, newPositionId: undefined });
+                if (id == null) {
+                  setFromDepartmentId(null);
+                  return;
+                }
+                await resolveFromDepartment(id);
+                void form.validateFields(['newDepartmentId']).catch(() => undefined);
+              }}
             />
           </Form.Item>
           <Form.Item
             name="newDepartmentId"
             label="新部门"
-            rules={[{ required: true, message: '新部门必须变更' }]}
-            extra="须与原部门不同"
+            validateTrigger={['onChange', 'onBlur']}
+            rules={[
+              { required: true, message: '请选择新部门' },
+              {
+                validator: async (_, value) => {
+                  if (
+                    value != null &&
+                    fromDepartmentId != null &&
+                    Number(value) === Number(fromDepartmentId)
+                  ) {
+                    throw new Error('不可填写原部门');
+                  }
+                },
+              },
+            ]}
+            extra={
+              fromDepartmentId != null
+                ? `须与原部门不同（当前原部门：${deptNameMap[fromDepartmentId] || fromDepartmentId}）`
+                : '须与原部门不同'
+            }
           >
             <TreeSelect
               treeData={deptTreeOptions}
@@ -346,19 +401,28 @@ export default function TransfersPage() {
               showSearch
               treeNodeFilterProp="title"
               style={{ width: '100%' }}
+              onChange={() => {
+                form.setFieldValue('newPositionId', undefined);
+              }}
             />
           </Form.Item>
           <Form.Item
             name="newPositionId"
             label="新职位（可选）"
-            extra="不选则职位保持不变；换部门时请一并选择目标职位（如财务部选「财务专员」）"
+            extra={
+              newDeptId == null
+                ? '请先选择新部门；不选则职位保持不变'
+                : '仅展示该部门下职位；不选则职位保持不变'
+            }
           >
             <Select
               allowClear
               showSearch
               optionFilterProp="label"
               options={positionOptions}
-              placeholder="选择职位"
+              placeholder={newDeptId == null ? '请先选择新部门' : '选择职位'}
+              disabled={newDeptId == null}
+              notFoundContent={newDeptId == null ? '请先选择新部门' : '该部门暂无职位'}
             />
           </Form.Item>
           <Form.Item name="newJobLevel" label="新职级（可选）">

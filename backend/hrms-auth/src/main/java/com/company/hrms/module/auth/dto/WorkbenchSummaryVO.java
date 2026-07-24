@@ -8,6 +8,7 @@ public class WorkbenchSummaryVO {
 
     private long totalEmployees;
     private long newHiresThisMonth;
+    /** 当前用户待办数（与审批中心 pending 同口径，非全库） */
     private long pendingApprovals;
     private long attendanceAnomalies;
     private Double todayPunchRate;

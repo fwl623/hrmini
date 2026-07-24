@@ -1,6 +1,6 @@
 import { LockOutlined, MobileOutlined } from '@ant-design/icons';
 import { history, useModel } from '@umijs/max';
-import { Alert, Button, Card, Checkbox, Form, Input, Typography, message } from 'antd';
+import { Button, Checkbox, Form, Input, message } from 'antd';
 import React, { useEffect, useState } from 'react';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
 import { getProfile, login, toCurrentUser } from '@/services/auth';
@@ -18,7 +18,11 @@ import {
 } from '@/utils/token';
 import { startTokenRefresher } from '@/utils/tokenRefresher';
 import { getRequestErrorMessage } from '@/utils/requestError';
+import TrackingOwl from './TrackingOwl';
 
+/**
+ * 登录页：居中卡片 + 猫头鹰站在卡片上方，双眼跟随鼠标。
+ */
 interface LoginForm {
   username: string;
   password: string;
@@ -85,7 +89,6 @@ const LoginPage: React.FC = () => {
     startTokenRefresher();
     startIdleDetector();
 
-    // 管理端角色或管理端权限码进后台；仅普通员工进门户
     const home = getHomePath(currentUser.roles, currentUser.permissions);
     if (mustChangePassword || currentUser.mustChangePassword) {
       setChangePwdOpen(true);
@@ -126,54 +129,64 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="hrms-login-page">
-      <Card className="hrms-login-card">
-        <div className="hrms-login-title">
-          <h1>HRMini</h1>
-          <p>人力资源管理系统</p>
+    <div className="hrms-login-page hrms-login-page--center">
+      <div className="hrms-login-atmosphere" aria-hidden>
+        <span className="hrms-login-orb hrms-login-orb--1" />
+        <span className="hrms-login-orb hrms-login-orb--2" />
+        <span className="hrms-login-orb hrms-login-orb--3" />
+        <span className="hrms-login-ring hrms-login-ring--1" />
+        <span className="hrms-login-ring hrms-login-ring--2" />
+        <span className="hrms-login-beam" />
+        <span className="hrms-login-grid" />
+        <span className="hrms-login-noise" />
+      </div>
+
+      <div className="hrms-login-stage">
+        <div className="hrms-login-owl-perch">
+          <TrackingOwl />
         </div>
 
-        <Alert
-          className="hrms-login-alert"
-          type="info"
-          showIcon
-          message="联调账号：13800001000 / Admin@12345（管理员登录后进入管理后台）"
-        />
+        <div className="hrms-login-card">
+          <header className="hrms-login-card-head">
+            <h1>HRMini</h1>
+          </header>
 
-        <Form<LoginForm>
-          className="hrms-login-form"
-          form={form}
-          layout="vertical"
-          onFinish={onFinish}
-          initialValues={{ remember: true }}
-        >
-          <Form.Item
-            name="username"
-            label="手机号"
-            rules={[
-              { required: true, message: '请输入手机号' },
-              { pattern: /^1\d{10}$/, message: '请输入 11 位手机号' },
-            ]}
+          <Form<LoginForm>
+            className="hrms-login-form"
+            form={form}
+            layout="vertical"
+            onFinish={onFinish}
+            initialValues={{ remember: true }}
+            size="large"
           >
-            <Input prefix={<MobileOutlined />} placeholder="登录账号（手机号）" maxLength={11} />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            label="密码"
-            rules={[{ required: true, message: '请输入密码' }]}
-          >
-            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
-          </Form.Item>
-          <Form.Item name="remember" valuePropName="checked">
-            <Checkbox>记住登录（7 天内免登录）</Checkbox>
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Button type="primary" htmlType="submit" block loading={submitting}>
-              登录
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
+            <Form.Item
+              name="username"
+              label="手机号"
+              rules={[
+                { required: true, message: '请输入手机号' },
+                { pattern: /^1\d{10}$/, message: '请输入 11 位手机号' },
+              ]}
+            >
+              <Input prefix={<MobileOutlined />} placeholder="请输入手机号" maxLength={11} />
+            </Form.Item>
+            <Form.Item
+              name="password"
+              label="密码"
+              rules={[{ required: true, message: '请输入密码' }]}
+            >
+              <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" />
+            </Form.Item>
+            <Form.Item name="remember" valuePropName="checked" className="hrms-login-remember">
+              <Checkbox>记住登录</Checkbox>
+            </Form.Item>
+            <Form.Item className="hrms-login-submit">
+              <Button type="primary" htmlType="submit" block loading={submitting}>
+                登录
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
+      </div>
 
       <ChangePasswordModal
         open={changePwdOpen}

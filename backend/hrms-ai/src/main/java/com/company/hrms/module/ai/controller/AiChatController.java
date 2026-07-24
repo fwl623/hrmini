@@ -14,6 +14,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+/**
+ * AI 对话接口：查询当前用户可用快捷能力，以及 SSE 流式聊天。
+ */
 @RestController
 @RequestMapping("/ai")
 @RequiredArgsConstructor

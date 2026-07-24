@@ -35,6 +35,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 系统用户管理：分页查询、建号、启停/改角色、日志查询。
+ * <p>
+ * 改角色后会 evict 权限缓存；禁用账号会 {@link AuthService#invalidateUserSessions}。
+ * 若手工去掉 DEPT_MANAGER，同步清理「部门负责人自动授角」标记表。
+ */
 @Service
 public class SystemUserServiceImpl implements SystemUserService {
 

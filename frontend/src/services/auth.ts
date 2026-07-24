@@ -1,11 +1,29 @@
 import { request } from '@umijs/max';
 import { API_BASE, resolvePrimaryRole } from '@/constants/roles';
+import { encryptLoginPassword } from '@/utils/loginCrypto';
 import { getAccessToken } from '@/utils/token';
 
+export async function getLoginPublicKey() {
+  return request<API.Result<API.LoginPublicKey>>(`${API_BASE}/auth/crypto/public-key`, {
+    method: 'GET',
+    skipErrorHandler: true,
+  });
+}
+
+/** 登录：先拉公钥，RSA 加密 password 后再提交（encrypted=true） */
 export async function login(data: API.LoginRequest) {
+  const keyRes = await getLoginPublicKey();
+  if (keyRes.code !== 0 || !keyRes.data?.publicKey) {
+    throw new Error(keyRes.message || '获取登录公钥失败');
+  }
+  const cipher = await encryptLoginPassword(data.password, keyRes.data.publicKey);
   return request<API.Result<API.LoginResponse>>(`${API_BASE}/auth/login`, {
     method: 'POST',
-    data,
+    data: {
+      username: data.username,
+      password: cipher,
+      encrypted: true,
+    },
     skipErrorHandler: true,
   });
 }

@@ -47,4 +47,10 @@ public class EmployeeMobileChangeApplication {
 
     /** 更新时间 */
     private LocalDateTime updatedAt;
+
+    /** 展示用：员工姓名（非表字段，JOIN employee 填充） */
+    private String employeeName;
+
+    /** 展示用：工号（非表字段，JOIN employee 填充） */
+    private String empNo;
 }

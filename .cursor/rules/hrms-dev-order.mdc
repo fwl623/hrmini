@@ -621,8 +621,8 @@ Job 文件：
 ##### A（李俊毅）- 系统管理页 + 工作台 + 权限缓存
 
 ```prompt
-@前端系分模板.md
-@HRMS-Frontend-System-Design.md
+@D:\Idea Projects\HRMini\李俊毅个人系分\李俊毅-前端系分.md
+@D:\Idea Projects\HRMini\HRMS-Frontend-System-Design.md
 
 请开发系统管理前端页面和收尾工作：
 
@@ -721,7 +721,7 @@ Job 文件：
 请开发薪资核算全模块：
 
 后端文件：
-- backend/hrms-payroll/pom.xml
+- backend/hrms-payroll/pom.xmlyou
 - backend/hrms-payroll/src/main/java/com/company/hrms/payroll/controller/SchemeController.java
   └── GET/POST/PUT/DELETE /payroll/schemes（账套 CRUD + SpEL 公式校验）
 - backend/hrms-payroll/src/main/java/com/company/hrms/payroll/controller/BatchController.java

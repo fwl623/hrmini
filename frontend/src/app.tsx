@@ -198,7 +198,8 @@ export const request: RequestConfig = {
       }
 
       const msg = getRequestErrorMessage(error);
-      const errCode = error.info?.code || (error.response?.data?.code as number);
+      const rawCode = error.info?.code ?? error.response?.data?.code;
+      const errCode = typeof rawCode === 'string' ? Number(rawCode) : (rawCode as number);
 
       // 重复打卡检测：匹配错误码 40005 或错误消息含"重复操作"
       const isDupPunch = errCode === 40005 || msg?.includes('重复操作');
@@ -212,8 +213,8 @@ export const request: RequestConfig = {
         return;
       }
 
-      // 考勤未锁定检测：错误码 50004，弹窗提示
-      if (errCode === 50004) {
+      // 考勤未锁定：50004，或文案兜底（防 code 类型不一致漏弹窗）
+      if (errCode === 50004 || msg?.includes('考勤数据未锁定') || msg?.includes('考勤月结')) {
         Modal.warning({
           title: '核算提示',
           content: '当前月考勤数据未锁定，请先完成考勤月结',

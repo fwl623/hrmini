@@ -3,15 +3,26 @@
 <mapper namespace="com.company.hrms.employee.mapper.EmployeeMobileChangeApplicationMapper">
 
     <select id="selectById" resultType="com.company.hrms.employee.entity.EmployeeMobileChangeApplication">
-        SELECT * FROM employee_mobile_change_application WHERE id = #{id}
+        SELECT a.*, e.name AS employeeName, e.employee_no AS empNo
+        FROM employee_mobile_change_application a
+        LEFT JOIN employee e ON e.id = a.employee_id
+        WHERE a.id = #{id}
     </select>
 
     <select id="selectByEmployeeId" resultType="com.company.hrms.employee.entity.EmployeeMobileChangeApplication">
-        SELECT * FROM employee_mobile_change_application WHERE employee_id = #{employeeId} ORDER BY created_at DESC
+        SELECT a.*, e.name AS employeeName, e.employee_no AS empNo
+        FROM employee_mobile_change_application a
+        LEFT JOIN employee e ON e.id = a.employee_id
+        WHERE a.employee_id = #{employeeId}
+        ORDER BY a.created_at DESC
     </select>
 
     <select id="selectPending" resultType="com.company.hrms.employee.entity.EmployeeMobileChangeApplication">
-        SELECT * FROM employee_mobile_change_application WHERE status = 'PENDING' ORDER BY created_at DESC
+        SELECT a.*, e.name AS employeeName, e.employee_no AS empNo
+        FROM employee_mobile_change_application a
+        LEFT JOIN employee e ON e.id = a.employee_id
+        WHERE a.status = 'PENDING'
+        ORDER BY a.created_at DESC
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">

@@ -28,11 +28,6 @@ public interface WorkbenchMapper {
     Long countNewHiresThisMonth();
 
     @Select("""
-            SELECT COUNT(1) FROM approval_task WHERE status = 'PENDING'
-            """)
-    Long countPendingApprovals();
-
-    @Select("""
             SELECT COUNT(1) FROM attendance_daily_summary
             WHERE summary_date = CURDATE()
               AND day_status NOT IN ('NORMAL', 'LEAVE')

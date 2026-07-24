@@ -188,7 +188,7 @@ paths:
   /workbench/summary:
     get:
       tags: [Workbench]
-      summary: 工作台 KPI 汇总（总人数/本月入职/待审批/考勤异常等）
+      summary: 工作台 KPI 汇总；pendingApprovals 为当前登录用户待办数（与审批中心待办同口径）
       security:
         - bearerAuth: []
       responses:
@@ -541,6 +541,9 @@ components:
           nullable: true
         sortOrder:
           type: integer
+          description: >-
+            同级（同一 parentId）排序序号。新建须严格大于同级已有最大序号（建议默认 max+1）；
+            编辑若变更上级或序号，亦须大于新同级中其他部门的最大序号。
         description:
           type: string
           maxLength: 256

@@ -8,12 +8,16 @@ export function getRequestErrorMessage(error: unknown, fallback = '请求失败'
     info?: { message?: string };
     message?: string;
   };
-  return (
+  const raw =
     err.response?.data?.message ||
     err.info?.message ||
     err.message ||
-    fallback
-  );
+    fallback;
+  // Axios 默认文案对用户无意义，且易与业务 toast 叠成「错误码弹窗」
+  if (/^Request failed with status code \d+$/i.test(String(raw))) {
+    return err.response?.data?.message || err.info?.message || fallback;
+  }
+  return String(raw);
 }
 
 export function isUnauthorizedError(error: unknown): boolean {

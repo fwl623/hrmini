@@ -5,6 +5,7 @@ import com.company.hrms.common.approval.ApprovalEngineService;
 import com.company.hrms.common.approval.ApprovalStatusDTO;
 import com.company.hrms.common.approval.CreateApprovalRequest;
 import com.company.hrms.common.approval.CreateApprovalResult;
+import com.company.hrms.common.approval.PendingApprovalTaskDTO;
 import com.company.hrms.common.event.ApprovalCompletedEvent;
 import com.company.hrms.common.enums.RoleCode;
 import com.company.hrms.common.exception.BusinessException;
@@ -285,6 +286,41 @@ public class DbApprovalService implements ApprovalEngineService {
                 .filter(t -> t.getSlaDeadline() != null && t.getSlaDeadline().isBefore(LocalDateTime.now()))
                 .count());
         return vo;
+    }
+
+    /**
+     * 与 {@link #taskStats} 的 pending 同口径，供工作台「待审批」KPI 复用，避免全库串数。
+     */
+    @Override
+    public long countPendingTasksForAssignee(long userId) {
+        return taskStats(userId).getPending();
+    }
+
+    /**
+     * 供 AI 办事卡片等跨模块只读拉取：有效审批人的 PENDING 待办摘要。
+     */
+    @Override
+    public List<PendingApprovalTaskDTO> listPendingTasksForAssignee(long userId, int limit) {
+        int cap = Math.max(1, Math.min(limit <= 0 ? 10 : limit, 50));
+        PageResult<ApprovalDtos.TaskListItemVO> page =
+                listTasks(userId, "pending", null, null, 1, cap);
+        List<PendingApprovalTaskDTO> out = new ArrayList<>();
+        if (page == null || page.getList() == null) {
+            return out;
+        }
+        for (ApprovalDtos.TaskListItemVO item : page.getList()) {
+            PendingApprovalTaskDTO dto = new PendingApprovalTaskDTO();
+            dto.setTaskId(item.getTaskId());
+            dto.setInstanceId(item.getInstanceId());
+            dto.setProcessType(item.getProcessType());
+            dto.setTitle(item.getTitle());
+            dto.setApplicantName(item.getApplicantName());
+            dto.setCurrentNodeLabel(item.getCurrentNodeLabel());
+            dto.setCreateTime(item.getCreateTime());
+            dto.setBusinessSummary(item.getBusinessSummary());
+            out.add(dto);
+        }
+        return out;
     }
 
     /**

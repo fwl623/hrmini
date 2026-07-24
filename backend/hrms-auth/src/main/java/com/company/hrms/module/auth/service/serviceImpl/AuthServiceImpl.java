@@ -11,6 +11,7 @@ import com.company.hrms.common.security.LoginUser;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.module.auth.config.PermissionCacheManager;
 import com.company.hrms.module.auth.constant.AuthRedisKeys;
+import com.company.hrms.module.auth.crypto.LoginRsaCryptoService;
 import com.company.hrms.module.auth.dto.ChangePasswordRequest;
 import com.company.hrms.module.auth.dto.LoginRequest;
 import com.company.hrms.module.auth.dto.LoginResponse;
@@ -37,14 +38,30 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
+/**
+ * 认证核心实现。
+ * <p>
+ * 安全策略摘要：
+ * <ul>
+ *   <li>登录失败：Redis 计数，满 5 次锁 15 分钟</li>
+ *   <li>AccessToken：JWT；登出/改密后 jti 入黑名单</li>
+ *   <li>RefreshToken：Redis 双向索引，7 天 TTL，轮换即作废旧值</li>
+ *   <li>无操作超时：last-active Key 30 分钟，Filter 每次请求续期</li>
+ *   <li>强制改密：首次未改 / 超 90 天；期间仅允许 profile、改密、登出</li>
+ * </ul>
+ */
 @Service
 public class AuthServiceImpl implements AuthService {
 
+    /** 连续登录失败上限 */
     private static final int MAX_FAIL = 5;
+    /** 锁定时长（秒） */
     private static final long LOCK_SECONDS = 900;
     private static final long REFRESH_DAYS = 7;
+    /** 无操作超时（分钟），与 Filter touchLastActive 一致 */
     private static final long IDLE_MINUTES = 30;
     private static final int PASSWORD_EXPIRE_DAYS = 90;
+    /** 至少 8 位，含大小写字母与数字 */
     public static final Pattern PASSWORD_PATTERN =
             Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$");
 
@@ -55,6 +72,7 @@ public class AuthServiceImpl implements AuthService {
     private final StringRedisTemplate redisTemplate;
     private final HrmsSecurityProperties securityProperties;
     private final PermissionCacheManager permissionCacheManager;
+    private final LoginRsaCryptoService loginRsaCryptoService;
 
     public AuthServiceImpl(SysUserMapper sysUserMapper,
                            LoginLogMapper loginLogMapper,
@@ -62,7 +80,8 @@ public class AuthServiceImpl implements AuthService {
                            JwtTokenProvider jwtTokenProvider,
                            StringRedisTemplate redisTemplate,
                            HrmsSecurityProperties securityProperties,
-                           PermissionCacheManager permissionCacheManager) {
+                           PermissionCacheManager permissionCacheManager,
+                           LoginRsaCryptoService loginRsaCryptoService) {
         this.sysUserMapper = sysUserMapper;
         this.loginLogMapper = loginLogMapper;
         this.passwordEncoder = passwordEncoder;
@@ -70,11 +89,14 @@ public class AuthServiceImpl implements AuthService {
         this.redisTemplate = redisTemplate;
         this.securityProperties = securityProperties;
         this.permissionCacheManager = permissionCacheManager;
+        this.loginRsaCryptoService = loginRsaCryptoService;
     }
 
     @Override
     public LoginResponse login(LoginRequest request, String clientIp, String userAgent) {
         String username = request.getUsername().trim();
+        String rawPassword = resolveLoginPassword(request);
+        // 已锁定则直接拒绝（即使密码正确）
         String failKey = AuthRedisKeys.loginFail(username);
         String failCountStr = redisTemplate.opsForValue().get(failKey);
         if (failCountStr != null && Long.parseLong(failCountStr) >= MAX_FAIL) {
@@ -89,7 +111,7 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("账号不存在或已禁用");
         }
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        if (!passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
             long fails = incrLoginFail(failKey);
             saveLoginLog(user.getId(), clientIp, userAgent, false, "密码错误");
             if (fails >= MAX_FAIL) {
@@ -98,6 +120,7 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("用户名或密码错误");
         }
 
+        // 登录成功：清失败计数，签发双 Token，缓存权限，续 last-active
         redisTemplate.delete(failKey);
         boolean mustChange = mustChangePassword(user);
         LoginUser loginUser = buildLoginUser(user);
@@ -114,6 +137,14 @@ public class AuthServiceImpl implements AuthService {
                 jwtTokenProvider.getAccessExpireSeconds(),
                 mustChange
         );
+    }
+
+    /** encrypted=true：RSA 解密；否则按明文（便于本地 Postman） */
+    private String resolveLoginPassword(LoginRequest request) {
+        if (Boolean.TRUE.equals(request.getEncrypted())) {
+            return loginRsaCryptoService.decryptPassword(request.getPassword());
+        }
+        return request.getPassword();
     }
 
     @Override
@@ -307,10 +338,12 @@ public class AuthServiceImpl implements AuthService {
         return Boolean.TRUE.equals(redisTemplate.hasKey(AuthRedisKeys.tokenBlacklist(jti)));
     }
 
+    /** last-active Key 不存在即视为空闲超时 */
     public boolean isIdleTimeout(Long userId) {
         return !Boolean.TRUE.equals(redisTemplate.hasKey(AuthRedisKeys.lastActive(userId)));
     }
 
+    /** 每次合法请求续期无操作计时 */
     public void touchLastActive(Long userId) {
         redisTemplate.opsForValue().set(
                 AuthRedisKeys.lastActive(userId),
@@ -320,6 +353,11 @@ public class AuthServiceImpl implements AuthService {
         );
     }
 
+
+    /**
+     * 组装 LoginUser：角色码、权限码、主数据范围、员工所属部门。
+     * 供登录签发 JWT 与 Filter 每次请求重建上下文共用。
+     */
     public LoginUser buildLoginUser(SysUser user) {
         List<String> roles = sysUserMapper.selectRoleCodesByUserId(user.getId());
         java.util.Set<String> perms = loadPermissions(user.getId());
@@ -353,14 +391,25 @@ public class AuthServiceImpl implements AuthService {
         redisTemplate.delete(AuthRedisKeys.payslipVerified(userId));
     }
 
+    /**
+     * 加载用户权限码（带 Redis 缓存）。
+     * <p>
+     * 注意：缓存只是「加速读」，权限真相在 DB（用户→角色→权限）。
+     * Redis Key 过期 / 被 evict，只表示「要重新查库」，不是「用户没权限了」。
+     */
     private java.util.Set<String> loadPermissions(Long userId) {
+        // Redis Key：hrms:user:perms:{userId}，值是权限码字符串 Set
         String key = AuthRedisKeys.permissions(userId);
+        // 读缓存：SMEMBERS，可能返回空 Set（Key 不存在或已被删）
         java.util.Set<String> cached = redisTemplate.opsForSet().members(key);
         if (cached != null && !cached.isEmpty()) {
+            // 缓存命中：直接用，不再打权限联表 SQL
             return new HashSet<>(cached);
         }
+        // 缓存未命中：从 DB 查当前真实权限码
         List<String> perms = sysUserMapper.selectPermissionCodesByUserId(userId);
         java.util.Set<String> set = new HashSet<>(perms);
+        // 写回 Redis，供后续请求复用（带 10 分钟 TTL）
         cachePermissions(userId, set);
         return set;
     }
@@ -419,25 +468,35 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    /**
+     * 把权限码写入 Redis。TTL=10 分钟只限制「这份缓存副本能放多久」，
+     * 到期后下次 loadPermissions 会再查库重建；用户在 DB 里的权限不会因此消失。
+     * 角色/用户权限变更时会另调 {@link PermissionCacheManager#evict} 主动删除。
+     */
     private void cachePermissions(Long userId, java.util.Set<String> permissions) {
         String key = AuthRedisKeys.permissions(userId);
+        // 先删旧缓存，避免 Set 里残留过期成员
         permissionCacheManager.evict(userId);
         if (permissions != null && !permissions.isEmpty()) {
+            // SADD：写入权限码集合
             redisTemplate.opsForSet().add(key, permissions.toArray(new String[0]));
-            // 系分：权限缓存 TTL 10min，变更时主动 DEL
+            // EXPIRE：10 分钟后 Key 自动消失 → 下次请求走「查库→再缓存」
             redisTemplate.expire(key, 10, TimeUnit.MINUTES);
         }
     }
 
     private boolean mustChangePassword(SysUser user) {
         LocalDateTime changedAt = user.getPasswordChangedAt();
+        // 从未改密
         if (changedAt == null) {
             return true;
         }
+        // 创建账号时 password_changed_at ≈ created_at：视为首次强制改密
         if (user.getCreatedAt() != null
                 && Math.abs(ChronoUnit.SECONDS.between(user.getCreatedAt(), changedAt)) <= 2) {
             return true;
         }
+        // 超过轮换天数
         return ChronoUnit.DAYS.between(changedAt.toLocalDate(), LocalDate.now()) >= PASSWORD_EXPIRE_DAYS;
     }
 

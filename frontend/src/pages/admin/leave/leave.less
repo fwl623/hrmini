@@ -1,0 +1,218 @@
+/* 请假列表 — 与工作台一致的商务蓝白 */
+
+.leave-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  animation: leave-in 0.3s ease;
+}
+
+@keyframes leave-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.leave-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background:
+    linear-gradient(125deg, rgba(22, 93, 255, 0.1) 0%, rgba(22, 93, 255, 0.02) 42%, #fff 100%),
+    var(--hrms-bg-card);
+  border: 1px solid var(--hrms-border-light);
+  box-shadow: var(--hrms-shadow-sm);
+}
+
+.leave-hero h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--hrms-text);
+}
+
+.leave-hero p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--hrms-text-muted);
+}
+
+.leave-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: var(--hrms-bg-card);
+  border: 1px solid var(--hrms-border-light);
+  box-shadow: var(--hrms-shadow-sm);
+}
+
+.leave-filters__label {
+  font-size: 13px;
+  color: var(--hrms-text-secondary);
+  white-space: nowrap;
+}
+
+.leave-filters__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.leave-table-card {
+  border-radius: 12px;
+  background: var(--hrms-bg-card);
+  border: 1px solid var(--hrms-border-light);
+  box-shadow: var(--hrms-shadow-sm);
+  overflow: hidden;
+}
+
+.leave-table-card .ant-pro-card,
+.leave-table-card .ant-pro-table-list-toolbar,
+.leave-table-card .ant-table-wrapper {
+  background: transparent;
+}
+
+.leave-table-card .ant-pro-card-body {
+  padding: 0 !important;
+}
+
+.leave-table-card .ant-table-thead > tr > th,
+.leave-table-card .ant-table-tbody > tr > td {
+  padding: 14px 16px !important;
+  vertical-align: middle;
+}
+
+.leave-table-card .ant-table-pagination.ant-pagination,
+.leave-table-card .ant-pagination {
+  margin: 0 !important;
+  padding: 16px 20px 18px !important;
+  gap: 10px 12px;
+  row-gap: 10px;
+}
+
+.leave-table-card .ant-pagination-total-text {
+  margin-inline-end: 8px !important;
+}
+
+.leave-table-card .ant-pagination-options {
+  margin-inline-start: 8px !important;
+}
+
+.leave-emp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.leave-emp__avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hrms-primary);
+  background: var(--hrms-primary-bg);
+}
+
+.leave-emp__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.leave-emp__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hrms-text);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.leave-emp__dept {
+  font-size: 12px;
+  color: var(--hrms-text-muted);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leave-range {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 148px;
+  font-size: 13px;
+  color: var(--hrms-text-secondary);
+  line-height: 1.4;
+}
+
+.leave-range__date {
+  font-weight: 500;
+  color: var(--hrms-text);
+  white-space: nowrap;
+}
+
+.leave-range__time {
+  color: var(--hrms-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.leave-days {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-weight: 600;
+  color: var(--hrms-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.leave-days__unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--hrms-text-muted);
+}
+
+.leave-type-tag {
+  margin: 0 !important;
+  border-radius: 6px !important;
+  font-weight: 500;
+}
+
+.leave-status-tag {
+  margin: 0 !important;
+  border-radius: 999px !important;
+  padding-inline: 10px !important;
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .leave-filters__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .leave-filters__actions .ant-btn {
+    flex: 1;
+  }
+}

@@ -28,6 +28,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 职位服务：序列 M/P/S 与职级范围校验、按部门筛选、在岗人数。
+ * 读/写分别走 {@link OrgAccessGuard#requirePositionRead()} / {@link OrgAccessGuard#requirePositionWrite()}。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

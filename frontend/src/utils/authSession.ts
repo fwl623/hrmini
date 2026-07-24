@@ -1,3 +1,8 @@
+/**
+ * 登录会话与首页路由工具。
+ * Token 存本地；登出先调后端黑名单再清 store / 定时器。
+ * getHomePath 决定登录成功后进管理端还是门户。
+ */
 import { history } from '@umijs/max';
 import {
   ROLES,

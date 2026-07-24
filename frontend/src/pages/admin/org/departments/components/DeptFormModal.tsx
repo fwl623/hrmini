@@ -94,6 +94,33 @@ function resolveAncestorHead(
   return null;
 }
 
+/** 同级（同一 parentId）最大排序序号；无同级返回 -1 */
+function maxSiblingSortOrder(
+  tree: DeptTreeNode[],
+  parentId: number | null | undefined,
+  excludeId?: number | null,
+): number {
+  const siblings =
+    parentId == null || parentId === undefined
+      ? tree
+      : findDeptInTree(tree, parentId)?.children ?? [];
+  let max = -1;
+  for (const s of siblings) {
+    if (excludeId != null && s.id === excludeId) continue;
+    const v = s.sortOrder ?? 0;
+    if (v > max) max = v;
+  }
+  return max;
+}
+
+function nextSiblingSortOrder(
+  tree: DeptTreeNode[],
+  parentId: number | null | undefined,
+  excludeId?: number | null,
+): number {
+  return maxSiblingSortOrder(tree, parentId, excludeId) + 1;
+}
+
 const DeptFormModal: React.FC<DeptFormModalProps> = ({
   open,
   mode,
@@ -107,6 +134,7 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
   const [headOptions, setHeadOptions] = useState<HeadOption[]>([]);
   const [headSearching, setHeadSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchedParentId = Form.useWatch('parentId', form) as number | null | undefined;
 
   const title =
     mode === 'createRoot' ? '新增根部门' : mode === 'createChild' ? '新增子部门' : '编辑部门';
@@ -122,6 +150,25 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
 
   /** 有在职人数时禁止改编码（与后端 30006 对齐） */
   const deptCodeLocked = mode === 'edit' && (current?.headcount ?? 0) > 0;
+
+  /** 当前表单语境下的上级：根部门为 null */
+  const effectiveParentId = useMemo(() => {
+    if (mode === 'createRoot') return null;
+    if (mode === 'createChild') return current?.id ?? null;
+    return watchedParentId ?? null;
+  }, [mode, current?.id, watchedParentId]);
+
+  const siblingMax = useMemo(
+    () =>
+      maxSiblingSortOrder(
+        tree,
+        effectiveParentId,
+        mode === 'edit' ? current?.id : null,
+      ),
+    [tree, effectiveParentId, mode, current?.id],
+  );
+
+  const suggestedSortOrder = siblingMax + 1;
 
   const ensureHeadOption = async (employeeId?: number | null, fallbackName?: string) => {
     if (!employeeId) return;
@@ -210,7 +257,7 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
         deptCode: undefined,
         parentId: current.id,
         headEmployeeId: inherited?.employeeId,
-        sortOrder: 0,
+        sortOrder: nextSiblingSortOrder(tree, current.id),
         description: undefined,
       });
       void ensureHeadOption(inherited?.employeeId, inherited?.name);
@@ -221,7 +268,7 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
         deptCode: undefined,
         parentId: undefined,
         headEmployeeId: undefined,
-        sortOrder: 0,
+        sortOrder: nextSiblingSortOrder(tree, null),
         description: undefined,
       });
       setHeadOptions([]);
@@ -232,6 +279,30 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅弹窗打开时初始化
   }, [open, mode, current, form, tree]);
+
+  /** 编辑时改挂上级：若原序号不大于新同级最大，自动升到 max+1 */
+  const handleParentChange = (parentId: number | null | undefined) => {
+    const head = form.getFieldValue('headEmployeeId');
+    if (head == null && parentId != null) {
+      const parent = findDeptInTree(tree, parentId as number);
+      const inherited =
+        parent?.headEmployeeId != null
+          ? { employeeId: parent.headEmployeeId, name: parent.manager ?? undefined }
+          : resolveAncestorHead(parentId as number, tree);
+      if (inherited) {
+        form.setFieldValue('headEmployeeId', inherited.employeeId);
+        void ensureHeadOption(inherited.employeeId, inherited.name);
+      }
+    }
+    if (mode !== 'edit' || !current) return;
+    const max = maxSiblingSortOrder(tree, parentId ?? null, current.id);
+    const currentSort = form.getFieldValue('sortOrder') as number | undefined;
+    const sameParent = (parentId ?? null) === (current.parentId ?? null);
+    if (sameParent && currentSort === (current.sortOrder ?? 0)) return;
+    if (currentSort == null || currentSort <= max) {
+      form.setFieldValue('sortOrder', max + 1);
+    }
+  };
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -314,20 +385,7 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
                 showSearch
                 treeNodeFilterProp="title"
                 style={{ width: '100%' }}
-                onChange={(parentId) => {
-                  // 编辑时改挂上级且本部门尚无负责人：提示可继承新上级负责人
-                  const head = form.getFieldValue('headEmployeeId');
-                  if (head != null || parentId == null) return;
-                  const parent = findDeptInTree(tree, parentId as number);
-                  const inherited =
-                    parent?.headEmployeeId != null
-                      ? { employeeId: parent.headEmployeeId, name: parent.manager ?? undefined }
-                      : resolveAncestorHead(parentId as number, tree);
-                  if (inherited) {
-                    form.setFieldValue('headEmployeeId', inherited.employeeId);
-                    void ensureHeadOption(inherited.employeeId, inherited.name);
-                  }
-                }}
+                onChange={(parentId) => handleParentChange(parentId as number | null | undefined)}
               />
             )}
           </Form.Item>
@@ -353,9 +411,48 @@ const DeptFormModal: React.FC<DeptFormModalProps> = ({
         <Form.Item
           name="sortOrder"
           label="排序序号"
-          rules={[{ required: true, message: '请输入排序序号' }]}
+          extra={
+            mode === 'edit'
+              ? `同级不重复。保持原序号可不动；若改序号或改上级，须大于同级已有最大序号 ${siblingMax}（建议 ${suggestedSortOrder}）`
+              : `默认取同级最大序号 +1。手选须大于同级已有最大序号 ${siblingMax}（当前建议 ${suggestedSortOrder}）`
+          }
+          rules={[
+            { required: true, message: '请输入排序序号' },
+            {
+              validator: async (_, value: number | null | undefined) => {
+                if (value == null) return;
+                if (value < 0) {
+                  throw new Error('排序序号不能为负数');
+                }
+                // 编辑且未改上级、未改序号：允许保留历史重复值
+                if (
+                  mode === 'edit' &&
+                  current &&
+                  (effectiveParentId ?? null) === (current.parentId ?? null) &&
+                  value === (current.sortOrder ?? 0)
+                ) {
+                  return;
+                }
+                if (value <= siblingMax) {
+                  throw new Error(
+                    `须大于同级已有最大序号 ${siblingMax}（建议使用 ${suggestedSortOrder}）`,
+                  );
+                }
+              },
+            },
+          ]}
         >
-          <InputNumber style={{ width: '100%' }} min={0} precision={0} />
+          <InputNumber
+            style={{ width: '100%' }}
+            min={
+              mode === 'edit' &&
+              current &&
+              (effectiveParentId ?? null) === (current.parentId ?? null)
+                ? 0
+                : suggestedSortOrder
+            }
+            precision={0}
+          />
         </Form.Item>
         <Form.Item
           name="description"

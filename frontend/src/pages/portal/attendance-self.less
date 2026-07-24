@@ -1,0 +1,191 @@
+/* 门户：我的请假 / 我的加班 */
+
+.portal-att-page {
+  max-width: 1180px;
+  margin: 0 auto;
+  animation: portal-att-in 0.3s ease;
+}
+
+@keyframes portal-att-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.portal-att-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background:
+    linear-gradient(125deg, rgba(22, 93, 255, 0.1) 0%, rgba(22, 93, 255, 0.02) 42%, #fff 100%),
+    var(--hrms-bg-card);
+  border: 1px solid var(--hrms-border-light);
+  box-shadow: var(--hrms-shadow-sm);
+}
+
+.portal-att-hero h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--hrms-text);
+}
+
+.portal-att-hero p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--hrms-text-muted);
+}
+
+.portal-att-side {
+  border-radius: 12px !important;
+  border: 1px solid var(--hrms-border-light) !important;
+  box-shadow: var(--hrms-shadow-sm) !important;
+}
+
+.portal-att-side .ant-card-head {
+  border-bottom-color: var(--hrms-border-light);
+  min-height: 48px;
+}
+
+.portal-att-balance {
+  display: grid;
+  gap: 12px;
+}
+
+.portal-att-balance__item {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--hrms-primary-bg);
+  border: 1px solid rgba(22, 93, 255, 0.08);
+}
+
+.portal-att-balance__item .ant-statistic-title {
+  color: var(--hrms-text-secondary);
+  font-size: 13px;
+}
+
+.portal-att-balance__item .ant-statistic-content {
+  color: var(--hrms-primary);
+}
+
+.portal-att-rate-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.portal-att-rate-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--hrms-bg);
+  font-size: 13px;
+  color: var(--hrms-text-secondary);
+}
+
+.portal-att-rate-list strong {
+  color: var(--hrms-text);
+  font-weight: 600;
+}
+
+.portal-att-rate-tip {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff7e8;
+  color: #d46b08;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.portal-att-main {
+  border-radius: 12px !important;
+  border: 1px solid var(--hrms-border-light) !important;
+  box-shadow: var(--hrms-shadow-sm) !important;
+  overflow: hidden;
+}
+
+.portal-att-main .ant-card-body {
+  padding: 0 !important;
+}
+
+.portal-att-main .ant-card-head {
+  border-bottom-color: var(--hrms-border-light);
+  padding-inline: 16px;
+}
+
+.portal-att-main .ant-table-thead > tr > th,
+.portal-att-main .ant-table-tbody > tr > td {
+  padding: 14px 16px !important;
+  vertical-align: middle;
+}
+
+.portal-att-main .ant-table-pagination.ant-pagination,
+.portal-att-main .ant-pagination {
+  margin: 0 !important;
+  padding: 16px 20px 18px !important;
+  gap: 10px 12px;
+}
+
+.portal-att-range {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 148px;
+  line-height: 1.4;
+}
+
+.portal-att-range__date {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hrms-text);
+  white-space: nowrap;
+}
+
+.portal-att-range__time {
+  font-size: 12px;
+  color: var(--hrms-text-muted);
+  white-space: nowrap;
+}
+
+.portal-att-days {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-weight: 600;
+  color: var(--hrms-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.portal-att-days__unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--hrms-text-muted);
+}
+
+.portal-att-status {
+  margin: 0 !important;
+  border-radius: 999px !important;
+  padding-inline: 10px !important;
+  font-weight: 500;
+}
+
+.portal-att-type {
+  margin: 0 !important;
+  border-radius: 6px !important;
+  font-weight: 500;
+}

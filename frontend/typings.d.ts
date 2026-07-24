@@ -38,6 +38,16 @@ declare namespace API {
   interface LoginRequest {
     username: string;
     password: string;
+    /** true：password 为 RSA-OAEP 密文 */
+    encrypted?: boolean;
+  }
+
+  interface LoginPublicKey {
+    keyId: string;
+    algorithm: string;
+    hash: string;
+    /** Base64(SPKI)，供 Web Crypto importKey */
+    publicKey: string;
   }
 
   interface LoginResponse {
@@ -174,7 +184,9 @@ declare namespace API {
 
   interface LeaveApplicationVO {
     id: number;
+    employeeId?: number;
     employeeName: string;
+    department?: string;
     leaveType: string;
     startTime: string;
     endTime: string;
@@ -198,10 +210,16 @@ declare namespace API {
 
   interface OvertimeApplicationVO {
     id: number;
+    employeeId?: number;
     employeeName: string;
+    department?: string;
     overtimeDate: string;
+    startTime?: string;
+    endTime?: string;
     hours: number;
+    reason?: string;
     status: string;
+    instanceId?: number;
   }
 
   interface OvertimeApplicationDTO {
@@ -334,6 +352,8 @@ declare namespace API {
   interface PayslipVO {
     employeeId: number;
     employeeName: string;
+    departmentId?: number;
+    departmentName?: string;
     period: string;
     grossSalary: number;
     netSalary: number;

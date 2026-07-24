@@ -4,7 +4,11 @@ import com.company.hrms.common.enums.DataScopeType;
 import com.company.hrms.common.security.LoginUser;
 
 /**
- * 按数据范围拼装安全的 SQL 片段（仅拼接已校验的数字 ID，禁止用户输入）。
+ * 按数据范围拼装安全的 SQL 片段（仅拼接已校验的数字 ID，禁止拼接用户输入）。
+ * <p>
+ * ALL / PAYROLL / NONE_PAYROLL → 空串（不过滤）；
+ * DEPT_TREE → 本部门 path 子树；SELF → 仅本人 employeeId；
+ * 无法解析时返回 {@code AND 1=0} 拒绝。
  */
 public final class DataScopeSqlBuilder {
 

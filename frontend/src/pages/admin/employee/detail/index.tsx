@@ -10,7 +10,7 @@
  * - SYS_ADMIN 不可看薪资金额与合同明细（PRD）
  * - 薪资档案编辑：HR_STAFF / FINANCE / FINANCE_MANAGER（对齐 JwtAuthFilter）
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useModel } from '@umijs/max';
 import {
   Alert,
@@ -26,7 +26,6 @@ import {
   Table,
   Modal,
   Form,
-  Input,
   InputNumber,
   Select,
 } from 'antd';
@@ -41,6 +40,45 @@ import {
   type SalaryProfile,
 } from '@/services/employee';
 import { getSchemes } from '@/services/payroll';
+
+/** 从津贴 JSON 中读取岗位津贴金额（仅内部解析，界面不展示 JSON） */
+function parsePositionAllowance(json?: string | null): number | undefined {
+  if (!json?.trim()) return undefined;
+  try {
+    const obj = JSON.parse(json) as Record<string, unknown>;
+    const raw = obj.POSITION_ALLOWANCE ?? obj.positionAllowance;
+    if (raw == null || raw === '') return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 写回岗位津贴；保留原 JSON 中其他键，界面只维护岗位津贴数字 */
+function buildAllowanceJson(
+  amount: number | null | undefined,
+  previousJson?: string | null,
+): string | undefined {
+  let base: Record<string, unknown> = {};
+  if (previousJson?.trim()) {
+    try {
+      const parsed = JSON.parse(previousJson);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        base = { ...parsed };
+      }
+    } catch {
+      base = {};
+    }
+  }
+  if (amount == null) {
+    delete base.POSITION_ALLOWANCE;
+    delete base.positionAllowance;
+  } else {
+    base.POSITION_ALLOWANCE = amount;
+  }
+  return Object.keys(base).length > 0 ? JSON.stringify(base) : undefined;
+}
 import SensitiveField from '@/components/SensitiveField';
 import type { EmployeeDetail } from '@/services/employee';
 import { ROLES } from '@/constants/roles';
@@ -99,6 +137,8 @@ const EmployeeDetailPage: React.FC = () => {
   const [schemeOptions, setSchemeOptions] = useState<{ label: string; value: number }[]>([]);
   const [salaryCreateMode, setSalaryCreateMode] = useState(false);
   const [salaryForm] = Form.useForm();
+  /** 编辑时保留原津贴 JSON 中其他键，避免只改岗位津贴时冲掉其余项 */
+  const allowanceJsonRef = useRef<string | undefined>(undefined);
 
   const roleCode = initialState?.currentUser?.roleCode;
   const canSeeContract = roleCode === ROLES.HR_STAFF;
@@ -168,6 +208,7 @@ const EmployeeDetailPage: React.FC = () => {
         const code = err?.info?.code;
         if (code === 50003) {
           setSalaryCreateMode(true);
+          allowanceJsonRef.current = undefined;
           salaryForm.setFieldsValue({
             schemeId: list[0]?.id,
             baseSalary: undefined,
@@ -175,7 +216,7 @@ const EmployeeDetailPage: React.FC = () => {
             hfBase: undefined,
             performanceBase: undefined,
             probationRatio: 1,
-            allowanceBaseJson: undefined,
+            positionAllowance: undefined,
           });
           return;
         }
@@ -190,6 +231,7 @@ const EmployeeDetailPage: React.FC = () => {
         return;
       }
 
+      allowanceJsonRef.current = profile.allowanceBaseJson;
       salaryForm.setFieldsValue({
         schemeId: profile.schemeId,
         baseSalary: profile.baseSalary,
@@ -197,7 +239,7 @@ const EmployeeDetailPage: React.FC = () => {
         hfBase: profile.hfBase,
         performanceBase: profile.performanceBase,
         probationRatio: profile.probationRatio,
-        allowanceBaseJson: profile.allowanceBaseJson,
+        positionAllowance: parsePositionAllowance(profile.allowanceBaseJson),
       });
 
       if (list.length === 0 && profile.schemeId != null) {
@@ -221,6 +263,10 @@ const EmployeeDetailPage: React.FC = () => {
     try {
       const values = await salaryForm.validateFields();
       setSalarySaving(true);
+      const allowanceBaseJson = buildAllowanceJson(
+        values.positionAllowance,
+        allowanceJsonRef.current,
+      );
       const res = await updateSalaryProfile(Number(id), {
         schemeId: values.schemeId,
         baseSalary: values.baseSalary,
@@ -228,7 +274,8 @@ const EmployeeDetailPage: React.FC = () => {
         hfBase: values.hfBase,
         performanceBase: values.performanceBase,
         probationRatio: values.probationRatio,
-        allowanceBaseJson: values.allowanceBaseJson || undefined,
+        // 显式传字符串（含空对象）以便清空；无津贴时传 "{}" 覆盖旧值
+        allowanceBaseJson: allowanceBaseJson ?? '{}',
       });
       if (res.code === 0) {
         message.success(salaryCreateMode ? '薪资档案已创建' : '薪资档案已保存');
@@ -533,8 +580,12 @@ const EmployeeDetailPage: React.FC = () => {
             >
               <InputNumber min={0.8} max={1} step={0.01} precision={2} style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="allowanceBaseJson" label="津贴基数 JSON" extra="可选，JSON 字符串">
-              <Input.TextArea rows={2} placeholder='例如 {"meal":500}' />
+            <Form.Item
+              name="positionAllowance"
+              label="岗位津贴"
+              extra="算薪时按账套中的岗位津贴项取用；可不填"
+            >
+              <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="元" />
             </Form.Item>
           </Form>
         </Spin>

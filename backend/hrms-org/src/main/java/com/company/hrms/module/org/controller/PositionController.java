@@ -20,6 +20,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
+/**
+ * 职位 API：分页列表、详情、CRUD。
+ * 读：HR/部门主管；写：HR/管理员（见 OrgAccessGuard）。路径 {@code /api/v1/positions}。
+ */
 @RestController
 @RequestMapping("/positions")
 @RequiredArgsConstructor

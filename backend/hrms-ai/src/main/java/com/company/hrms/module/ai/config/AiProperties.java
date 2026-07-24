@@ -3,6 +3,9 @@ package com.company.hrms.module.ai.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * AI 配置绑定（前缀 hrms.ai）：API Key、聊天/向量网关、模型名、Qdrant 连接等。
+ */
 @Data
 @ConfigurationProperties(prefix = "hrms.ai")
 public class AiProperties {
@@ -24,19 +27,40 @@ public class AiProperties {
     private Chat chat = new Chat();
     private Embedding embedding = new Embedding();
     private Qdrant qdrant = new Qdrant();
+    private Knowledge knowledge = new Knowledge();
+    private Rag rag = new Rag();
 
+    /** 对话模型配置。 */
     @Data
     public static class Chat {
         private String model = "deepseek-v4-flash";
         private boolean enableThinking = false;
+        /** 采样温度 0～2，默认 0.3 偏稳妥 */
+        private double temperature = 0.3;
     }
 
+    /** 知识库分块默认值（可被运行时设置覆盖）。 */
+    @Data
+    public static class Knowledge {
+        private int chunkSize = 500;
+        private int chunkOverlap = 50;
+        private int embedBatchSize = 8;
+    }
+
+    /** RAG 检索默认值。 */
+    @Data
+    public static class Rag {
+        private int topK = 5;
+    }
+
+    /** 向量模型配置。 */
     @Data
     public static class Embedding {
         private String model = "text-embedding-v4";
         private int dimensions = 1024;
     }
 
+    /** Qdrant 向量库连接配置。 */
     @Data
     public static class Qdrant {
         private String host = "127.0.0.1";

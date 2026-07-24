@@ -192,7 +192,9 @@ public class CalculateService {
                     attendanceMonthLockMapper.selectOne(
                             new LambdaQueryWrapper<com.company.hrms.attendance.entity.AttendanceMonthLock>()
                                     .eq(com.company.hrms.attendance.entity.AttendanceMonthLock::getYearMonth, period));
-            if (lock == null || lock.getStatus() != 20) {
+            // 20=已锁定；无记录或未锁定(10)均不可核算当月
+            Integer lockStatus = lock == null ? null : lock.getStatus();
+            if (lockStatus == null || lockStatus.intValue() != 20) {
                 throw new BusinessException(ErrorCode.ATTENDANCE_NOT_LOCKED,
                         "当前月考勤数据未锁定，请先完成考勤月结");
             }

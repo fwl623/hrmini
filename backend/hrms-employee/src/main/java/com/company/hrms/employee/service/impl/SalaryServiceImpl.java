@@ -106,10 +106,12 @@ public class SalaryServiceImpl implements SalaryService {
             salaryHistoryMapper.insert(history);
         }
 
-        // 更新薪资档案字段
+        // 更新薪资档案字段（津贴基数由账套/算薪侧使用，HR 编辑页不维护；未传则保留原值）
         profile.setSchemeId(dto.getSchemeId());
         profile.setBaseSalary(dto.getBaseSalary());
-        profile.setAllowanceBaseJson(dto.getAllowanceBaseJson());
+        if (dto.getAllowanceBaseJson() != null) {
+            profile.setAllowanceBaseJson(dto.getAllowanceBaseJson());
+        }
         profile.setSsBase(dto.getSsBase());
         profile.setHfBase(dto.getHfBase());
         if (dto.getPerformanceBase() != null) profile.setPerformanceBase(dto.getPerformanceBase());

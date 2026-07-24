@@ -13,7 +13,8 @@ import java.time.ZoneId;
 import java.util.TimeZone;
 
 /**
- * Jackson 全局配置
+ * Jackson 全局配置：JavaTime 模块、时区 Asia/Shanghai、忽略未知属性等。
+ * 供 HTTP JSON 与部分 MQ 序列化共用同一 ObjectMapper（@Primary）。
  */
 @Configuration
 public class JacksonConfig {

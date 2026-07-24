@@ -21,6 +21,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 系统角色管理：预置角色列表、改显示名、分配权限树。
+ * <p>
+ * 角色编码只读不可增删；改权限后对该角色下所有用户 evict 权限缓存。
+ */
 @Service
 public class SystemRoleServiceImpl implements SystemRoleService {
 

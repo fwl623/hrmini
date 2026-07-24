@@ -8,6 +8,9 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 知识库文档元数据实体（表 ai_knowledge_doc）；向量分块存在 Qdrant，不在本表。
+ */
 @Data
 @TableName("ai_knowledge_doc")
 public class AiKnowledgeDoc {

@@ -17,6 +17,8 @@ import com.company.hrms.common.exception.BusinessException;
 import com.company.hrms.common.exception.ErrorCode;
 import com.company.hrms.common.web.PageParam;
 import com.company.hrms.common.web.PageResult;
+import com.company.hrms.employee.entity.Employee;
+import com.company.hrms.employee.mapper.EmployeeMapper;
 import com.company.hrms.module.attendance.dto.ApplicableScopeDTO;
 import com.company.hrms.module.attendance.dto.AttendanceGroupCreateDTO;
 import com.company.hrms.module.attendance.dto.AttendanceGroupVO;
@@ -34,7 +36,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -51,6 +56,7 @@ public class AttendanceGroupService {
     private final AttendanceGroupMemberMapper attendanceGroupMemberMapper;
     private final WorkdayConfigMapper workdayConfigMapper;
     private final HolidayCalendarMapper holidayCalendarMapper;
+    private final EmployeeMapper employeeMapper;
     private final ObjectMapper objectMapper;
 
     // ========== 考勤组 CRUD ==========
@@ -263,45 +269,58 @@ public class AttendanceGroupService {
     }
 
     /**
-     * 物化员工-考勤组映射
-     * 先删后插，保证数据一致性
-     * TODO: 对接员工服务 Feign 接口，根据 departmentIds/positionIds 解析实际员工列表
+     * 物化员工-考勤组映射（先删后插）。
+     * <ul>
+     *   <li>指定了 employeeIds → 仅这些人入组（须落在所选部门内，若同时选了部门）</li>
+     *   <li>未指定员工、仅选了部门 → 部门下全部在职员工入组</li>
+     * </ul>
      */
     private void materializeScope(Long groupId, ApplicableScopeDTO scope) {
+        if (scope == null) {
+            scope = new ApplicableScopeDTO();
+        }
+        List<Long> departmentIds = scope.getDepartmentIds() == null ? List.of() : scope.getDepartmentIds().stream()
+                .filter(Objects::nonNull).distinct().toList();
+        List<Long> positionIds = scope.getPositionIds() == null ? List.of() : scope.getPositionIds().stream()
+                .filter(Objects::nonNull).distinct().toList();
+        List<Long> employeeIds = scope.getEmployeeIds() == null ? List.of() : scope.getEmployeeIds().stream()
+                .filter(Objects::nonNull).distinct().toList();
+
+        if (departmentIds.isEmpty() && employeeIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "请至少选择适用部门，或指定适用员工");
+        }
+
+        // 解析最终成员
+        Set<Long> memberIds = resolveMemberIds(departmentIds, employeeIds);
+
         // 1. 删除旧 scope 和 member
         attendanceGroupScopeMapper.deleteByGroupId(groupId);
         attendanceGroupMemberMapper.deleteByGroupId(groupId);
 
-        // 2. 如果指定了员工，先清理这些员工在其他考勤组的成员关系（实现换组）
-        if (scope.getEmployeeIds() != null && !scope.getEmployeeIds().isEmpty()) {
-            attendanceGroupMemberMapper.deleteByEmployeeIds(scope.getEmployeeIds());
+        // 2. 换组：清理这些员工在其他考勤组的成员关系
+        if (!memberIds.isEmpty()) {
+            attendanceGroupMemberMapper.deleteByEmployeeIds(new ArrayList<>(memberIds));
         }
 
-        // 3. 插入 scope 记录
+        // 3. 插入 scope 记录（部门/职位/显式员工）
         List<AttendanceGroupScope> scopes = new ArrayList<>();
-
-        if (scope.getDepartmentIds() != null) {
-            for (Long deptId : scope.getDepartmentIds()) {
-                AttendanceGroupScope s = new AttendanceGroupScope();
-                s.setGroupId(groupId);
-                s.setScopeType("DEPARTMENT");
-                s.setScopeId(deptId);
-                scopes.add(s);
-            }
+        for (Long deptId : departmentIds) {
+            AttendanceGroupScope s = new AttendanceGroupScope();
+            s.setGroupId(groupId);
+            s.setScopeType("DEPARTMENT");
+            s.setScopeId(deptId);
+            scopes.add(s);
         }
-
-        if (scope.getPositionIds() != null) {
-            for (Long posId : scope.getPositionIds()) {
-                AttendanceGroupScope s = new AttendanceGroupScope();
-                s.setGroupId(groupId);
-                s.setScopeType("POSITION");
-                s.setScopeId(posId);
-                scopes.add(s);
-            }
+        for (Long posId : positionIds) {
+            AttendanceGroupScope s = new AttendanceGroupScope();
+            s.setGroupId(groupId);
+            s.setScopeType("POSITION");
+            s.setScopeId(posId);
+            scopes.add(s);
         }
-
-        if (scope.getEmployeeIds() != null) {
-            for (Long empId : scope.getEmployeeIds()) {
+        // 仅当显式点名员工时写 EMPLOYEE scope；「整部门默认」只存 DEPARTMENT
+        if (!employeeIds.isEmpty()) {
+            for (Long empId : employeeIds) {
                 AttendanceGroupScope s = new AttendanceGroupScope();
                 s.setGroupId(groupId);
                 s.setScopeType("EMPLOYEE");
@@ -309,15 +328,13 @@ public class AttendanceGroupService {
                 scopes.add(s);
             }
         }
-
         if (!scopes.isEmpty()) {
             scopes.forEach(attendanceGroupScopeMapper::insert);
         }
 
-        // 4. 物化 member（当前仅直接指定的 employeeIds）
-        // TODO: 后续通过 Feign 调用员工服务，根据 departmentIds/positionIds 解析员工 ID 并合并
-        if (scope.getEmployeeIds() != null && !scope.getEmployeeIds().isEmpty()) {
-            List<AttendanceGroupMember> members = scope.getEmployeeIds().stream()
+        // 4. 物化 member
+        if (!memberIds.isEmpty()) {
+            List<AttendanceGroupMember> members = memberIds.stream()
                     .map(empId -> {
                         AttendanceGroupMember m = new AttendanceGroupMember();
                         m.setGroupId(groupId);
@@ -328,8 +345,48 @@ public class AttendanceGroupService {
             attendanceGroupMemberMapper.batchInsert(members);
         }
 
-        log.info("物化考勤组范围: groupId={}, scopes={}, members={}",
-                groupId, scopes.size(), scope.getEmployeeIds() != null ? scope.getEmployeeIds().size() : 0);
+        log.info("物化考勤组范围: groupId={}, scopes={}, members={}", groupId, scopes.size(), memberIds.size());
+    }
+
+    /**
+     * 有显式员工 → 以员工为准（若同时选了部门则校验归属）；
+     * 无员工仅有部门 → 拉取部门下在职员工。
+     */
+    private Set<Long> resolveMemberIds(List<Long> departmentIds, List<Long> employeeIds) {
+        Set<Long> memberIds = new LinkedHashSet<>();
+        List<Integer> activeStatus = List.of(10, 20, 30); // 试用/正式/待离职
+
+        if (!employeeIds.isEmpty()) {
+            if (!departmentIds.isEmpty()) {
+                Set<Long> deptSet = new LinkedHashSet<>(departmentIds);
+                for (Long empId : employeeIds) {
+                    Employee emp = employeeMapper.selectById(empId);
+                    if (emp == null || (emp.getDeleted() != null && emp.getDeleted() != 0)) {
+                        throw new BusinessException(ErrorCode.PARAM_INVALID, "适用员工不存在: " + empId);
+                    }
+                    if (emp.getDepartmentId() == null || !deptSet.contains(emp.getDepartmentId())) {
+                        throw new BusinessException(ErrorCode.PARAM_INVALID,
+                                "适用员工须属于已选部门（员工ID: " + empId + "）");
+                    }
+                    memberIds.add(empId);
+                }
+            } else {
+                memberIds.addAll(employeeIds);
+            }
+            return memberIds;
+        }
+
+        // 未点名员工：部门下全部在职
+        List<Employee> inDepts = employeeMapper.search(
+                null, departmentIds, null, activeStatus, null, null, null, "");
+        if (inDepts != null) {
+            for (Employee emp : inDepts) {
+                if (emp.getId() != null) {
+                    memberIds.add(emp.getId());
+                }
+            }
+        }
+        return memberIds;
     }
 
     /**

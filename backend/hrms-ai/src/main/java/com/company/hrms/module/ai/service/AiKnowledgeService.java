@@ -5,6 +5,7 @@ import com.company.hrms.common.security.PermissionGuard;
 import com.company.hrms.common.security.SecurityUtils;
 import com.company.hrms.module.ai.client.BailianClient;
 import com.company.hrms.module.ai.client.QdrantClient;
+import com.company.hrms.module.ai.config.AiRuntimeSettings;
 import com.company.hrms.module.ai.entity.AiKnowledgeDoc;
 import com.company.hrms.module.ai.mapper.AiKnowledgeDocMapper;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 知识库业务：上传抽文本分块 → Embedding → 写入 Qdrant，并维护 MySQL 文档元数据（启停/删除）。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -28,6 +32,7 @@ public class AiKnowledgeService {
     private final DocumentTextExtractor extractor;
     private final BailianClient bailianClient;
     private final QdrantClient qdrantClient;
+    private final AiRuntimeSettings runtimeSettings;
 
     /** 知识库管理：认权限码（角色管理可分配）；SYS_ADMIN 兜底 */
     public void requireKnowledgeManage() {
@@ -62,7 +67,8 @@ public class AiKnowledgeService {
 
         try {
             String text = extractor.extract(file);
-            List<String> chunks = extractor.chunk(text, 500, 50);
+            List<String> chunks = extractor.chunk(
+                    text, runtimeSettings.getChunkSize(), runtimeSettings.getChunkOverlap());
             if (chunks.isEmpty()) {
                 throw new com.company.hrms.common.exception.BusinessException(10001, "文档无有效文本内容");
             }
