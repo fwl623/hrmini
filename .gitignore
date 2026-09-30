@@ -108,3 +108,9 @@ _local_park/
 
 # 本地种子数据
 docs/db/seed_intern_liushiyi.sql
+
+# Frontend local env (secrets)
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
